@@ -1,0 +1,38 @@
+{$DOMAIN::80} {
+	encode zstd gzip
+	root * /srv
+
+	header {
+		Referrer-Policy no-referrer
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+	}
+
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+
+	@app not path /assets/*
+	header @app Cache-Control "no-cache"
+
+	# Files mounted at /branding (config.json, logos) win over the built copies,
+	# so they can change without a rebuild.
+	@branding {
+		not path /
+		file {
+			root /branding
+		}
+	}
+	handle @branding {
+		root * /branding
+		file_server
+	}
+
+	handle /assets/* {
+		file_server
+	}
+
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -1,0 +1,17 @@
+{
+  "name": "FREE Madeira",
+  "logo": "/logo.svg",
+  "logoDark": "/logo-dark.svg",
+  "accent": "#ffcb05",
+  "relays": ["ws://localhost:10547"],
+  "signerRelays": [
+    "wss://nos.lol",
+    "wss://relay.primal.net",
+    "wss://relay.damus.io"
+  ],
+  "lookupRelays": [
+    "wss://purplepag.es",
+    "wss://user.kindpag.es",
+    "wss://relay.damus.io"
+  ]
+}
