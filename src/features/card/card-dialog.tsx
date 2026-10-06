@@ -25,8 +25,9 @@ import { deleteCard, updateCard } from "@/lib/actions";
 import type { Card } from "@/lib/model";
 import { cardKey } from "@/lib/model";
 
+// Edited in place like text on the page: a hover tint, and no focus ring.
 const INLINE_FIELD =
-  "-mx-2 w-[calc(100%+1rem)] rounded-lg px-2 py-1 outline-none transition-[background-color,box-shadow] duration-150 hover:not-focus:bg-foreground/5 focus-visible:ring-3 focus-visible:ring-ring/30";
+  "-mx-2 w-[calc(100%+1rem)] rounded-lg px-2 py-1 outline-none transition-colors duration-150 hover:not-focus:bg-foreground/5";
 
 // Typing is kept local until the field loses focus, so teammates' edits never overwrite it mid-sentence.
 function useDraft(value: string, save: (draft: string) => void) {
