@@ -259,6 +259,33 @@ function sessionFeed(session: Session, filters: Filter[]): Observable<boolean> {
   );
 }
 
+/** Longest tag value that relays built on eventstore (Haven among them) index. */
+const MAX_INDEXED_TAG = 100;
+
+/**
+ * Relay filters for events pointing at any of the addresses through `tag`.
+ * Boards, projects, cards and records made before `d` tags were shortened
+ * have addresses too long to be indexed, so events pointing at those are
+ * asked for by author instead. Read them back from the store with the exact
+ * address filter, which matches locally whatever the length.
+ */
+export function addressFilters(
+  tag: "#a" | "#A",
+  addresses: string[],
+  base: Filter,
+  authors: string[]
+): Filter[] {
+  const indexed = addresses.filter(
+    (address) => address.length <= MAX_INDEXED_TAG
+  );
+  const filters: Filter[] =
+    indexed.length > 0 ? [{ ...base, [tag]: indexed }] : [];
+  if (indexed.length < addresses.length) {
+    filters.push({ ...base, authors });
+  }
+  return filters;
+}
+
 /** Streams matching events from the team relays into the store and reports when the first relay finished. */
 export function sync(filters: Filter[]): Observable<boolean> {
   return session$.pipe(

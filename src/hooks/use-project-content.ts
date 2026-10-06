@@ -6,17 +6,20 @@ import { resolveProject, resolveTables } from "@/lib/crm";
 import { CRM_RECORD_KIND, CRM_TABLE_KIND } from "@/lib/model";
 import { eventStore } from "@/lib/nostr";
 import type { Project } from "@/lib/project";
-import { sync } from "@/lib/relays";
+import { addressFilters, sync } from "@/lib/relays";
 
 /** CRM tables and records of a project, resolved across every member's versions. */
 export function useProjectContent(project: Project): {
   content: ProjectContent | undefined;
   loaded: boolean;
 } {
-  const filters = [
-    { "#a": [project.address], kinds: [CRM_TABLE_KIND, CRM_RECORD_KIND] },
-  ];
-  const loaded = useObservableValue(() => sync(filters), [project.address]);
+  const kinds = [CRM_TABLE_KIND, CRM_RECORD_KIND];
+  const filters = [{ "#a": [project.address], kinds }];
+  const loaded = useObservableValue(
+    () =>
+      sync(addressFilters("#a", [project.address], { kinds }, project.members)),
+    [project.address, project.members.join(",")]
+  );
   const content = useObservableValue(
     () =>
       eventStore
@@ -32,8 +35,19 @@ export function useProjectTables(projects: Project[]): Map<string, CrmTable[]> {
   const addresses = projects.map((project) => project.address);
   const key = projects.map((project) => project.event.id).join(",");
   const filters = [{ "#a": addresses, kinds: [CRM_TABLE_KIND] }];
+  const members = [...new Set(projects.flatMap((project) => project.members))];
   useObservableValue(
-    () => (addresses.length > 0 ? sync(filters) : undefined),
+    () =>
+      addresses.length > 0
+        ? sync(
+            addressFilters(
+              "#a",
+              addresses,
+              { kinds: [CRM_TABLE_KIND] },
+              members
+            )
+          )
+        : undefined,
     [key]
   );
   const tables = useObservableValue(

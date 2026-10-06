@@ -3,20 +3,31 @@ import { map } from "rxjs";
 import { useObservableValue } from "@/hooks/use-observable-value";
 import type { Board, Card, Comment } from "@/lib/model";
 import {
+  CARD_KIND,
   cardCommentAddresses,
   COMMENT_KIND,
   DELETE_KIND,
   parseComment,
 } from "@/lib/model";
 import { eventStore } from "@/lib/nostr";
-import { sync } from "@/lib/relays";
+import { addressFilters, sync } from "@/lib/relays";
 
 export function useComments(board: Board, card: Card): Comment[] {
-  const filters = [
-    { "#A": cardCommentAddresses(board, card), kinds: [COMMENT_KIND] },
-  ];
+  const addresses = cardCommentAddresses(board, card);
+  const filters = [{ "#A": addresses, kinds: [COMMENT_KIND] }];
   const key = `${board.event.id}:${card.id}`;
-  useObservableValue(() => sync(filters), [key]);
+  useObservableValue(
+    () =>
+      sync(
+        addressFilters(
+          "#A",
+          addresses,
+          { "#K": [String(CARD_KIND)], kinds: [COMMENT_KIND] },
+          board.members
+        )
+      ),
+    [key]
+  );
   const comments = useObservableValue(
     () =>
       eventStore.timeline(filters).pipe(
