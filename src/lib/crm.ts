@@ -15,7 +15,7 @@ import {
 import type { Color } from "@/lib/palette";
 import { parseColor } from "@/lib/palette";
 import type { Project } from "@/lib/project";
-import { slugify } from "@/lib/project";
+import { slugify, uniqueSlug } from "@/lib/project";
 
 export const FIELD_TYPES = [
   "title",
@@ -339,12 +339,23 @@ export function resolveTables(
   events: NostrEvent[]
 ): CrmTable[] {
   const authors = new Set(project.members);
-  return [...latestVersions(events, CRM_TABLE_KIND, authors)]
+  const tables = [...latestVersions(events, CRM_TABLE_KIND, authors)]
     .filter(([, event]) => !isDeleted(event))
     .map(([id, event]) => parseTable(event, id, project))
     .toSorted(
-      (a, b) => a.createdAt - b.createdAt || a.title.localeCompare(b.title)
+      (a, b) =>
+        a.createdAt - b.createdAt ||
+        a.title.localeCompare(b.title) ||
+        a.id.localeCompare(b.id)
     );
+  // Two tables can share a slug when one was made before the other loaded.
+  // The newer one gets a suffix, so each keeps its own address.
+  const taken = new Set<string>();
+  return tables.map((table) => {
+    const slug = uniqueSlug(table.slug, taken);
+    taken.add(slug);
+    return slug === table.slug ? table : { ...table, slug };
+  });
 }
 
 /** Tables and records of a project, resolved across every member's versions. */
