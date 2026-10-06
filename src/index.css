@@ -292,6 +292,11 @@
       accent-color: var(--primary);
     }
 
+    /* The text being linked, while focus is in the link field. */
+    & .link-target {
+      background: color-mix(in oklab, var(--primary) 45%, transparent);
+    }
+
     & .is-editor-empty:first-child::before {
       content: attr(data-placeholder);
       float: left;

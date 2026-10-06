@@ -11,6 +11,11 @@ import {
   parseMarkdown,
   serializeMarkdown,
 } from "@/components/markdown-editor/content";
+import {
+  hideSelectionToolbar,
+  LinkTarget,
+  SelectionToolbar,
+} from "@/components/markdown-editor/toolbar";
 
 function isSubmit(event: KeyboardEvent): boolean {
   return (
@@ -33,6 +38,7 @@ export function MarkdownEditorView({
     () => [
       ...CONTENT,
       MarkdownClipboard,
+      LinkTarget,
       Placeholder.configure({ placeholder }),
     ],
     [placeholder]
@@ -45,6 +51,7 @@ export function MarkdownEditorView({
   // The text as of its last load or commit, and the outside value at that point.
   const synced = useRef({ markdown: incoming.markdown, value });
   const focused = useRef(false);
+  const toolbar = useRef<HTMLDivElement>(null);
 
   const commit = (doc: JSONContent): string => {
     const markdown = serializeMarkdown(doc);
@@ -80,6 +87,14 @@ export function MarkdownEditorView({
     };
   };
 
+  // Focus left both the text and its toolbar: editing is done.
+  const leave = (editor: Editor) => {
+    focused.current = false;
+    hideSelectionToolbar(editor);
+    commit(editor.getJSON());
+    load(editor, incoming);
+  };
+
   const editor = useEditor({
     content: incoming.doc,
     editorProps: {
@@ -98,10 +113,12 @@ export function MarkdownEditorView({
       },
     },
     extensions,
-    onBlur: ({ editor: blurred }) => {
-      focused.current = false;
-      commit(blurred.getJSON());
-      load(blurred, incoming);
+    onBlur: ({ editor: blurred, event }) => {
+      // Moving into the toolbar, to type a link or pick a style, is still editing.
+      const next = event.relatedTarget;
+      if (!(next instanceof Node && toolbar.current?.contains(next))) {
+        leave(blurred);
+      }
     },
     onFocus: () => {
       focused.current = true;
@@ -125,5 +142,16 @@ export function MarkdownEditorView({
   });
   useEffect(() => () => onUnmount(), []);
 
-  return <EditorContent editor={editor} onKeyDown={onKeyDown} />;
+  return (
+    <>
+      <EditorContent editor={editor} onKeyDown={onKeyDown} />
+      {editor && (
+        <SelectionToolbar
+          editor={editor}
+          onLeave={() => leave(editor)}
+          ref={toolbar}
+        />
+      )}
+    </>
+  );
 }
