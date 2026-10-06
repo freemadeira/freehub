@@ -16,6 +16,7 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { IconButton } from "@/components/icon-button";
+import { MarkdownEditor } from "@/components/markdown-editor";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -265,6 +266,8 @@ function NewCardForm({
   const { board, content } = useBoard();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  // Counts the cards created here, so each next one starts with a fresh editor.
+  const [created, setCreated] = useState(0);
   const [properties, setProperties] = useState<Properties>({
     ...defaults,
     labels: [],
@@ -276,14 +279,16 @@ function NewCardForm({
   const set = (changes: Partial<Properties>) =>
     setProperties((current) => ({ ...current, ...changes }));
 
-  const create = () => {
+  // Mod+Enter in the description passes its text, since the state it just
+  // committed only updates on the next render.
+  const create = (text = description) => {
     if (!ready) {
       return;
     }
     const key = `${board.code}-${content.nextNumber}`;
     createCard(board, content, {
       ...properties,
-      description: description.trim(),
+      description: text,
       rank: rankBetween(content.cards.at(-1)?.rank),
       title: title.trim(),
     });
@@ -294,6 +299,7 @@ function NewCardForm({
     // Properties carry over, so a run of similar cards is quick to enter.
     setTitle("");
     setDescription("");
+    setCreated((count) => count + 1);
     titleField.current?.focus();
     toast.success(`${key} created`);
   };
@@ -335,17 +341,13 @@ function NewCardForm({
           rows={1}
           value={title}
         />
-        <textarea
+        <MarkdownEditor
           aria-label="Description"
-          className="placeholder:text-muted-foreground/70 field-sizing-content max-h-[40dvh] min-h-20 resize-none bg-transparent text-base leading-relaxed outline-none md:text-sm"
-          onChange={(event) => setDescription(event.target.value)}
-          onKeyDown={(event) => {
-            if (isEnter(event) && (event.metaKey || event.ctrlKey)) {
-              event.preventDefault();
-              create();
-            }
-          }}
-          placeholder="Add a description… Markdown works."
+          className="max-h-[40dvh] min-h-20 overflow-y-auto text-base leading-relaxed outline-none md:text-sm"
+          key={created}
+          onSubmit={create}
+          onValueCommitted={setDescription}
+          placeholder="Add a description…"
           value={description}
         />
       </div>

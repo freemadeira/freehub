@@ -166,7 +166,7 @@ There is no backend and no database. The app is a static site: every change is a
 
 - **Projects.** A project groups boards and CRM tables, and the sidebar lists them under it. Its creator picks the members, renames it and can delete it. An organization can run as many projects as it likes, for example one per city or per product.
 - **Boards.** A board's creator picks its members. Members see the board and can edit any card or sprint. Only the creator can rename the board, change its members or delete it. A board can sit in a project or on its own. Anything from non-members is ignored, even if it reaches the relay.
-- **Cards.** A card can have several assignees, and its description is written in Markdown. Raw HTML in a description stays plain text, and links only go to web and mail addresses.
+- **Cards.** A card can have several assignees. Its description is rich text saved as Markdown: Markdown typed into it formats as you go (`### ` makes a heading, `[] ` or `- [ ] ` a checklist), pasted Markdown and web content keep their formatting, and text copied out across several blocks reads as Markdown. Raw HTML in a description stays plain text, and links only go to web and mail addresses.
 - **Inbox.** Typing `@` in a comment suggests the board's members. A mention is saved as a `nostr:npub…` reference in the comment with a `p` tag for that person (NIP-27), so the relay routes it and other Nostr clients show it too. Mentions land in the person's inbox; opening the card marks them read. Notifications are read from the comments themselves through the rules in `src/lib/notifications.ts`, so another way of delivering them, such as an email bridge subscribed to the relay, can reuse the same rules.
 - **CRM.** Each project can hold several tables, such as merchants, companies, people or deals. Every table has its own fields (text, numbers, money, dates, selects, members, links to other tables and more) and can have a stage field that turns it into a pipeline with won and lost endings. Any project member can add tables, change their fields and edit records. Records show up as a table (sorting, search, filters, column picker, bulk changes, CSV import and export), as a pipeline board and as insights. Every stage change is kept on the record, so its journey and the time spent in each stage can be read back. Notes, calls, emails, meetings and visits are logged on a record as comments.
 - **Saving.** Changes show up right away, then go to the signer and on to the relay. Once signed, a change is kept in the browser until every team relay has it, so it survives reloads and time offline. A change still waiting on the signer is lost if the tab closes, and the app warns before that happens.
@@ -201,7 +201,7 @@ Each member publishes their own version of a card, sprint, CRM table or record u
 - [TanStack Table](https://tanstack.com/table) — the CRM's sorting, filtering, selection and paging
 - [Motion](https://motion.dev/) — animations
 - [dnd-kit](https://dndkit.com/) — drag and drop
-- [Comark](https://comark.dev/) — Markdown in card descriptions
+- [Tiptap](https://tiptap.dev/) — the card description editor, on [ProseMirror](https://prosemirror.net/), with [marked](https://marked.js.org/) reading its Markdown
 - [applesauce](https://github.com/hzrd149/applesauce) — Nostr event store, relay connections and signers
 - [RxJS](https://rxjs.dev/) — streams from the event store
 - [wouter](https://github.com/molefrog/wouter) — routing
@@ -216,6 +216,7 @@ Each member publishes their own version of a card, sprint, CRM table or record u
 - Removing someone from a board or project hides the cards, sprints, CRM tables and records whose newest version is theirs: each falls back to an older version or disappears, a table with its records. Comments on their versions are hidden too. Adding them back shows it all again.
 - The columns are fixed: To do, In progress, Done.
 - No file attachments yet.
+- A linked image in a description, such as a `[![badge](…)](…)` badge, loses its link once the description is edited.
 - A CRM record is saved as a whole, so two people changing different fields of the same record at the same moment can undo one another's change.
 - Importing a CSV signs one event per row; a signer app may ask to approve each one. At most 500 rows go in per import.
 - A record remembers its last 100 stage changes.

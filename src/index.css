@@ -189,9 +189,9 @@
   }
 }
 
-/* Rendered markdown: card descriptions. */
+/* Rich text: card descriptions. */
 @layer components {
-  .markdown {
+  .rich-text {
     overflow-wrap: break-word;
 
     & > :first-child {
@@ -202,7 +202,7 @@
       margin-bottom: 0;
     }
 
-    & :where(p, ul, ol, blockquote, pre, table, hr, img) {
+    & :where(p, ul, ol, blockquote, pre, hr, .tableWrapper) {
       margin-block: 0.5rem;
     }
 
@@ -214,10 +214,14 @@
     }
 
     & h1 {
-      font-size: 1.25em;
+      font-size: 1.375em;
     }
 
     & h2 {
+      font-size: 1.25em;
+    }
+
+    & h3 {
       font-size: 1.125em;
     }
 
@@ -237,6 +241,11 @@
       margin-top: 0.125rem;
     }
 
+    /* List items and table cells hold paragraphs; they space like lines. */
+    & :where(li, th, td) > p {
+      margin-block: 0;
+    }
+
     & li > :where(ul, ol) {
       margin-block: 0.125rem;
     }
@@ -245,15 +254,50 @@
       color: var(--muted-foreground);
     }
 
-    & .contains-task-list {
+    & ul[data-type="taskList"] {
       padding-left: 0.125rem;
       list-style: none;
     }
 
-    & .task-list-item-checkbox {
-      margin-right: 0.375rem;
-      vertical-align: -0.125em;
+    & ul[data-type="taskList"] > li {
+      display: flex;
+      gap: 0.5rem;
+
+      & > label {
+        display: flex;
+        flex: none;
+        align-items: center;
+        /* Centers the box on the item's first line. */
+        height: 1lh;
+        user-select: none;
+      }
+
+      & > div {
+        flex: 1;
+        min-width: 0;
+      }
+
+      & > div > p {
+        margin-block: 0;
+      }
+
+      &[data-checked="true"] > div {
+        color: var(--muted-foreground);
+        text-decoration: line-through;
+      }
+    }
+
+    & input[type="checkbox"] {
+      cursor: pointer;
       accent-color: var(--primary);
+    }
+
+    & .is-editor-empty:first-child::before {
+      content: attr(data-placeholder);
+      float: left;
+      height: 0;
+      color: var(--muted-foreground);
+      pointer-events: none;
     }
 
     & a {
@@ -272,7 +316,7 @@
       font-weight: 600;
     }
 
-    & del {
+    & s {
       color: var(--muted-foreground);
     }
 
@@ -311,19 +355,27 @@
 
     & hr {
       border-color: var(--border);
+
+      &.ProseMirror-selectednode {
+        border-color: var(--ring);
+      }
+    }
+
+    & .tableWrapper {
+      overflow-x: auto;
     }
 
     & table {
-      display: block;
-      overflow-x: auto;
       border-collapse: collapse;
       font-size: 0.875em;
     }
 
     & :where(th, td) {
+      position: relative;
       border: 1px solid var(--border);
       padding: 0.25rem 0.625rem;
       text-align: left;
+      vertical-align: top;
     }
 
     & th {
@@ -331,7 +383,16 @@
       font-weight: 600;
     }
 
-    & img {
+    & .selectedCell::after {
+      position: absolute;
+      inset: 0;
+      background: color-mix(in oklab, var(--primary) 25%, transparent);
+      content: "";
+      pointer-events: none;
+    }
+
+    & img:not(.ProseMirror-separator) {
+      display: inline-block;
       max-width: 100%;
       border-radius: var(--radius-lg);
       outline: 1px solid oklch(0 0 0 / 0.1);
@@ -340,6 +401,16 @@
       .dark & {
         outline-color: oklch(1 0 0 / 0.1);
       }
+
+      &.ProseMirror-selectednode {
+        outline: 2px solid var(--ring);
+        outline-offset: 2px;
+      }
     }
   }
+}
+
+/* Outside the layers, to win over the editor's own base styles. */
+.rich-text .ProseMirror-gapcursor::after {
+  border-top-color: var(--foreground);
 }

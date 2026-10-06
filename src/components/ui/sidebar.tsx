@@ -84,7 +84,9 @@ function SidebarProvider({
   }, [isMobile, open, persistOpen]);
 
   const onShortcut = useEffectEvent((event: KeyboardEvent) => {
+    // A focused editor may have used the keys already, for bold.
     if (
+      !event.defaultPrevented &&
       event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
       (event.metaKey || event.ctrlKey)
     ) {

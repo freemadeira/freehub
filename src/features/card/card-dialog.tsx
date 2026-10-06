@@ -1,11 +1,11 @@
 import { cn } from "cn";
-import { PencilIcon, Trash2Icon, XIcon } from "lucide-react";
-import type { ChangeEvent, MouseEvent } from "react";
+import { Trash2Icon, XIcon } from "lucide-react";
+import type { ChangeEvent } from "react";
 import { useRef, useState } from "react";
 
 import { CopyButton } from "@/components/copy";
 import { IconButton } from "@/components/icon-button";
-import { Markdown } from "@/components/markdown";
+import { MarkdownEditor } from "@/components/markdown-editor";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,9 +26,7 @@ import type { Card } from "@/lib/model";
 import { cardKey } from "@/lib/model";
 
 const INLINE_FIELD =
-  "field-sizing-content -mx-2 w-[calc(100%+1rem)] resize-none rounded-lg px-2 py-1 outline-none transition-[background-color,box-shadow] duration-150 placeholder:text-muted-foreground hover:not-focus:bg-foreground/5 focus-visible:ring-3 focus-visible:ring-ring/30";
-
-const DESCRIPTION = "min-h-20 py-1.5 text-base leading-relaxed md:text-sm";
+  "-mx-2 w-[calc(100%+1rem)] rounded-lg px-2 py-1 outline-none transition-[background-color,box-shadow] duration-150 hover:not-focus:bg-foreground/5 focus-visible:ring-3 focus-visible:ring-ring/30";
 
 // Typing is kept local until the field loses focus, so teammates' edits never overwrite it mid-sentence.
 function useDraft(value: string, save: (draft: string) => void) {
@@ -58,7 +56,10 @@ function TitleField({ card }: { card: Card }) {
     <textarea
       {...field}
       aria-label="Title"
-      className={cn(INLINE_FIELD, "text-xl leading-snug font-semibold")}
+      className={cn(
+        INLINE_FIELD,
+        "placeholder:text-muted-foreground field-sizing-content resize-none text-xl leading-snug font-semibold"
+      )}
       onKeyDown={(event) => {
         if (event.key === "Enter" && !event.nativeEvent.isComposing) {
           event.preventDefault();
@@ -71,100 +72,30 @@ function TitleField({ card }: { card: Card }) {
   );
 }
 
-// Clicks on links, checkboxes or a text selection belong to the rendered text.
-function wantsEditing(event: MouseEvent): boolean {
-  const target = event.target instanceof Element ? event.target : null;
-  return (
-    !target?.closest("a, button, input") && !document.getSelection()?.toString()
-  );
-}
-
-function DescriptionEditor({
-  card,
-  onDone,
-}: {
-  card: Card;
-  onDone: () => void;
-}) {
+function DescriptionField({ card }: { card: Card }) {
   const { board } = useBoard();
-  const field = useDraft(card.description, (draft) => {
-    const description = draft.trim();
-    if (description !== card.description) {
-      updateCard(board, card, { description });
-    }
-  });
   return (
-    <textarea
-      {...field}
+    <MarkdownEditor
       aria-label="Description"
-      autoFocus
-      className={cn(INLINE_FIELD, DESCRIPTION)}
-      onBlur={() => {
-        field.onBlur();
-        onDone();
-      }}
-      onFocus={(event) => {
-        const { length } = event.currentTarget.value;
-        event.currentTarget.setSelectionRange(length, length);
-      }}
+      className={cn(
+        INLINE_FIELD,
+        "min-h-20 py-1.5 text-base leading-relaxed md:text-sm"
+      )}
       onKeyDown={(event) => {
         // Escape finishes editing instead of closing the card.
-        if (event.key === "Escape") {
+        if (event.key === "Escape" && event.target instanceof HTMLElement) {
           event.stopPropagation();
-          event.currentTarget.blur();
+          event.target.blur();
         }
       }}
-      placeholder="Add a description… Markdown works."
+      onValueCommitted={(description) => {
+        if (description !== card.description) {
+          updateCard(board, card, { description });
+        }
+      }}
+      placeholder="Add a description…"
+      value={card.description}
     />
-  );
-}
-
-function DescriptionField({ card }: { card: Card }) {
-  const [editing, setEditing] = useState(false);
-  const edit = () => setEditing(true);
-
-  if (editing) {
-    return <DescriptionEditor card={card} onDone={() => setEditing(false)} />;
-  }
-  if (!card.description) {
-    return (
-      <button
-        className={cn(
-          INLINE_FIELD,
-          DESCRIPTION,
-          "text-muted-foreground text-left"
-        )}
-        onClick={edit}
-        type="button"
-      >
-        Add a description…
-      </button>
-    );
-  }
-  return (
-    // Clicking the text is a shortcut; the edit button is the accessible way in.
-    // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
-    <div
-      className="group/description hover:bg-foreground/5 relative -mx-2 cursor-text rounded-lg px-2 py-1.5 transition-colors duration-150"
-      onClick={(event) => {
-        if (wantsEditing(event)) {
-          edit();
-        }
-      }}
-    >
-      <Markdown
-        className="text-base leading-relaxed md:text-sm"
-        source={card.description}
-      />
-      <IconButton
-        className="bg-popover absolute top-1 right-1 opacity-0 transition-opacity duration-150 group-hover/description:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
-        label="Edit description"
-        onClick={edit}
-        size="icon-xs"
-      >
-        <PencilIcon />
-      </IconButton>
-    </div>
   );
 }
 
