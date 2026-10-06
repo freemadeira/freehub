@@ -5,6 +5,8 @@ import tailwindcss from "@tailwindcss/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+const noYjs = path.resolve(import.meta.dirname, "./src/lib/no-yjs.ts");
+
 export default defineConfig({
   plugins: [
     react(),
@@ -14,6 +16,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),
+      // The drag handle's Yjs support, which the app doesn't use. See the file.
+      "@tiptap/extension-collaboration": noYjs,
+      "@tiptap/y-tiptap": noYjs,
     },
   },
 });

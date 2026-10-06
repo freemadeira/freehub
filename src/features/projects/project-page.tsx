@@ -21,9 +21,11 @@ import { BoardDialog } from "@/features/boards/board-dialog";
 import { tablePath } from "@/features/crm/crm-context";
 import { NewTableDialog } from "@/features/crm/new-table-dialog";
 import { TableIcon } from "@/features/crm/table-icon";
+import { PageGrid, useNewPage } from "@/features/docs/docs-page";
 import { ProjectDialog } from "@/features/projects/project-dialog";
 import type { CrmRecord, CrmTable, ProjectContent } from "@/lib/crm";
 import { firstValue, stageField } from "@/lib/crm";
+import type { DocsContent } from "@/lib/docs";
 import type { Board } from "@/lib/model";
 import { SWATCH_COLORS } from "@/lib/palette";
 import type { Project } from "@/lib/project";
@@ -140,6 +142,7 @@ function TableCard({
 
 interface ProjectPageProps {
   project: Project;
+  docs: DocsContent;
   projects: Project[];
   boards: Board[];
   content?: ProjectContent;
@@ -149,6 +152,7 @@ interface ProjectPageProps {
 
 export function ProjectPage({
   project,
+  docs,
   projects,
   boards,
   content,
@@ -156,6 +160,7 @@ export function ProjectPage({
   pubkey,
 }: ProjectPageProps) {
   const [dialog, setDialog] = useState<"settings" | "board" | "table">();
+  const newPage = useNewPage(project, docs);
   const projectBoards = boards.filter(
     (board) => board.project === project.address
   );
@@ -264,6 +269,23 @@ export function ProjectPage({
           ) : (
             <p className="text-muted-foreground text-sm">
               No boards in this project yet.
+            </p>
+          )}
+        </Section>
+        <Section
+          action={
+            <Button onClick={newPage} variant="outline">
+              <PlusIcon />
+              New page
+            </Button>
+          }
+          title="Docs"
+        >
+          {docs.roots.length > 0 ? (
+            <PageGrid pages={docs.roots} project={project} />
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              No pages in this project yet.
             </p>
           )}
         </Section>

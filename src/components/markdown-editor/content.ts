@@ -122,6 +122,7 @@ const BulletTaskItem = TaskItem.extend({
 /** What a description can hold. */
 export const CONTENT = [
   StarterKit.configure({
+    dropcursor: { class: "drop-cursor", color: false, width: 3 },
     link: {
       isAllowedUri: (url, { defaultValidate }) =>
         defaultValidate(url) && isWebOrMail(url),

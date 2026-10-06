@@ -19,6 +19,7 @@ import { INBOX_PATH, InboxPage } from "@/features/inbox/inbox-page";
 import { LoginPage } from "@/features/login/login-page";
 import { ProjectDialog } from "@/features/projects/project-dialog";
 import { useBoards } from "@/hooks/use-boards";
+import { useDocs } from "@/hooks/use-docs";
 import { useInbox } from "@/hooks/use-inbox";
 import { useObservableValue } from "@/hooks/use-observable-value";
 import { useProjectTables } from "@/hooks/use-project-content";
@@ -80,6 +81,7 @@ function Workspace({ pubkey }: { pubkey: string }) {
   const { boards, loaded: boardsLoaded } = useBoards(pubkey);
   const { projects, loaded: projectsLoaded } = useProjects(pubkey);
   const tables = useProjectTables(projects);
+  const { docs, loaded: docsLoaded } = useDocs(projects);
   const inbox = useInbox(pubkey, boards);
   const [creatingProject, setCreatingProject] = useState(false);
   const [, params] = useRoute<{ slug: string }>("/:slug");
@@ -97,6 +99,7 @@ function Workspace({ pubkey }: { pubkey: string }) {
     <SidebarProvider>
       <AppSidebar
         boards={boards}
+        docs={docs}
         onNewProject={newProject}
         projects={projects}
         pubkey={pubkey}
@@ -120,6 +123,8 @@ function Workspace({ pubkey }: { pubkey: string }) {
               <Suspense fallback={<RouteFallback />}>
                 <ProjectRoute
                   boards={boards}
+                  docs={docs}
+                  docsLoaded={projectsLoaded && docsLoaded}
                   loaded={projectsLoaded}
                   projects={projects}
                   pubkey={pubkey}

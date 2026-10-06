@@ -1,12 +1,23 @@
-import { Link } from "wouter";
+import { useEffect } from "react";
+import { Link, useLocation } from "wouter";
 
 import { TopBar } from "@/components/top-bar";
 import { buttonVariants } from "@/components/ui/button";
 import { Empty, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TablePage } from "@/features/crm/table-page";
+import {
+  DOCS_SEGMENT,
+  docsPath,
+  pagePath,
+  parsePageParam,
+} from "@/features/docs/docs-context";
+import { DocsPage } from "@/features/docs/docs-page";
+import { PageView } from "@/features/docs/page-view";
 import { ProjectPage } from "@/features/projects/project-page";
 import { useProjectContent } from "@/hooks/use-project-content";
+import type { DocsContent } from "@/lib/docs";
+import { EMPTY_DOCS } from "@/lib/docs";
 import type { Board } from "@/lib/model";
 import type { Project } from "@/lib/project";
 
@@ -40,6 +51,8 @@ function Loading() {
 
 interface ProjectViewProps {
   project: Project;
+  /** The project's doc pages. */
+  docs: DocsContent;
   projects: Project[];
   boards: Board[];
   tableSlug?: string;
@@ -96,21 +109,89 @@ function ProjectView({
   );
 }
 
-interface ProjectRouteProps extends Omit<ProjectViewProps, "project"> {
+interface DocsViewProps {
+  project: Project;
+  docs: DocsContent;
+  loaded: boolean;
+  /** The page part of the link: its title, then its id. */
+  pageParam?: string;
+  pubkey: string;
+}
+
+function DocsView({ project, docs, loaded, pageParam, pubkey }: DocsViewProps) {
+  const [, navigate] = useLocation();
+  const id = pageParam ? parsePageParam(pageParam) : undefined;
+  const page = id ? docs.byId.get(id) : undefined;
+  const path = page ? pagePath(project, page) : undefined;
+  // The link follows the title as it changes; any title before the id still opens the page.
+  useEffect(() => {
+    if (path && pageParam && !path.endsWith(`/${pageParam}`)) {
+      navigate(path, { replace: true });
+    }
+  }, [navigate, pageParam, path]);
+
+  if (!pageParam) {
+    return <DocsPage docs={docs} loaded={loaded} project={project} />;
+  }
+  if (page) {
+    return (
+      <PageView docs={docs} page={page} project={project} pubkey={pubkey} />
+    );
+  }
+  return (
+    <>
+      <TopBar
+        crumbs={[
+          { href: `/p/${project.slug}`, label: project.title },
+          { href: docsPath(project), label: "Docs" },
+        ]}
+      />
+      {loaded ? (
+        <NotFound
+          href={docsPath(project)}
+          label="Docs"
+          title="Page not found"
+        />
+      ) : (
+        <Loading />
+      )}
+    </>
+  );
+}
+
+interface ProjectRouteProps extends Omit<ProjectViewProps, "project" | "docs"> {
   slug: string;
   loaded: boolean;
+  /** Every project's doc pages, by project address. */
+  docs: Map<string, DocsContent>;
+  docsLoaded: boolean;
 }
 
 export function ProjectRoute({
   slug,
   loaded,
   projects,
+  docs,
+  docsLoaded,
   ...props
 }: ProjectRouteProps) {
   const project = projects.find((item) => item.slug === slug.toLowerCase());
+  if (project && props.tableSlug?.toLowerCase() === DOCS_SEGMENT) {
+    return (
+      <DocsView
+        docs={docs.get(project.address) ?? EMPTY_DOCS}
+        key={project.address}
+        loaded={docsLoaded}
+        pageParam={props.recordId}
+        project={project}
+        pubkey={props.pubkey}
+      />
+    );
+  }
   if (project) {
     return (
       <ProjectView
+        docs={docs.get(project.address) ?? EMPTY_DOCS}
         key={project.address}
         project={project}
         projects={projects}

@@ -6,10 +6,10 @@ import {
   SquareKanbanIcon,
 } from "lucide-react";
 import { useState } from "react";
-import type { LinkProps } from "wouter";
-import { Link, useLocation, useSearchParams } from "wouter";
+import { useLocation, useSearchParams } from "wouter";
 
 import { Logo } from "@/components/logo";
+import { NavLink } from "@/components/nav-link";
 import { ProjectAvatar } from "@/components/project-avatar";
 import {
   Collapsible,
@@ -39,28 +39,17 @@ import { UserMenu } from "@/components/user-menu";
 import { boardPath } from "@/features/board/board-context";
 import { findBoard, parseSlug } from "@/features/board/board-route";
 import { TableIcon } from "@/features/crm/table-icon";
+import { SidebarDocs } from "@/features/docs/sidebar-docs";
 import { INBOX_PATH } from "@/features/inbox/inbox-page";
 import type { CrmTable } from "@/lib/crm";
+import type { DocsContent } from "@/lib/docs";
+import { EMPTY_DOCS } from "@/lib/docs";
 import type { Board } from "@/lib/model";
 import type { Project } from "@/lib/project";
 
 /** Projects shown open until the user folds them. */
 const OPEN_BY_DEFAULT = 3;
 const MAX_BADGE = 99;
-
-// The mobile sheet covers the page, so it closes once a link is followed.
-function NavLink(props: LinkProps) {
-  const { setOpenMobile } = useSidebar();
-  return (
-    <Link
-      {...props}
-      onClick={(event) => {
-        props.onClick?.(event);
-        setOpenMobile(false);
-      }}
-    />
-  );
-}
 
 /** The board the current page shows, if any. */
 function useOpenBoard(boards: Board[]): Board | undefined {
@@ -75,6 +64,7 @@ function useOpenBoard(boards: Board[]): Board | undefined {
 interface ProjectItemProps {
   project: Project;
   tables: CrmTable[];
+  docs: DocsContent;
   /** This project's boards. */
   boards: Board[];
   /** Every board, to tell apart boards sharing a code. */
@@ -88,6 +78,7 @@ interface ProjectItemProps {
 function ProjectItem({
   project,
   tables,
+  docs,
   boards,
   allBoards,
   openBoard,
@@ -148,13 +139,7 @@ function ProjectItem({
               </SidebarMenuSubButton>
             </SidebarMenuSubItem>
           ))}
-          {tables.length === 0 && boards.length === 0 && (
-            <SidebarMenuSubItem>
-              <span className="text-muted-foreground flex h-8 items-center px-2 text-sm">
-                Nothing here yet
-              </span>
-            </SidebarMenuSubItem>
-          )}
+          <SidebarDocs docs={docs} project={project} />
         </SidebarMenuSub>
       </CollapsibleContent>
     </Collapsible>
@@ -165,6 +150,8 @@ interface AppSidebarProps {
   boards: Board[];
   projects: Project[];
   tables: Map<string, CrmTable[]>;
+  /** Every project's doc pages, by project address. */
+  docs: Map<string, DocsContent>;
   pubkey: string;
   /** Unread notifications in the inbox. */
   unread: number;
@@ -175,6 +162,7 @@ export function AppSidebar({
   boards,
   projects,
   tables,
+  docs,
   pubkey,
   unread,
   onNewProject,
@@ -262,6 +250,7 @@ export function AppSidebar({
                 <ProjectItem
                   allBoards={boards}
                   boards={projectBoards}
+                  docs={docs.get(project.address) ?? EMPTY_DOCS}
                   key={project.address}
                   openBoard={openBoard}
                   location={location}

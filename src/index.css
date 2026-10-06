@@ -419,3 +419,72 @@
 .rich-text .ProseMirror-gapcursor::after {
   border-top-color: var(--foreground);
 }
+
+/* Doc pages: roomier text than a card, with Notion's hints and handles. */
+@layer components {
+  .page-text {
+    font-size: 1rem;
+    line-height: 1.65;
+    outline: none;
+
+    & :where(p, ul, ol, blockquote, pre, hr, .tableWrapper) {
+      margin-block: 0.25rem;
+    }
+
+    & :where(h1, h2, h3) {
+      margin-top: 1.75rem;
+      margin-bottom: 0.25rem;
+      letter-spacing: -0.01em;
+    }
+
+    & h1 {
+      font-size: 1.875em;
+    }
+
+    & h2 {
+      font-size: 1.5em;
+    }
+
+    & h3 {
+      font-size: 1.25em;
+    }
+
+    & hr {
+      margin-block: 1rem;
+    }
+
+    /* The empty line with the cursor says what to type, while editing. */
+    & .is-empty::before {
+      content: attr(data-placeholder);
+      float: left;
+      height: 0;
+      color: var(--muted-foreground);
+      opacity: 0.7;
+      pointer-events: none;
+    }
+
+    &:not(.ProseMirror-focused) .is-empty:not(.is-editor-empty)::before {
+      content: none;
+    }
+
+    /* The block handles sit in this margin, so hovering it shows them. */
+    @media (width >= 40rem) {
+      margin-inline: -4rem;
+      padding-inline: 4rem;
+    }
+
+    /* The block the handle's menu is for. */
+    & :not(img, hr).ProseMirror-selectednode {
+      border-radius: var(--radius-sm);
+      background: color-mix(in oklab, var(--primary) 18%, transparent);
+      outline: none;
+    }
+  }
+}
+
+/* Where a dragged block lands. Outside the layers: it's appended next to the editor. */
+.drop-cursor {
+  border-radius: 9999px;
+  background: color-mix(in oklab, var(--primary) 85%, var(--foreground));
+  pointer-events: none;
+}

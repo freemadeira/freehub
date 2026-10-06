@@ -77,6 +77,8 @@ export type TableIcon = (typeof TABLE_ICONS)[number];
 export type Currency = (typeof CURRENCIES)[number];
 export type ActivityType = (typeof ACTIVITY_TYPES)[number]["id"];
 
+/** Table links that project pages use for themselves, like `/p/:project/docs`. */
+export const RESERVED_TABLE_SLUGS: readonly string[] = ["docs"];
 /** Every table has exactly one title field, always first. */
 export const TITLE_FIELD = "title";
 /** Stage history kept on each record, oldest dropped first. */
@@ -414,7 +416,7 @@ export function resolveTables(
     );
   // Two tables can share a slug when one was made before the other loaded.
   // The newer one gets a suffix, so each keeps its own address.
-  const taken = new Set<string>();
+  const taken = new Set(RESERVED_TABLE_SLUGS);
   return tables.map((table) => {
     const slug = uniqueSlug(table.slug, taken);
     taken.add(slug);
