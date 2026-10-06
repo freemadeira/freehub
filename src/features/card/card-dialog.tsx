@@ -23,7 +23,7 @@ import { CardProperties } from "@/features/card/card-properties";
 import { Comments } from "@/features/card/comments";
 import { deleteCard, updateCard } from "@/lib/actions";
 import type { Card } from "@/lib/model";
-import { cardKey } from "@/lib/model";
+import { cardKey, needsCardId } from "@/lib/model";
 
 const INLINE_FIELD =
   "field-sizing-content -mx-2 w-[calc(100%+1rem)] resize-none rounded-lg px-2 py-1 outline-none transition-[background-color,box-shadow] duration-150 placeholder:text-muted-foreground hover:not-focus:bg-foreground/5 focus-visible:ring-3 focus-visible:ring-ring/30";
@@ -209,7 +209,7 @@ function DeleteCard({
 }
 
 function CardDetails({ card, onClose }: { card: Card; onClose: () => void }) {
-  const { board } = useBoard();
+  const { board, content } = useBoard();
   return (
     <>
       <div className="-mt-1 -mr-2 flex items-center gap-0.5">
@@ -219,7 +219,14 @@ function CardDetails({ card, onClose }: { card: Card; onClose: () => void }) {
         <FluidTooltip.Group>
           <CopyButton
             label="Copy link"
-            value={new URL(cardPath(board, card), window.location.origin).href}
+            value={
+              new URL(
+                cardPath(board, card, {
+                  withId: needsCardId(content, card),
+                }),
+                window.location.origin
+              ).href
+            }
           />
           <DeleteCard card={card} onDeleted={onClose} />
           <IconButton label="Close" onClick={onClose}>

@@ -96,6 +96,8 @@ export interface BoardContent {
   sprints: Sprint[];
   nextNumber: number;
   nextSprintNumber: number;
+  /** Numbers on more than one card, since each device picks them on its own. */
+  sharedNumbers: ReadonlySet<number>;
 }
 
 export interface Comment {
@@ -335,6 +337,17 @@ function highestNumber(events: Iterable<NostrEvent>): number {
   return highest;
 }
 
+function findSharedNumbers(cards: Card[]): Set<number> {
+  const seen = new Set<number>();
+  const shared = new Set<number>();
+  for (const { number } of cards) {
+    if (number !== undefined) {
+      (seen.has(number) ? shared : seen).add(number);
+    }
+  }
+  return shared;
+}
+
 export function resolveBoard(board: Board, events: NostrEvent[]): BoardContent {
   const authors = new Set(board.members);
   const cardVersions = latestVersions(events, CARD_KIND, authors);
@@ -356,8 +369,14 @@ export function resolveBoard(board: Board, events: NostrEvent[]): BoardContent {
         )
       ) + 1,
     nextSprintNumber: highestNumber(sprintVersions.values()) + 1,
+    sharedNumbers: findSharedNumbers(cards),
     sprints,
   };
+}
+
+/** Whether the card's number alone can't tell it apart on the board. */
+export function needsCardId(content: BoardContent, card: Card): boolean {
+  return card.number === undefined || content.sharedNumbers.has(card.number);
 }
 
 export function boardTemplate(

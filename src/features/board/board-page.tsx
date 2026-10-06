@@ -17,6 +17,7 @@ import type { NewCardDefaults } from "@/features/card/new-card-dialog";
 import { NewCardDialog } from "@/features/card/new-card-dialog";
 import { useBoardContent } from "@/hooks/use-board-content";
 import type { Board, Card } from "@/lib/model";
+import { needsCardId } from "@/lib/model";
 import type { Project } from "@/lib/project";
 
 const TABS = ["backlog", "sprint", "done"] as const;
@@ -40,8 +41,9 @@ function useSelectedCard(
   cardId: string | null
 ) {
   const [lastCard, setLastCard] = useState<Card>();
+  // The id wins: it tells apart cards that share a number.
   const selected = cards?.find((card) =>
-    cardNumber === undefined ? card.id === cardId : card.number === cardNumber
+    cardId === null ? card.number === cardNumber : card.id === cardId
   );
   if (selected && selected.event !== lastCard?.event) {
     setLastCard(selected);
@@ -118,7 +120,11 @@ export function BoardPage({
   const scope: BoardScope | null = content
     ? {
         board,
-        cardHref: (card) => cardPath(board, card, tabQuery),
+        cardHref: (card) =>
+          cardPath(board, card, {
+            query: tabQuery,
+            withId: needsCardId(content, card),
+          }),
         cards: assignee
           ? content.cards.filter((card) => card.assignees.includes(assignee))
           : content.cards,

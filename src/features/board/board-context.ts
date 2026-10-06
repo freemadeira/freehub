@@ -29,14 +29,17 @@ export function useBoard(): BoardScope {
   return scope;
 }
 
-/** Cards from clients that don't number them are addressed by id instead. */
+/**
+ * A card's path by its number. Pass `withId` when the number alone is not
+ * enough: cards from clients that don't number them, or cards sharing a number.
+ */
 export function cardPath(
   board: Board,
   card: Card,
-  query?: URLSearchParams
+  { query, withId = false }: { query?: URLSearchParams; withId?: boolean } = {}
 ): string {
   const params = new URLSearchParams(query);
-  if (card.number === undefined) {
+  if (withId || card.number === undefined) {
     params.set("card", card.id);
   }
   const search = params.toString();

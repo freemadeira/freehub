@@ -53,7 +53,8 @@ function Row({ item, inbox }: { item: InboxItem; inbox: Inbox }) {
           "hover:bg-foreground/5 focus-visible:ring-ring/50 flex items-center gap-3 rounded-xl py-2.5 pr-3 pl-2 transition-colors duration-150 outline-none focus-visible:ring-3",
           read && "text-muted-foreground"
         )}
-        href={cardPath(board, card)}
+        // The inbox doesn't know the board's other cards, so it never relies on the number alone.
+        href={cardPath(board, card, { withId: true })}
         onClick={() => inbox.setRead([item], true)}
         state={OPENED_FROM_BOARD}
       >
