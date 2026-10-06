@@ -37,6 +37,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -414,26 +415,28 @@ function TableSettingsForm({ onDone }: { onDone: () => void }) {
 
       <div className="flex flex-col gap-2">
         <h3 className="text-sm font-medium">Fields</h3>
-        <ul className="flex flex-col gap-1.5">
-          {fields.map((field, index) => (
-            <FieldRow
-              count={fields.length}
-              field={field}
-              index={index}
-              key={field.id}
-              onChange={change}
-              onMove={(offset) => {
-                // The title field always stays first.
-                if (index + offset >= 1) {
-                  setFields(swap(fields, index, offset));
+        <FluidTooltip.Group>
+          <ul className="flex flex-col gap-1.5">
+            {fields.map((field, index) => (
+              <FieldRow
+                count={fields.length}
+                field={field}
+                index={index}
+                key={field.id}
+                onChange={change}
+                onMove={(offset) => {
+                  // The title field always stays first.
+                  if (index + offset >= 1) {
+                    setFields(swap(fields, index, offset));
+                  }
+                }}
+                onRemove={() =>
+                  setFields(fields.filter((item) => item.id !== field.id))
                 }
-              }}
-              onRemove={() =>
-                setFields(fields.filter((item) => item.id !== field.id))
-              }
-            />
-          ))}
-        </ul>
+              />
+            ))}
+          </ul>
+        </FluidTooltip.Group>
         <AddField
           fields={fields}
           onAdd={(type) =>

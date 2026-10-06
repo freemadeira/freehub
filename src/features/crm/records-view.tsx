@@ -47,6 +47,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty";
+import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import {
   Table,
   TableBody,
@@ -613,22 +614,24 @@ export function RecordsView({ onCreate, onImport }: RecordsViewProps) {
             <span className="text-muted-foreground mr-2 tabular-nums">
               {first}–{last} of {filtered.length}
             </span>
-            <IconButton
-              disabled={!table.getCanPreviousPage()}
-              label="Previous page"
-              onClick={() => table.previousPage()}
-              variant="outline"
-            >
-              <ChevronLeftIcon />
-            </IconButton>
-            <IconButton
-              disabled={!table.getCanNextPage()}
-              label="Next page"
-              onClick={() => table.nextPage()}
-              variant="outline"
-            >
-              <ChevronRightIcon />
-            </IconButton>
+            <FluidTooltip.Group>
+              <IconButton
+                disabled={!table.getCanPreviousPage()}
+                label="Previous page"
+                onClick={() => table.previousPage()}
+                variant="outline"
+              >
+                <ChevronLeftIcon />
+              </IconButton>
+              <IconButton
+                disabled={!table.getCanNextPage()}
+                label="Next page"
+                onClick={() => table.nextPage()}
+                variant="outline"
+              >
+                <ChevronRightIcon />
+              </IconButton>
+            </FluidTooltip.Group>
           </div>
         )}
       </div>

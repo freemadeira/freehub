@@ -26,13 +26,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { UserAvatar } from "@/components/user-avatar";
 import { useCrm } from "@/features/crm/crm-context";
 import { useProfile } from "@/hooks/use-profile";
@@ -260,25 +256,25 @@ function Composer({ record }: { record: CrmRecord }) {
         }}
         value={[type]}
       >
-        {ACTIVITY_TYPES.map((item) => {
-          const Icon = ACTIVITY_ICONS[item.id];
-          return (
-            <Tooltip key={item.id}>
-              <TooltipTrigger
-                render={
+        <FluidTooltip.Group>
+          {ACTIVITY_TYPES.map((item) => {
+            const Icon = ACTIVITY_ICONS[item.id];
+            return (
+              <FluidTooltip.Root key={item.id}>
+                <FluidTooltip.Trigger>
                   <ToggleGroupItem
                     aria-label={item.label}
                     className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground data-pressed:bg-foreground/8 data-pressed:text-foreground flex size-8 items-center justify-center rounded-lg transition-colors duration-150 [&_svg]:size-4"
                     value={item.id}
-                  />
-                }
-              >
-                <Icon />
-              </TooltipTrigger>
-              <TooltipContent>{item.label}</TooltipContent>
-            </Tooltip>
-          );
-        })}
+                  >
+                    <Icon />
+                  </ToggleGroupItem>
+                </FluidTooltip.Trigger>
+                <FluidTooltip.Content>{item.label}</FluidTooltip.Content>
+              </FluidTooltip.Root>
+            );
+          })}
+        </FluidTooltip.Group>
       </ToggleGroup>
       <Textarea
         aria-label={label}

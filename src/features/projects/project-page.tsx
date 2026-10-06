@@ -9,12 +9,8 @@ import { ProjectAvatar } from "@/components/project-avatar";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
+import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import {
   BoardCard,
   CARD_SURFACE,
@@ -78,10 +74,10 @@ function StageBar({
   return (
     <div className="mt-auto flex flex-col gap-2 pt-2">
       <div className="flex h-2 gap-0.5 overflow-hidden rounded-full">
-        {parts.map(({ option, count }) => (
-          <Tooltip key={option.id}>
-            <TooltipTrigger
-              render={
+        <FluidTooltip.Group>
+          {parts.map(({ option, count }) => (
+            <FluidTooltip.Root key={option.id}>
+              <FluidTooltip.Trigger>
                 <span
                   className={cn(
                     "h-full first:rounded-l-full last:rounded-r-full",
@@ -89,13 +85,13 @@ function StageBar({
                   )}
                   style={{ flexGrow: count }}
                 />
-              }
-            />
-            <TooltipContent>
-              {option.label} <span className="tabular-nums">{count}</span>
-            </TooltipContent>
-          </Tooltip>
-        ))}
+              </FluidTooltip.Trigger>
+              <FluidTooltip.Content>
+                {option.label} <span className="tabular-nums">{count}</span>
+              </FluidTooltip.Content>
+            </FluidTooltip.Root>
+          ))}
+        </FluidTooltip.Group>
       </div>
       {wonLabel && (
         <span className="text-muted-foreground text-xs">

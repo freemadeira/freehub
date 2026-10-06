@@ -4,6 +4,7 @@ import { ArrowDownIcon, ArrowUpIcon, PlusIcon, XIcon } from "lucide-react";
 import { ColorPicker } from "@/components/color-picker";
 import { IconButton } from "@/components/icon-button";
 import { Button } from "@/components/ui/button";
+import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import {
   Popover,
   PopoverContent,
@@ -159,26 +160,28 @@ export function OptionsEditor({
   return (
     <div className="flex flex-col gap-1.5">
       {options.length > 0 && (
-        <ul className="flex flex-col gap-1">
-          {options.map((option, index) => (
-            <OptionRow
-              count={options.length}
-              field={field}
-              index={index}
-              key={option.id}
-              onChange={(next) =>
-                onChange(
-                  options.map((item) => (item.id === option.id ? next : item))
-                )
-              }
-              onMove={(offset) => onChange(swap(options, index, offset))}
-              onRemove={() =>
-                onChange(options.filter((item) => item.id !== option.id))
-              }
-              option={option}
-            />
-          ))}
-        </ul>
+        <FluidTooltip.Group>
+          <ul className="flex flex-col gap-1">
+            {options.map((option, index) => (
+              <OptionRow
+                count={options.length}
+                field={field}
+                index={index}
+                key={option.id}
+                onChange={(next) =>
+                  onChange(
+                    options.map((item) => (item.id === option.id ? next : item))
+                  )
+                }
+                onMove={(offset) => onChange(swap(options, index, offset))}
+                onRemove={() =>
+                  onChange(options.filter((item) => item.id !== option.id))
+                }
+                option={option}
+              />
+            ))}
+          </ul>
+        </FluidTooltip.Group>
       )}
       <Button
         className="self-start"

@@ -1,29 +1,23 @@
+import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { UserAvatar } from "@/components/user-avatar";
 import { useProfile } from "@/hooks/use-profile";
 
 function Member({ pubkey }: { pubkey: string }) {
   const { name } = useProfile(pubkey);
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <ToggleGroupItem
-            aria-label={name}
-            className="ring-background data-pressed:ring-primary rounded-full ring-2 transition-[opacity,box-shadow] duration-150 group-has-data-pressed/filter:opacity-50 hover:z-10 hover:opacity-100 focus-visible:z-10 data-pressed:z-10 data-pressed:opacity-100"
-            value={pubkey}
-          />
-        }
-      >
-        <UserAvatar pubkey={pubkey} size="sm" />
-      </TooltipTrigger>
-      <TooltipContent>{name}</TooltipContent>
-    </Tooltip>
+    <FluidTooltip.Root>
+      <FluidTooltip.Trigger>
+        <ToggleGroupItem
+          aria-label={name}
+          className="ring-background data-pressed:ring-primary rounded-full ring-2 transition-[opacity,box-shadow] duration-150 group-has-data-pressed/filter:opacity-50 hover:z-10 hover:opacity-100 focus-visible:z-10 data-pressed:z-10 data-pressed:opacity-100"
+          value={pubkey}
+        >
+          <UserAvatar pubkey={pubkey} size="sm" />
+        </ToggleGroupItem>
+      </FluidTooltip.Trigger>
+      <FluidTooltip.Content>{name}</FluidTooltip.Content>
+    </FluidTooltip.Root>
   );
 }
 
@@ -48,9 +42,11 @@ export function AssigneeFilter({
       onValueChange={(next) => onChange(next[0])}
       value={value ? [value] : []}
     >
-      {members.map((member) => (
-        <Member key={member} pubkey={member} />
-      ))}
+      <FluidTooltip.Group>
+        {members.map((member) => (
+          <Member key={member} pubkey={member} />
+        ))}
+      </FluidTooltip.Group>
     </ToggleGroup>
   );
 }

@@ -9,11 +9,7 @@ import {
 import type { ReactNode } from "react";
 import { Link } from "wouter";
 
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { useCrm } from "@/features/crm/crm-context";
 import { OptionChip, Person } from "@/features/crm/values";
 import type { CrmRecord, CrmTable, Field, FieldOption } from "@/lib/crm";
@@ -107,52 +103,52 @@ function Funnel({
   }));
   const max = Math.max(1, ...rows.map((row) => row.count));
   return (
-    <ul className="flex flex-col gap-2.5">
-      {rows.map(({ option, count }) => {
-        const share = records.length > 0 ? count / records.length : 0;
-        const label = `${option.label}: ${count} ${(count === 1 ? table.singular : table.title).toLowerCase()}, ${percent.format(share)}`;
-        return (
-          <li
-            className="grid grid-cols-[minmax(6rem,9rem)_1fr] items-center gap-3"
-            key={option.id}
-          >
-            <span className="flex min-w-0 items-center gap-2 text-sm">
-              <span
-                aria-hidden
-                className={cn(
-                  "size-2 shrink-0 rounded-full",
-                  SWATCH_COLORS[option.color]
-                )}
-              />
-              <span className="truncate">{option.label}</span>
-            </span>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <div className="group/bar flex h-6 items-center gap-2" />
-                }
-              >
+    <FluidTooltip.Group>
+      <ul className="flex flex-col gap-2.5">
+        {rows.map(({ option, count }) => {
+          const share = records.length > 0 ? count / records.length : 0;
+          const label = `${option.label}: ${count} ${(count === 1 ? table.singular : table.title).toLowerCase()}, ${percent.format(share)}`;
+          return (
+            <li
+              className="grid grid-cols-[minmax(6rem,9rem)_1fr] items-center gap-3"
+              key={option.id}
+            >
+              <span className="flex min-w-0 items-center gap-2 text-sm">
                 <span
-                  className="bg-foreground/70 group-hover/bar:bg-foreground/85 h-4 rounded-r-sm transition-colors duration-150"
-                  style={{
-                    minWidth: count > 0 ? 4 : 0,
-                    width: `${(count / max) * 100}%`,
-                  }}
+                  aria-hidden
+                  className={cn(
+                    "size-2 shrink-0 rounded-full",
+                    SWATCH_COLORS[option.color]
+                  )}
                 />
-                <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                  {count}
-                  <span className="text-muted-foreground/70">
-                    {" "}
-                    · {percent.format(share)}
-                  </span>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>{label}</TooltipContent>
-            </Tooltip>
-          </li>
-        );
-      })}
-    </ul>
+                <span className="truncate">{option.label}</span>
+              </span>
+              <FluidTooltip.Root>
+                <FluidTooltip.Trigger>
+                  <div className="group/bar flex h-6 items-center gap-2">
+                    <span
+                      className="bg-foreground/70 group-hover/bar:bg-foreground/85 h-4 rounded-r-sm transition-colors duration-150"
+                      style={{
+                        minWidth: count > 0 ? 4 : 0,
+                        width: `${(count / max) * 100}%`,
+                      }}
+                    />
+                    <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                      {count}
+                      <span className="text-muted-foreground/70">
+                        {" "}
+                        · {percent.format(share)}
+                      </span>
+                    </span>
+                  </div>
+                </FluidTooltip.Trigger>
+                <FluidTooltip.Content>{label}</FluidTooltip.Content>
+              </FluidTooltip.Root>
+            </li>
+          );
+        })}
+      </ul>
+    </FluidTooltip.Group>
   );
 }
 
@@ -181,27 +177,27 @@ function AddedPerWeek({
   return (
     <figure className="flex flex-col gap-2">
       <div aria-hidden className="flex h-36 items-end gap-0.5 border-b">
-        {weeks.map(({ start, count }) => (
-          <Tooltip key={start.toISOString()}>
-            <TooltipTrigger
-              render={
-                <div className="group/bar flex h-full flex-1 items-end justify-center" />
-              }
-            >
-              <span
-                className="bg-foreground/70 group-hover/bar:bg-foreground/85 w-full max-w-6 rounded-t-sm transition-colors duration-150"
-                style={{
-                  height: `${(count / max) * 100}%`,
-                  minHeight: count > 0 ? 4 : 0,
-                }}
-              />
-            </TooltipTrigger>
-            <TooltipContent>
-              <span className="font-medium tabular-nums">{count}</span> added
-              the week of {format(start, "MMM d")}
-            </TooltipContent>
-          </Tooltip>
-        ))}
+        <FluidTooltip.Group>
+          {weeks.map(({ start, count }) => (
+            <FluidTooltip.Root key={start.toISOString()}>
+              <FluidTooltip.Trigger>
+                <div className="group/bar flex h-full flex-1 items-end justify-center">
+                  <span
+                    className="bg-foreground/70 group-hover/bar:bg-foreground/85 w-full max-w-6 rounded-t-sm transition-colors duration-150"
+                    style={{
+                      height: `${(count / max) * 100}%`,
+                      minHeight: count > 0 ? 4 : 0,
+                    }}
+                  />
+                </div>
+              </FluidTooltip.Trigger>
+              <FluidTooltip.Content>
+                <span className="font-medium tabular-nums">{count}</span> added
+                the week of {format(start, "MMM d")}
+              </FluidTooltip.Content>
+            </FluidTooltip.Root>
+          ))}
+        </FluidTooltip.Group>
       </div>
       <div
         aria-hidden

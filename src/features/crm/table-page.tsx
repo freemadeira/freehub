@@ -13,6 +13,7 @@ import { IconButton } from "@/components/icon-button";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
+import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { CrmScope } from "@/features/crm/crm-context";
 import { CrmContext, recordPath, tablePath } from "@/features/crm/crm-context";
@@ -142,15 +143,17 @@ export function TablePage({
               </TabsTrigger>
             </TabsList>
             <div className="flex items-center gap-1">
-              <IconButton label="Import CSV" onClick={openDialog("import")}>
-                <UploadIcon />
-              </IconButton>
-              <IconButton
-                label="Table settings"
-                onClick={openDialog("settings")}
-              >
-                <Settings2Icon />
-              </IconButton>
+              <FluidTooltip.Group>
+                <IconButton label="Import CSV" onClick={openDialog("import")}>
+                  <UploadIcon />
+                </IconButton>
+                <IconButton
+                  label="Table settings"
+                  onClick={openDialog("settings")}
+                >
+                  <Settings2Icon />
+                </IconButton>
+              </FluidTooltip.Group>
               <Button className="ml-1" onClick={openDialog("new")}>
                 <PlusIcon />
                 <span className="max-sm:sr-only">
