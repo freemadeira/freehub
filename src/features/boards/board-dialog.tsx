@@ -345,7 +345,7 @@ function BoardForm({
         members={members}
         onChange={setMembers}
         pubkey={pubkey}
-        suggestions={parent?.members}
+        group={parent && { members: parent.members, name: parent.title }}
       />
 
       <DialogFooter className="mt-1">

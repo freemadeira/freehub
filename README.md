@@ -110,7 +110,7 @@ Then:
 1. Fork this repo.
 2. Set `relays` in `public/config.json` to your team relay.
 3. Replace `public/logo.svg`, `public/logo-dark.svg` and `public/favicon.svg`.
-4. Whitelist every member's npub on the relay. Anyone who isn't whitelisted gets a "No access" screen showing their npub, ready to copy and send to you.
+4. Whitelist every member's npub on the relay. Anyone who isn't whitelisted gets a "No access" screen showing their npub, ready to copy and send to you. The app can't read the whitelist, so the first time someone joins a project or board, paste their npub (or the whole whitelist file) into its members field; after that they're suggested by name everywhere.
 
 ### Configuration
 
