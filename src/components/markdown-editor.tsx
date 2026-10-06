@@ -9,6 +9,11 @@ const MarkdownEditorView = lazy(async () => {
   return { default: module.MarkdownEditorView };
 });
 
+const MarkdownViewer = lazy(async () => {
+  const module = await import("@/components/markdown-editor/viewer");
+  return { default: module.MarkdownViewer };
+});
+
 export interface MarkdownEditorProps {
   /** Markdown to show. A new value replaces the text unless it's being edited. */
   value: string;
@@ -22,24 +27,52 @@ export interface MarkdownEditorProps {
   "aria-label": string;
 }
 
+export type MarkdownViewProps = Pick<
+  MarkdownEditorProps,
+  "value" | "className"
+>;
+
+function AsWritten({
+  value,
+  placeholder,
+  className,
+}: Pick<MarkdownEditorProps, "value" | "placeholder" | "className">) {
+  return (
+    <p
+      className={cn(
+        "rich-text wrap-break-word whitespace-pre-wrap",
+        !value && "text-muted-foreground",
+        className
+      )}
+    >
+      {value || placeholder}
+    </p>
+  );
+}
+
 /** Rich text stored as markdown. Markdown typed or pasted turns into formatting. */
 export function MarkdownEditor(props: MarkdownEditorProps) {
   const { value, placeholder, className } = props;
   return (
     <Suspense
       fallback={
-        <p
-          className={cn(
-            "rich-text wrap-break-word whitespace-pre-wrap",
-            !value && "text-muted-foreground",
-            className
-          )}
-        >
-          {value || placeholder}
-        </p>
+        <AsWritten
+          className={className}
+          placeholder={placeholder}
+          value={value}
+        />
       }
     >
       <MarkdownEditorView {...props} />
+    </Suspense>
+  );
+}
+
+/** The same rich text, for people who can only read it. */
+export function MarkdownView({ value, className }: MarkdownViewProps) {
+  return (
+    <Suspense fallback={<AsWritten className={className} value={value} />}>
+      <MarkdownViewer className={className} value={value} />
     </Suspense>
   );
 }

@@ -95,8 +95,10 @@ interface SortableCardProps {
 }
 
 function useSortableCard({ card, index, group }: SortableCardProps) {
+  const { canEdit } = useBoard();
   return useSortable({
     accept: "card",
+    disabled: !canEdit,
     group,
     id: card.id,
     index,

@@ -349,7 +349,7 @@ export function RecordsView({ onCreate, onImport }: RecordsViewProps) {
   // TanStack Table hands out stable row and cell objects whose methods read
   // changing state, which the React Compiler would cache. This view opts out.
   "use no memo";
-  const { content, recordHref, records, table: crmTable } = useCrm();
+  const { canEdit, content, recordHref, records, table: crmTable } = useCrm();
   const [, navigate] = useLocation();
   const [visibility, setVisibility] = useState(() =>
     readVisibility(crmTable.id)
@@ -361,33 +361,38 @@ export function RecordsView({ onCreate, onImport }: RecordsViewProps) {
   );
   const columns = useMemo(
     () => [
-      selectColumn(
-        ({ table }) => (
-          <Checkbox
-            aria-label="Select all on this page"
-            checked={table.getIsAllPageRowsSelected()}
-            indeterminate={
-              table.getIsSomePageRowsSelected() &&
-              !table.getIsAllPageRowsSelected()
-            }
-            onCheckedChange={(checked) =>
-              table.toggleAllPageRowsSelected(checked)
-            }
-          />
-        ),
-        ({ row }) => (
-          <Checkbox
-            aria-label={`Select ${recordTitle(row.original.record)}`}
-            checked={row.getIsSelected()}
-            onCheckedChange={(checked, details) =>
-              row.getToggleSelectedHandler()({
-                nativeEvent: details.event,
-                target: { checked },
-              })
-            }
-          />
-        )
-      ),
+      // Rows are picked for changing many at once, which viewers can't.
+      ...(canEdit
+        ? [
+            selectColumn(
+              ({ table }) => (
+                <Checkbox
+                  aria-label="Select all on this page"
+                  checked={table.getIsAllPageRowsSelected()}
+                  indeterminate={
+                    table.getIsSomePageRowsSelected() &&
+                    !table.getIsAllPageRowsSelected()
+                  }
+                  onCheckedChange={(checked) =>
+                    table.toggleAllPageRowsSelected(checked)
+                  }
+                />
+              ),
+              ({ row }) => (
+                <Checkbox
+                  aria-label={`Select ${recordTitle(row.original.record)}`}
+                  checked={row.getIsSelected()}
+                  onCheckedChange={(checked, details) =>
+                    row.getToggleSelectedHandler()({
+                      nativeEvent: details.event,
+                      target: { checked },
+                    })
+                  }
+                />
+              )
+            ),
+          ]
+        : []),
       ...crmTable.fields.map((field) =>
         fieldColumn(field, content, ({ row }) =>
           field.id === TITLE_FIELD ? (
@@ -407,7 +412,7 @@ export function RecordsView({ onCreate, onImport }: RecordsViewProps) {
         )
       ),
     ],
-    [crmTable, content, recordHref]
+    [canEdit, crmTable, content, recordHref]
   );
 
   const table = useTable({
@@ -437,6 +442,8 @@ export function RecordsView({ onCreate, onImport }: RecordsViewProps) {
     .rows.map((row) => row.original.record);
   const visibleRows = table.getRowModel().rows;
   const columnCount = table.getVisibleLeafColumns().length;
+  // The names stick beside the checkboxes, or at the edge without them.
+  const titleInset = canEdit ? "left-11" : "left-0";
 
   // Rows can disappear under a later page, through filters or teammates' edits.
   useEffect(() => {
@@ -460,18 +467,22 @@ export function RecordsView({ onCreate, onImport }: RecordsViewProps) {
     return (
       <Empty className="py-20">
         <EmptyTitle>No {crmTable.title.toLowerCase()} yet</EmptyTitle>
-        <EmptyDescription>
-          Add the first one, or bring them over from a spreadsheet.
-        </EmptyDescription>
-        <div className="flex flex-wrap justify-center gap-2">
-          <Button onClick={onCreate}>
-            New {crmTable.singular.toLowerCase()}
-          </Button>
-          <Button onClick={onImport} variant="outline">
-            <UploadIcon />
-            Import CSV
-          </Button>
-        </div>
+        {canEdit && (
+          <>
+            <EmptyDescription>
+              Add the first one, or bring them over from a spreadsheet.
+            </EmptyDescription>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button onClick={onCreate}>
+                New {crmTable.singular.toLowerCase()}
+              </Button>
+              <Button onClick={onImport} variant="outline">
+                <UploadIcon />
+                Import CSV
+              </Button>
+            </div>
+          </>
+        )}
       </Empty>
     );
   }
@@ -540,7 +551,7 @@ export function RecordsView({ onCreate, onImport }: RecordsViewProps) {
                       header.column.id === "select" &&
                         cn(STICKY, "left-0 w-11 pr-0"),
                       header.column.id === TITLE_FIELD &&
-                        cn(STICKY, "left-11 min-w-48"),
+                        cn(STICKY, titleInset, "min-w-48"),
                       "bg-card"
                     )}
                     key={header.id}
@@ -576,7 +587,7 @@ export function RecordsView({ onCreate, onImport }: RecordsViewProps) {
                       cell.column.id === "select" &&
                         cn(STICKY, "left-0 w-11 pr-0"),
                       cell.column.id === TITLE_FIELD &&
-                        cn(STICKY, "left-11 max-w-80 min-w-48"),
+                        cn(STICKY, titleInset, "max-w-80 min-w-48"),
                       (field?.type === "number" ||
                         field?.type === "currency") &&
                         "text-right"
@@ -635,7 +646,7 @@ export function RecordsView({ onCreate, onImport }: RecordsViewProps) {
           </div>
         )}
       </div>
-      {selected.length > 0 && (
+      {canEdit && selected.length > 0 && (
         <BulkBar
           onClear={() => table.resetRowSelection()}
           selected={selected}

@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 import { useLocation } from "wouter";
 
 import { ColorPicker } from "@/components/color-picker";
-import { MembersField } from "@/components/members-field";
+import { fromRoster, MembersField, toRoster } from "@/components/members-field";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -136,7 +136,9 @@ function ProjectForm({ project, projects, pubkey, onDone }: ProjectFormProps) {
   const [slugEdited, setSlugEdited] = useState(project !== undefined);
   const [description, setDescription] = useState(project?.description ?? "");
   const [color, setColor] = useState<Color>(project?.color ?? "yellow");
-  const [members, setMembers] = useState(project?.members ?? [pubkey]);
+  const [roster, setRoster] = useState(() =>
+    toRoster(project ?? { members: [pubkey], viewers: [] })
+  );
 
   // Includes projects the user isn't in, which teammates may still see beside theirs.
   const everyProject = useEveryProject();
@@ -155,9 +157,9 @@ function ProjectForm({ project, projects, pubkey, onDone }: ProjectFormProps) {
       return;
     }
     const draft = {
+      ...fromRoster(roster),
       color,
       description: description.trim(),
-      members,
       slug: finalSlug,
       title: title.trim(),
     };
@@ -229,9 +231,9 @@ function ProjectForm({ project, projects, pubkey, onDone }: ProjectFormProps) {
 
       <MembersField
         creator={project?.creator ?? pubkey}
-        members={members}
-        onChange={setMembers}
+        onChange={setRoster}
         pubkey={pubkey}
+        roster={roster}
       />
 
       <DialogFooter className="mt-1">

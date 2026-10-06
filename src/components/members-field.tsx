@@ -20,10 +20,18 @@ import { Button } from "@/components/ui/button";
 import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { FIELD } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { UserAvatar } from "@/components/user-avatar";
 import { useProfile } from "@/hooks/use-profile";
 import { useProfileNames } from "@/hooks/use-profile-names";
 import { useTeam } from "@/hooks/use-team";
+import type { Membership } from "@/lib/model";
 import { plural, shortNpub } from "@/lib/utils";
 
 const MAX_CHIPS = 5;
@@ -31,6 +39,37 @@ const STACKED = 3;
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 const KEY = /(?:npub|nprofile)1[02-9ac-hj-np-z]+|\b[0-9a-f]{64}\b/giu;
 const LOOKS_LIKE_KEY = /^(?:nostr:)?(?:npub|nprofile)1/iu;
+
+type Role = "member" | "viewer";
+
+const ROLES: { label: string; value: Role }[] = [
+  { label: "Can edit", value: "member" },
+  { label: "Can view", value: "viewer" },
+];
+
+/**
+ * Everyone on a board or project with their role, in the order they were
+ * added, so changing someone's role leaves them where they are in the list.
+ */
+export type Roster = ReadonlyMap<string, Role>;
+
+export function toRoster({ members, viewers }: Membership): Roster {
+  const roster = new Map<string, Role>(
+    members.map((member) => [member, "member"])
+  );
+  for (const viewer of viewers) {
+    if (!roster.has(viewer)) {
+      roster.set(viewer, "viewer");
+    }
+  }
+  return roster;
+}
+
+export function fromRoster(roster: Roster): Membership {
+  const withRole = (role: Role) =>
+    [...roster].flatMap(([pubkey, held]) => (held === role ? [pubkey] : []));
+  return { members: withRole("member"), viewers: withRole("viewer") };
+}
 
 function people(count: number): string {
   return count === 1 ? "1 person" : `${count} people`;
@@ -75,16 +114,57 @@ function Tag({ children }: { children: string }) {
   );
 }
 
+function RoleSelect({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: Role;
+  onChange: (role: Role) => void;
+}) {
+  return (
+    <Select
+      items={ROLES}
+      onValueChange={(next: Role | null) => {
+        if (next) {
+          onChange(next);
+        }
+      }}
+      value={value}
+    >
+      <SelectTrigger
+        aria-label={label}
+        className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground data-popup-open:bg-foreground/5 data-popup-open:text-foreground h-8 gap-1 border-transparent bg-transparent px-2 transition-colors duration-150 dark:bg-transparent"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent align="end">
+        {ROLES.map((role) => (
+          <SelectItem key={role.value} value={role.value}>
+            {role.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function MemberRow({
   pubkey,
+  role,
   you,
   owner,
+  onRoleChange,
   onRemove,
 }: {
   pubkey: string;
+  role: Role;
   you: boolean;
+  /** The creator, who always edits and can't be removed. */
   owner: boolean;
-  onRemove?: () => void;
+  onRoleChange: (role: Role) => void;
+  onRemove: () => void;
 }) {
   const { name } = useProfile(pubkey);
   return (
@@ -100,16 +180,23 @@ function MemberRow({
         <span className="min-w-0 truncate">{name}</span>
         {you && <Tag>You</Tag>}
         {owner && <Tag>Owner</Tag>}
-        {onRemove && (
-          <IconButton
-            className="-mr-1 ml-auto opacity-0 transition-opacity duration-150 group-hover/member:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
-            label={`Remove ${name}`}
-            onClick={onRemove}
-            size="icon-xs"
-            tooltip="Remove"
-          >
-            <XIcon />
-          </IconButton>
+        {!owner && (
+          <span className="-mr-1 ml-auto flex shrink-0 items-center gap-0.5">
+            <RoleSelect
+              label={`What ${name} can do`}
+              onChange={onRoleChange}
+              value={role}
+            />
+            <IconButton
+              className="opacity-0 transition-opacity duration-150 group-hover/member:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
+              label={`Remove ${name}`}
+              onClick={onRemove}
+              size="icon-xs"
+              tooltip="Remove"
+            >
+              <XIcon />
+            </IconButton>
+          </span>
         )}
       </div>
     </motion.li>
@@ -309,20 +396,21 @@ function SuggestionChip({
 
 interface MembersFieldProps {
   creator: string;
-  members: string[];
-  onChange: (members: string[]) => void;
+  roster: Roster;
+  onChange: (roster: Roster) => void;
   pubkey: string;
-  /** The project around a board, whose members can all be added at once. */
-  group?: { name: string; members: string[] };
+  /** The project around a board, whose people can all be added at once. */
+  group?: { name: string; roster: Roster };
 }
 
 /**
- * Who belongs to a board or project. People already on the team's boards and
- * projects are offered by name; anyone else joins by pasting their npub.
+ * Who belongs to a board or project, and whether each can edit or only view.
+ * People already on the team's boards and projects are offered by name; anyone
+ * else joins by pasting their npub.
  */
 export function MembersField({
   creator,
-  members,
+  roster,
   onChange,
   pubkey,
   group,
@@ -332,19 +420,25 @@ export function MembersField({
   const [open, setOpen] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const team = useTeam();
-  const names = useProfileNames([...new Set([...members, ...team])]);
-  const candidates = team.filter((member) => !members.includes(member));
-  const fromGroup =
-    group?.members.filter((member) => !members.includes(member)) ?? [];
-  const nameOf = (member: string) => names.get(member) ?? shortNpub(member);
+  const listed = [...roster.keys()];
+  const names = useProfileNames([...new Set([...listed, ...team])]);
+  const candidates = team.filter((person) => !roster.has(person));
+  const fromGroup = group
+    ? [...group.roster.keys()].filter((person) => !roster.has(person))
+    : [];
+  const nameOf = (person: string) => names.get(person) ?? shortNpub(person);
 
-  const add = (added: string[]) => {
-    const fresh = added.filter((member) => !members.includes(member));
+  const add = (added: string[], from?: Roster) => {
+    const fresh = added.filter((person) => !roster.has(person));
     const [only] = fresh;
     if (!only) {
       return;
     }
-    onChange([...members, ...fresh]);
+    const next = new Map(roster);
+    for (const person of fresh) {
+      next.set(person, from?.get(person) ?? "member");
+    }
+    onChange(next);
     setAnnouncement(
       fresh.length === 1
         ? `Added ${nameOf(only)}`
@@ -352,9 +446,11 @@ export function MembersField({
     );
   };
 
-  const remove = (member: string) => {
-    onChange(members.filter((item) => item !== member));
-    setAnnouncement(`Removed ${nameOf(member)}`);
+  const remove = (person: string) => {
+    const next = new Map(roster);
+    next.delete(person);
+    onChange(next);
+    setAnnouncement(`Removed ${nameOf(person)}`);
   };
 
   return (
@@ -362,7 +458,7 @@ export function MembersField({
       <div className="flex items-baseline justify-between gap-2">
         <Label htmlFor={id}>Members</Label>
         <span className="text-muted-foreground text-xs tabular-nums">
-          {plural(members.length, "member")}
+          {plural(roster.size, "member")}
         </span>
       </div>
       <FluidTooltip.Group>
@@ -371,13 +467,17 @@ export function MembersField({
           className="-mx-2 flex max-h-64 flex-col overflow-y-auto"
         >
           <AnimatePresence initial={false}>
-            {members.map((member) => (
+            {[...roster].map(([person, role]) => (
               <MemberRow
-                key={member}
-                onRemove={member === creator ? undefined : () => remove(member)}
-                owner={member === creator}
-                pubkey={member}
-                you={member === pubkey}
+                key={person}
+                onRemove={() => remove(person)}
+                onRoleChange={(next) =>
+                  onChange(new Map(roster).set(person, next))
+                }
+                owner={person === creator}
+                pubkey={person}
+                role={role}
+                you={person === pubkey}
               />
             ))}
           </AnimatePresence>
@@ -386,7 +486,7 @@ export function MembersField({
       <AddPeople
         id={id}
         inputRef={input}
-        members={members}
+        members={listed}
         names={names}
         onAdd={add}
         onOpenChange={setOpen}
@@ -398,7 +498,7 @@ export function MembersField({
           {fromGroup.length > 0 && group && (
             <Button
               className="h-7 rounded-full"
-              onClick={() => add(fromGroup)}
+              onClick={() => add(fromGroup, group.roster)}
               size="xs"
               type="button"
               variant="secondary"

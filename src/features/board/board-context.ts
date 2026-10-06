@@ -14,6 +14,8 @@ export interface BoardScope {
   content: BoardContent;
   cards: Card[];
   pubkey: string;
+  /** Whether the user is a member, not just a viewer, of the board. */
+  canEdit: boolean;
   cardHref: (card: Card) => string;
   /** Names the board in links when another board the user sees shares its code. */
   boardQuery: URLSearchParams;

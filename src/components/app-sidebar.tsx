@@ -45,6 +45,7 @@ import type { CrmTable } from "@/lib/crm";
 import type { DocsContent } from "@/lib/docs";
 import { EMPTY_DOCS } from "@/lib/docs";
 import type { Board } from "@/lib/model";
+import { canEdit } from "@/lib/model";
 import type { Project } from "@/lib/project";
 
 /** Projects shown open until the user folds them. */
@@ -71,6 +72,7 @@ interface ProjectItemProps {
   allBoards: Board[];
   openBoard?: Board;
   location: string;
+  pubkey: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -83,6 +85,7 @@ function ProjectItem({
   allBoards,
   openBoard,
   location,
+  pubkey,
   open,
   onOpenChange,
 }: ProjectItemProps) {
@@ -139,7 +142,11 @@ function ProjectItem({
               </SidebarMenuSubButton>
             </SidebarMenuSubItem>
           ))}
-          <SidebarDocs docs={docs} project={project} />
+          <SidebarDocs
+            canEdit={canEdit(project, pubkey)}
+            docs={docs}
+            project={project}
+          />
         </SidebarMenuSub>
       </CollapsibleContent>
     </Collapsible>
@@ -259,6 +266,7 @@ export function AppSidebar({
                   }
                   open={isOpen(project, projectBoards)}
                   project={project}
+                  pubkey={pubkey}
                   tables={tables.get(project.address) ?? []}
                 />
               );

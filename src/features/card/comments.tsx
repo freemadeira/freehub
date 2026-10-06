@@ -141,7 +141,10 @@ function Composer({ card }: { card: Card }) {
           picked.current = [...picked.current, mention];
         }}
         onValueChange={setText}
-        people={board.members.filter((member) => member !== pubkey)}
+        // Anyone who can read the card, viewers too, can be pointed at it.
+        people={[...board.members, ...board.viewers].filter(
+          (person) => person !== pubkey
+        )}
         placeholder="Add a comment… Type @ to mention someone."
         value={text}
       />
@@ -162,7 +165,7 @@ export function Comments({
   className?: string;
 }) {
   const id = useId();
-  const { board, pubkey } = useBoard();
+  const { board, canEdit, pubkey } = useBoard();
   const comments = useComments(board, card);
 
   // Seeing the card counts as reading the mentions of you in it.
@@ -178,6 +181,10 @@ export function Comments({
       inboxStore(pubkey).setRead(mentionKey.split(","), true);
     }
   }, [mentionKey, pubkey]);
+
+  if (!canEdit && comments.length === 0) {
+    return null;
+  }
 
   return (
     <section
@@ -203,7 +210,7 @@ export function Comments({
           ))}
         </ol>
       )}
-      <Composer card={card} />
+      {canEdit && <Composer card={card} />}
     </section>
   );
 }

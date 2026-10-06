@@ -28,7 +28,7 @@ const SPRINT_DAYS = 15;
 
 export type BoardDraft = Pick<
   Board,
-  "code" | "title" | "description" | "members" | "project"
+  "code" | "title" | "description" | "members" | "viewers" | "project"
 >;
 export type ProjectDraft = Omit<ProjectFields, "id" | "creator">;
 export type NewCard = Pick<CardFields, "title" | "status" | "rank"> &

@@ -27,6 +27,7 @@ import type { CrmRecord, CrmTable, ProjectContent } from "@/lib/crm";
 import { firstValue, stageField } from "@/lib/crm";
 import type { DocsContent } from "@/lib/docs";
 import type { Board } from "@/lib/model";
+import { canEdit } from "@/lib/model";
 import { SWATCH_COLORS } from "@/lib/palette";
 import type { Project } from "@/lib/project";
 
@@ -161,6 +162,7 @@ export function ProjectPage({
 }: ProjectPageProps) {
   const [dialog, setDialog] = useState<"settings" | "board" | "table">();
   const newPage = useNewPage(project, docs);
+  const editable = canEdit(project, pubkey);
   const projectBoards = boards.filter(
     (board) => board.project === project.address
   );
@@ -182,8 +184,15 @@ export function ProjectPage({
       ))}
     </div>
   );
-  if (tables.length === 0) {
-    crm = loaded ? (
+  if (tables.length === 0 && !loaded) {
+    crm = (
+      <div aria-busy className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Skeleton className="h-36 rounded-2xl" />
+        <Skeleton className="h-36 rounded-2xl max-sm:hidden" />
+      </div>
+    );
+  } else if (tables.length === 0) {
+    crm = editable ? (
       <Empty className="bg-muted/60 rounded-2xl py-10">
         <EmptyDescription className="mt-0 max-w-sm">
           Track merchants, deals or contacts in tables with your own fields and
@@ -195,10 +204,9 @@ export function ProjectPage({
         </Button>
       </Empty>
     ) : (
-      <div aria-busy className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Skeleton className="h-36 rounded-2xl" />
-        <Skeleton className="h-36 rounded-2xl max-sm:hidden" />
-      </div>
+      <p className="text-muted-foreground text-sm">
+        No tables in this project yet.
+      </p>
     );
   }
 
@@ -236,6 +244,7 @@ export function ProjectPage({
         </header>
         <Section
           action={
+            editable &&
             tables.length > 0 && (
               <Button onClick={() => setDialog("table")} variant="outline">
                 <PlusIcon />
@@ -249,10 +258,12 @@ export function ProjectPage({
         </Section>
         <Section
           action={
-            <Button onClick={() => setDialog("board")} variant="outline">
-              <PlusIcon />
-              New board
-            </Button>
+            editable && (
+              <Button onClick={() => setDialog("board")} variant="outline">
+                <PlusIcon />
+                New board
+              </Button>
+            )
           }
           title="Boards"
         >
@@ -274,10 +285,12 @@ export function ProjectPage({
         </Section>
         <Section
           action={
-            <Button onClick={newPage} variant="outline">
-              <PlusIcon />
-              New page
-            </Button>
+            editable && (
+              <Button onClick={newPage} variant="outline">
+                <PlusIcon />
+                New page
+              </Button>
+            )
           }
           title="Docs"
         >

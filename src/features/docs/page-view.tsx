@@ -11,6 +11,7 @@ import { useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 
 import { IconButton } from "@/components/icon-button";
+import { MarkdownView } from "@/components/markdown-editor";
 import type { BlockCommand } from "@/components/markdown-editor/blocks";
 import { dropEmptyLine } from "@/components/markdown-editor/blocks";
 import { ProjectAvatar } from "@/components/project-avatar";
@@ -26,8 +27,13 @@ import { PageMenu } from "@/features/docs/page-menu";
 import type { DocPage, DocsContent } from "@/lib/docs";
 import { ancestors, pageTemplate, pageTitle } from "@/lib/docs";
 import { createPage, isPageDeleted, updatePage } from "@/lib/docs-actions";
+import { canEdit } from "@/lib/model";
 import type { Project } from "@/lib/project";
 import { publish } from "@/lib/publish";
+
+const ICON =
+  "-ml-1 flex size-16 items-center justify-center self-start rounded-xl text-5xl leading-none";
+const TITLE = "text-3xl leading-tight font-bold tracking-tight sm:text-4xl";
 
 interface PageViewProps {
   project: Project;
@@ -94,13 +100,12 @@ function SubPages({ project, pages }: { project: Project; pages: DocPage[] }) {
   );
 }
 
-/** One doc page: its icon, title and text, edited in place. */
-export function PageView({ project, docs, page, pubkey }: PageViewProps) {
+/** The page's icon, title and text, edited in place. */
+function EditablePage({ project, docs, page, pubkey }: PageViewProps) {
   const [, navigate] = useLocation();
   const editor = useRef<PageEditorHandle>(null);
   // The title being typed, until it's saved and the field left.
   const [title, setTitle] = useState<string>();
-  const children = docs.children.get(page.id) ?? [];
 
   const addPage = () => {
     const { id } = createPage(project, docs, { parent: page.id });
@@ -149,8 +154,111 @@ export function PageView({ project, docs, page, pubkey }: PageViewProps) {
 
   return (
     <>
+      <div className="group/title flex flex-col gap-2">
+        <IconPicker
+          icon={page.icon}
+          onChange={(icon) => updatePage(project, page, { icon })}
+          trigger={
+            page.icon ? (
+              <button
+                aria-label="Change icon"
+                className={cn(
+                  ICON,
+                  "hover:bg-foreground/5 focus-visible:ring-ring/50 transition-colors duration-150 outline-none focus-visible:ring-3"
+                )}
+                type="button"
+              >
+                {page.icon}
+              </button>
+            ) : (
+              <Button
+                className="text-muted-foreground -ml-2 self-start opacity-0 transition-opacity duration-150 group-hover/title:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100 pointer-coarse:opacity-100"
+                size="sm"
+                variant="ghost"
+              >
+                <SmilePlusIcon />
+                Add icon
+              </Button>
+            )
+          }
+        />
+        <textarea
+          aria-label="Title"
+          className={cn(
+            TITLE,
+            "placeholder:text-muted-foreground/60 field-sizing-content w-full resize-none bg-transparent outline-none"
+          )}
+          onBlur={() => {
+            if (title !== undefined) {
+              editor.current?.save();
+              setTitle(undefined);
+            }
+          }}
+          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
+            setTitle(event.target.value.replaceAll("\n", " "));
+            editor.current?.changed();
+          }}
+          onKeyDown={onTitleKeyDown}
+          placeholder="Untitled"
+          rows={1}
+          value={title ?? page.title}
+        />
+      </div>
+      <div className="mt-4">
+        <PageEditor
+          commands={commands}
+          key={page.id}
+          onPublish={onPublish}
+          opened={page.event}
+          pubkey={pubkey}
+          ref={editor}
+          versions={docs.versions.get(page.id) ?? []}
+        />
+      </div>
+      {/* Clicking under the text carries on writing at its end. */}
+      <div
+        aria-hidden
+        className="min-h-24 grow cursor-text"
+        onClick={() => editor.current?.focus("end")}
+      />
+    </>
+  );
+}
+
+/**
+ * The page as its newest version reads, for viewers of the project. It never
+ * saves, so teammates' versions aren't merged here: the newest one shows.
+ */
+function ReadOnlyPage({ page }: { page: DocPage }) {
+  return (
+    <>
+      <div className="flex flex-col gap-2">
+        {page.icon && <span className={ICON}>{page.icon}</span>}
+        <h2
+          className={cn(
+            TITLE,
+            "wrap-break-word",
+            !page.title.trim() && "text-muted-foreground/60"
+          )}
+        >
+          {pageTitle(page)}
+        </h2>
+      </div>
+      <MarkdownView className="page-text mt-4" value={page.content} />
+      <div aria-hidden className="min-h-24 grow" />
+    </>
+  );
+}
+
+/** One doc page: its icon, title and text, then the pages inside it. */
+export function PageView({ project, docs, page, pubkey }: PageViewProps) {
+  const children = docs.children.get(page.id) ?? [];
+  const editable = canEdit(project, pubkey);
+  return (
+    <>
       <TopBar crumbs={crumbsFor(project, docs, page)}>
         <PageMenu
+          canEdit={editable}
           docs={docs}
           page={page}
           project={project}
@@ -163,67 +271,16 @@ export function PageView({ project, docs, page, pubkey }: PageViewProps) {
       </TopBar>
       <main className="flex grow flex-col">
         <article className="mx-auto flex w-full max-w-3xl grow flex-col px-4 pt-6 pb-10 sm:px-16 sm:pt-14">
-          <div className="group/title flex flex-col gap-2">
-            <IconPicker
-              icon={page.icon}
-              onChange={(icon) => updatePage(project, page, { icon })}
-              trigger={
-                page.icon ? (
-                  <button
-                    aria-label="Change icon"
-                    className="hover:bg-foreground/5 focus-visible:ring-ring/50 -ml-1 flex size-16 items-center justify-center self-start rounded-xl text-5xl leading-none transition-colors duration-150 outline-none focus-visible:ring-3"
-                    type="button"
-                  >
-                    {page.icon}
-                  </button>
-                ) : (
-                  <Button
-                    className="text-muted-foreground -ml-2 self-start opacity-0 transition-opacity duration-150 group-hover/title:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100 pointer-coarse:opacity-100"
-                    size="sm"
-                    variant="ghost"
-                  >
-                    <SmilePlusIcon />
-                    Add icon
-                  </Button>
-                )
-              }
-            />
-            <textarea
-              aria-label="Title"
-              className="placeholder:text-muted-foreground/60 field-sizing-content w-full resize-none bg-transparent text-3xl leading-tight font-bold tracking-tight outline-none sm:text-4xl"
-              onBlur={() => {
-                if (title !== undefined) {
-                  editor.current?.save();
-                  setTitle(undefined);
-                }
-              }}
-              onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
-                setTitle(event.target.value.replaceAll("\n", " "));
-                editor.current?.changed();
-              }}
-              onKeyDown={onTitleKeyDown}
-              placeholder="Untitled"
-              rows={1}
-              value={title ?? page.title}
-            />
-          </div>
-          <div className="mt-4">
-            <PageEditor
-              commands={commands}
-              key={page.id}
-              onPublish={onPublish}
-              opened={page.event}
+          {editable ? (
+            <EditablePage
+              docs={docs}
+              page={page}
+              project={project}
               pubkey={pubkey}
-              ref={editor}
-              versions={docs.versions.get(page.id) ?? []}
             />
-          </div>
-          {/* Clicking under the text carries on writing at its end. */}
-          <div
-            aria-hidden
-            className="min-h-24 grow cursor-text"
-            onClick={() => editor.current?.focus("end")}
-          />
+          ) : (
+            <ReadOnlyPage page={page} />
+          )}
           {children.length > 0 && (
             <SubPages pages={children} project={project} />
           )}

@@ -10,6 +10,8 @@ export interface CrmScope {
   /** Records of `table`, in rank order. */
   records: CrmRecord[];
   pubkey: string;
+  /** Whether the user is a member, not just a viewer, of the project. */
+  canEdit: boolean;
   /** Opens a record of this table without leaving the current view. */
   recordHref: (record: Pick<CrmRecord, "id">) => string;
 }

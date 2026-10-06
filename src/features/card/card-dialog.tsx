@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 
 import { CopyButton } from "@/components/copy";
 import { IconButton } from "@/components/icon-button";
-import { MarkdownEditor } from "@/components/markdown-editor";
+import { MarkdownEditor, MarkdownView } from "@/components/markdown-editor";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,6 +28,8 @@ import { cardKey } from "@/lib/model";
 // Edited in place like text on the page: a hover tint, and no focus ring.
 const INLINE_FIELD =
   "-mx-2 w-[calc(100%+1rem)] rounded-lg px-2 py-1 outline-none transition-colors duration-150 hover:not-focus:bg-foreground/5";
+const TITLE = "text-xl leading-snug font-semibold";
+const DESCRIPTION = "py-1.5 text-base leading-relaxed md:text-sm";
 
 // Typing is kept local until the field loses focus, so teammates' edits never overwrite it mid-sentence.
 function useDraft(value: string, save: (draft: string) => void) {
@@ -59,7 +61,8 @@ function TitleField({ card }: { card: Card }) {
       aria-label="Title"
       className={cn(
         INLINE_FIELD,
-        "placeholder:text-muted-foreground field-sizing-content resize-none text-xl leading-snug font-semibold"
+        TITLE,
+        "placeholder:text-muted-foreground field-sizing-content resize-none"
       )}
       onKeyDown={(event) => {
         if (event.key === "Enter" && !event.nativeEvent.isComposing) {
@@ -78,10 +81,7 @@ function DescriptionField({ card }: { card: Card }) {
   return (
     <MarkdownEditor
       aria-label="Description"
-      className={cn(
-        INLINE_FIELD,
-        "min-h-20 py-1.5 text-base leading-relaxed md:text-sm"
-      )}
+      className={cn(INLINE_FIELD, DESCRIPTION, "min-h-20")}
       onKeyDown={(event) => {
         // Escape finishes editing instead of closing the card.
         if (event.key === "Escape" && event.target instanceof HTMLElement) {
@@ -140,8 +140,27 @@ function DeleteCard({
   );
 }
 
+function CardText({ card }: { card: Card }) {
+  return (
+    <>
+      <p
+        className={cn(
+          TITLE,
+          "py-1 wrap-break-word",
+          !card.title && "text-muted-foreground"
+        )}
+      >
+        {card.title || "Untitled"}
+      </p>
+      {card.description && (
+        <MarkdownView className={DESCRIPTION} value={card.description} />
+      )}
+    </>
+  );
+}
+
 function CardDetails({ card, onClose }: { card: Card; onClose: () => void }) {
-  const { board, boardQuery } = useBoard();
+  const { board, boardQuery, canEdit } = useBoard();
   return (
     <>
       <div className="-mt-1 -mr-2 flex items-center gap-0.5">
@@ -159,7 +178,7 @@ function CardDetails({ card, onClose }: { card: Card; onClose: () => void }) {
               ).href
             }
           />
-          <DeleteCard card={card} onDeleted={onClose} />
+          {canEdit && <DeleteCard card={card} onDeleted={onClose} />}
           <IconButton label="Close" onClick={onClose}>
             <XIcon />
           </IconButton>
@@ -167,8 +186,14 @@ function CardDetails({ card, onClose }: { card: Card; onClose: () => void }) {
       </div>
       <div className="grid gap-x-8 gap-y-6 md:grid-cols-[1fr_17rem] md:grid-rows-[auto_1fr]">
         <div className="flex min-w-0 flex-col gap-1">
-          <TitleField card={card} />
-          <DescriptionField card={card} />
+          {canEdit ? (
+            <>
+              <TitleField card={card} />
+              <DescriptionField card={card} />
+            </>
+          ) : (
+            <CardText card={card} />
+          )}
         </div>
         <CardProperties className="md:row-span-2" card={card} />
         <Comments card={card} className="min-w-0" />

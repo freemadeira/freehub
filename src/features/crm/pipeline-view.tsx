@@ -78,9 +78,10 @@ function RecordCard({
   group: string;
   index: number;
 }) {
-  const { recordHref } = useCrm();
+  const { canEdit, recordHref } = useCrm();
   const { ref } = useSortable({
     accept: "card",
+    disabled: !canEdit,
     group,
     id: record.id,
     index,
@@ -118,7 +119,7 @@ interface ColumnProps {
 }
 
 function Column({ id, option, records, onAdd }: ColumnProps) {
-  const { table } = useCrm();
+  const { canEdit, table } = useCrm();
   const { ref } = useDroppable({
     accept: "card",
     collisionPriority: CollisionPriority.Low,
@@ -158,11 +159,13 @@ function Column({ id, option, records, onAdd }: ColumnProps) {
       {records.map((record, index) => (
         <RecordCard group={id} index={index} key={record.id} record={record} />
       ))}
-      <QuickAdd
-        label={`Add ${table.singular.toLowerCase()}`}
-        onAdd={onAdd}
-        placeholder={titleField(table).name}
-      />
+      {canEdit && (
+        <QuickAdd
+          label={`Add ${table.singular.toLowerCase()}`}
+          onAdd={onAdd}
+          placeholder={titleField(table).name}
+        />
+      )}
     </section>
   );
 }

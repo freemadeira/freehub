@@ -10,6 +10,7 @@ import { pagePath } from "@/features/docs/docs-context";
 import { PageCard } from "@/features/docs/page-card";
 import type { DocPage, DocsContent } from "@/lib/docs";
 import { createPage } from "@/lib/docs-actions";
+import { canEdit } from "@/lib/model";
 import type { Project } from "@/lib/project";
 
 export function PageGrid({
@@ -42,16 +43,27 @@ export function DocsPage({
   project,
   docs,
   loaded,
+  pubkey,
 }: {
   project: Project;
   docs: DocsContent;
   loaded: boolean;
+  pubkey: string;
 }) {
   const newPage = useNewPage(project, docs);
+  const editable = canEdit(project, pubkey);
 
   let body = <PageGrid pages={docs.roots} project={project} />;
-  if (docs.roots.length === 0) {
-    body = loaded ? (
+  if (docs.roots.length === 0 && !loaded) {
+    body = (
+      <div aria-busy className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Skeleton className="h-36 rounded-2xl" />
+        <Skeleton className="h-36 rounded-2xl max-sm:hidden" />
+        <Skeleton className="h-36 rounded-2xl max-lg:hidden" />
+      </div>
+    );
+  } else if (docs.roots.length === 0) {
+    body = editable ? (
       <Empty className="bg-muted/60 rounded-2xl py-10">
         <EmptyDescription className="mt-0 max-w-sm">
           Write down how the team works, in pages inside pages.
@@ -62,11 +74,9 @@ export function DocsPage({
         </Button>
       </Empty>
     ) : (
-      <div aria-busy className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Skeleton className="h-36 rounded-2xl" />
-        <Skeleton className="h-36 rounded-2xl max-sm:hidden" />
-        <Skeleton className="h-36 rounded-2xl max-lg:hidden" />
-      </div>
+      <p className="text-muted-foreground text-sm">
+        No pages in this project yet.
+      </p>
     );
   }
 
@@ -87,7 +97,7 @@ export function DocsPage({
           },
         ]}
       >
-        {docs.roots.length > 0 && (
+        {editable && docs.roots.length > 0 && (
           <Button onClick={newPage} size="sm" variant="outline">
             <PlusIcon />
             New page

@@ -1,6 +1,7 @@
 import { cn } from "cn";
 import { format, isBefore, parseISO, startOfToday } from "date-fns";
 import { ChevronDownIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { useId, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import {
   assignable,
   inOfferedOrder,
   LABEL_COLORS,
+  labelName,
   sprintChoices,
 } from "@/features/card/card-fields";
 import type { Option } from "@/features/card/card-options";
@@ -32,7 +34,7 @@ import {
   sprintOptions,
   STATUS_OPTIONS,
 } from "@/features/card/card-options";
-import { Muted, People, Person } from "@/features/card/card-parts";
+import { LabelDot, Muted, People, Person } from "@/features/card/card-parts";
 import { updateCard } from "@/lib/actions";
 import type { Card, CardFields } from "@/lib/model";
 import { LABELS } from "@/lib/model";
@@ -44,6 +46,20 @@ const SELECT_VALUE = cn(
   VALUE,
   "border-transparent bg-transparent dark:bg-transparent"
 );
+const GRID =
+  "grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-0.5 self-start";
+
+function labelOf<T>(options: Option<T>[], value: T): ReactNode {
+  return options.find((option) => option.value === value)?.label;
+}
+
+function isOverdue(card: Card): boolean {
+  return (
+    card.due !== undefined &&
+    card.status !== "done" &&
+    isBefore(parseISO(card.due), startOfToday())
+  );
+}
 
 interface PropertySelectProps<T> {
   id: string;
@@ -132,10 +148,7 @@ function DueDate({
 }) {
   const [open, setOpen] = useState(false);
   const date = card.due ? parseISO(card.due) : undefined;
-  const overdue =
-    date !== undefined &&
-    card.status !== "done" &&
-    isBefore(date, startOfToday());
+  const overdue = isOverdue(card);
 
   const pick = (day?: Date) => {
     onChange(day && format(day, "yyyy-MM-dd"));
@@ -177,6 +190,60 @@ function DueDate({
   );
 }
 
+function Property({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <>
+      <dt className={cn("text-sm select-none", NAME)}>{label}</dt>
+      <dd className="flex h-8 min-w-0 items-center gap-2 px-2 text-sm [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
+        {children}
+      </dd>
+    </>
+  );
+}
+
+/** The properties as text, for viewers of the board. */
+function PropertyList({ card, className }: { card: Card; className?: string }) {
+  const { content } = useBoard();
+  const sprints = sprintOptions(sprintChoices(content.sprints, card.sprint));
+  return (
+    <dl className={cn(GRID, className)}>
+      <Property label="Status">{labelOf(STATUS_OPTIONS, card.status)}</Property>
+      <Property label="Assignees">
+        <People pubkeys={card.assignees} />
+      </Property>
+      <Property label="Priority">
+        {labelOf(PRIORITY_OPTIONS, card.priority ?? null)}
+      </Property>
+      <Property label="Sprint">
+        {labelOf(sprints, card.sprint ?? null) ?? labelOf(sprints, null)}
+      </Property>
+      <Property label="Due date">
+        {card.due ? (
+          <span className={cn(isOverdue(card) && "text-destructive")}>
+            {format(parseISO(card.due), "MMM d, yyyy")}
+          </span>
+        ) : (
+          <Muted>No due date</Muted>
+        )}
+      </Property>
+      <Property label="Labels">
+        {card.labels.length > 0 ? (
+          <>
+            {card.labels.map((label) => (
+              <LabelDot key={label} label={label} />
+            ))}
+            <span className="sr-only">
+              {card.labels.map((label) => labelName(label)).join(", ")}
+            </span>
+          </>
+        ) : (
+          <Muted>No labels</Muted>
+        )}
+      </Property>
+    </dl>
+  );
+}
+
 export function CardProperties({
   card,
   className,
@@ -185,18 +252,17 @@ export function CardProperties({
   className?: string;
 }) {
   const id = useId();
-  const { board, content } = useBoard();
+  const { board, canEdit, content } = useBoard();
   const save = (changes: Partial<CardFields>) =>
     updateCard(board, card, changes);
   const sprints = sprintChoices(content.sprints, card.sprint);
 
+  if (!canEdit) {
+    return <PropertyList card={card} className={className} />;
+  }
+
   return (
-    <div
-      className={cn(
-        "grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-0.5 self-start",
-        className
-      )}
-    >
+    <div className={cn(GRID, className)}>
       <PropertySelect
         id={`${id}-status`}
         label="Status"
