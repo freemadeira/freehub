@@ -2,7 +2,7 @@
 
 <div align="center">
 <h1>Freehub</h1>
-<p>Nostr-first project management</p>
+<p>Nostr-first project management and CRM</p>
 </div>
 
 ## Screenshots
@@ -79,23 +79,27 @@ pnpm fix
 
 ### Project layout
 
-| Path                 | Holds                                    |
-| -------------------- | ---------------------------------------- |
-| `src/config.ts`      | Loading and checking `config.json`       |
-| `src/lib/model.ts`   | Event kinds, parsing and templates       |
-| `src/lib/relays.ts`  | Team relay connections, AUTH and access  |
-| `src/lib/publish.ts` | Optimistic edits, signing and the outbox |
-| `src/features/`      | Screens                                  |
+| Path                         | Holds                                           |
+| ---------------------------- | ----------------------------------------------- |
+| `src/config.ts`              | Loading and checking `config.json`              |
+| `src/lib/model.ts`           | Event kinds, boards, cards and sprints          |
+| `src/lib/project.ts`         | Projects                                        |
+| `src/lib/crm.ts`             | CRM tables, fields, records and activity        |
+| `src/lib/crm-templates.ts`   | The table templates offered in "New table"      |
+| `src/lib/relays.ts`          | Team relay connections, AUTH and access         |
+| `src/lib/publish.ts`         | Optimistic edits, signing and the outbox        |
+| `src/components/ui/`         | shadcn/ui components, including the sidebar     |
+| `src/features/`              | Screens                                         |
 
 ## Make it yours
 
 You need a private Nostr relay for the team. It must:
 
 - require NIP-42 AUTH for reads and writes, and only let whitelisted pubkeys in;
-- store kinds 30301–30303, 1111 and 5;
+- store kinds 30301–30306, 1111 and 5;
 - be reachable over `wss://`.
 
-The private relay in [Haven](https://github.com/bitvora/haven) does all of this. Events are signed but not encrypted, so whoever runs the relay can read every board: run it yourself or trust whoever does.
+The private relay in [Haven](https://github.com/bitvora/haven) does all of this. Events are signed but not encrypted, so whoever runs the relay can read every board and every CRM record, including the names, emails and phone numbers in it: run it yourself or trust whoever does.
 
 Then:
 
@@ -156,23 +160,28 @@ Run `pnpm build` and serve `dist/` from the root of a domain. Send unknown paths
 
 There is no backend and no database. The app is a static site: every change is a signed Nostr event sent to your relay, and the relay's whitelist decides who gets in. People log in with a Nostr browser extension (NIP-07) or a signer app (NIP-46, by QR code or `bunker://` link), so the app never sees anyone's private key.
 
-- **Boards.** A board's creator picks its members. Members see the board and can edit any card or sprint. Only the creator can rename the board, change its members or delete it. Anything from non-members is ignored, even if it reaches the relay.
+- **Projects.** A project groups boards and CRM tables, and the sidebar lists them under it. Its creator picks the members, renames it and can delete it. An organization can run as many projects as it likes, for example one per city or per product.
+- **Boards.** A board's creator picks its members. Members see the board and can edit any card or sprint. Only the creator can rename the board, change its members or delete it. A board can sit in a project or on its own. Anything from non-members is ignored, even if it reaches the relay.
+- **CRM.** Each project can hold several tables, such as merchants, companies, people or deals. Every table has its own fields (text, numbers, money, dates, selects, members, links to other tables and more) and can have a stage field that turns it into a pipeline with won and lost endings. Any project member can add tables, change their fields and edit records. Records show up as a table (sorting, search, filters, column picker, bulk changes, CSV import and export), as a pipeline board and as insights. Every stage change is kept on the record, so its journey and the time spent in each stage can be read back. Notes, calls, emails, meetings and visits are logged on a record as comments.
 - **Saving.** Changes show up right away, then go to the signer and on to the relay. Once signed, a change is kept in the browser until a relay accepts it, so it survives reloads and time offline. A change still waiting on the signer is lost if the tab closes, and the app warns before that happens.
 - **Where data goes.** Board data is only sent to the team relays, plus, encrypted, the relays a signer app talks through. Lookup relays only see which profiles are being fetched.
 
 ### Events
 
-Boards and cards follow the draft kanban NIP used by [kanbanstr](https://github.com/vivganes/kanbanstr). Sprints are this app's own extension.
+Boards and cards follow the draft kanban NIP used by [kanbanstr](https://github.com/vivganes/kanbanstr). Sprints, projects and the CRM are this app's own extensions.
 
 | Kind | Event | Tags |
 | --- | --- | --- |
-| 30301 | Board | `d`, `title`, `description`, `code`, `col`, `p` (members) |
+| 30301 | Board | `d`, `title`, `description`, `code`, `col`, `p` (members), `a` (project, optional) |
 | 30302 | Card | `d`, `a` (board), `title`, `description`, `s` (status), `rank`, `number`, `p` (assignee), `priority`, `due`, `sprint`, `label` |
 | 30303 | Sprint | `d`, `a` (board), `title`, `number`, `status`, `start`, `end` |
-| 1111 | Comment on a card ([NIP-22](https://github.com/nostr-protocol/nips/blob/master/22.md)) | `A`, `K`, `P`, `a`, `k`, `p` |
-| 5 | Deleted board or comment ([NIP-09](https://github.com/nostr-protocol/nips/blob/master/09.md)) | `a` or `e`, `k` |
+| 30304 | Project | `d`, `title`, `description`, `slug`, `color`, `p` (members) |
+| 30305 | CRM table | `d`, `a` (project), `title`, `singular`, `slug`, `icon`, `description`, `creator`, `created`, `field` (id, type, name, config), `option` (field, id, label, color, stage outcome) |
+| 30306 | CRM record | `d`, `a` (table), `a` (project), `title`, `rank`, `created`, `creator`, `val` (field, value), `moved` (stage, time, member) |
+| 1111 | Comment on a card, or activity on a record ([NIP-22](https://github.com/nostr-protocol/nips/blob/master/22.md)) | `A`, `K`, `P`, `a`, `k`, `p`, `activity` (records only) |
+| 5 | Deleted board, project or comment ([NIP-09](https://github.com/nostr-protocol/nips/blob/master/09.md)) | `a` or `e`, `k` |
 
-Each member publishes their own version of a card or sprint under the same `d` tag, and the newest version from any member wins. Deleting a card or sprint publishes a new version tagged `deleted`.
+Each member publishes their own version of a card, sprint, CRM table or record under the same `d` tag, and the newest version from any member wins. Deleting one publishes a new version tagged `deleted`. A record keeps one `val` tag per value, so a multi-select holds several, and field values are stored as plain text: numbers as decimals, dates as `YYYY-MM-DD`, members as hex pubkeys and links to other records by their `d` tag.
 
 ## Tech stack
 
@@ -180,6 +189,7 @@ Each member publishes their own version of a card or sprint under the same `d` t
 - [React](https://react.dev/) — UI library, with the [React Compiler](https://react.dev/learn/react-compiler)
 - [Tailwind CSS](https://tailwindcss.com/) — styling
 - [shadcn/ui](https://ui.shadcn.com/) — component library, on [Base UI](https://base-ui.com/)
+- [TanStack Table](https://tanstack.com/table) — the CRM's sorting, filtering, selection and paging
 - [Motion](https://motion.dev/) — animations
 - [dnd-kit](https://dndkit.com/) — drag and drop
 - [applesauce](https://github.com/hzrd149/applesauce) — Nostr event store, relay connections and signers
@@ -194,6 +204,9 @@ Each member publishes their own version of a card or sprint under the same `d` t
 - Card numbers are picked as highest + 1 on each device, so two people adding cards at the same moment can get the same number.
 - The columns are fixed: To do, In progress, Done.
 - No file attachments yet.
+- A CRM record is saved as a whole, so two people changing different fields of the same record at the same moment can undo one another's change.
+- Importing a CSV signs one event per row; a signer app may ask to approve each one. At most 500 rows go in per import.
+- A record remembers its last 100 stage changes.
 
 ## License
 

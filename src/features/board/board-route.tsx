@@ -5,6 +5,7 @@ import { Empty, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BoardPage, BoardSkeleton } from "@/features/board/board-page";
 import type { Board } from "@/lib/model";
+import type { Project } from "@/lib/project";
 
 const SLUG = /^(?<code>[A-Z][A-Z0-9]{0,9})(?:-(?<number>\d+))?$/u;
 
@@ -27,6 +28,7 @@ interface BoardRouteProps {
   boards: Board[];
   cardNumber?: number;
   loaded: boolean;
+  projects: Project[];
   pubkey: string;
 }
 
@@ -36,7 +38,7 @@ export function BoardRoute({ board, loaded, ...props }: BoardRouteProps) {
   }
   if (!loaded) {
     return (
-      <main className="flex grow flex-col gap-4 px-4 pb-8 sm:px-6">
+      <main aria-busy className="flex grow flex-col gap-4 px-4 pb-8 sm:px-6">
         <Skeleton className="h-9 w-64 rounded-full" />
         <BoardSkeleton />
       </main>

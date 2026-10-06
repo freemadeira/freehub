@@ -1,10 +1,10 @@
-import { normalizeToPubkey } from "applesauce-core/helpers/pointers";
 import { cn } from "cn";
-import { XIcon } from "lucide-react";
 import type { FormEvent } from "react";
 import { useId, useState } from "react";
 import { useLocation } from "wouter";
 
+import { MembersField } from "@/components/members-field";
+import { ProjectAvatar } from "@/components/project-avatar";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,12 +27,18 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { UserAvatar } from "@/components/user-avatar";
-import { useProfile } from "@/hooks/use-profile";
 import { createBoard, deleteBoard, updateBoard } from "@/lib/actions";
 import type { Board } from "@/lib/model";
 import { CODE } from "@/lib/model";
+import type { Project } from "@/lib/project";
 
 const DIACRITICS = /\p{Diacritic}/gu;
 
@@ -69,10 +75,6 @@ function validateCode(
     return "Another board uses this code.";
   }
   return null;
-}
-
-function parseMember(value: string): string | null {
-  return normalizeToPubkey(value.trim().replace(/^nostr:/u, ""));
 }
 
 function KeyField({
@@ -115,121 +117,50 @@ function KeyField({
   );
 }
 
-function MemberRow({
-  pubkey,
-  you,
-  onRemove,
-}: {
-  pubkey: string;
-  you: boolean;
-  onRemove?: () => void;
-}) {
-  const { name } = useProfile(pubkey);
-  return (
-    <li className="flex h-10 items-center gap-2.5">
-      <UserAvatar aria-hidden pubkey={pubkey} size="sm" />
-      <span className="min-w-0 truncate">{name}</span>
-      {you && <span className="text-muted-foreground">You</span>}
-      {onRemove && (
-        <Button
-          aria-label={`Remove ${name}`}
-          className="ml-auto"
-          onClick={onRemove}
-          size="icon-sm"
-          variant="ghost"
-        >
-          <XIcon />
-        </Button>
-      )}
-    </li>
-  );
-}
-
-interface MembersFieldProps {
-  creator: string;
-  members: string[];
-  onChange: (members: string[]) => void;
-  pubkey: string;
-}
-
-function MembersField({
-  creator,
-  members,
+function ProjectField({
+  projects,
+  value,
   onChange,
-  pubkey,
-}: MembersFieldProps) {
+}: {
+  projects: Project[];
+  value?: string;
+  onChange: (project?: string) => void;
+}) {
   const id = useId();
-  const [candidate, setCandidate] = useState("");
-  const [error, setError] = useState<string>();
-
-  const add = () => {
-    if (!candidate.trim()) {
-      return;
-    }
-    const member = parseMember(candidate);
-    if (!member) {
-      setError("Not a valid npub.");
-      return;
-    }
-    if (!members.includes(member)) {
-      onChange([...members, member]);
-    }
-    setCandidate("");
-  };
-
+  const options = [
+    {
+      label: <span className="text-muted-foreground">No project</span>,
+      value: null,
+    },
+    ...projects.map((project) => ({
+      label: (
+        <>
+          <ProjectAvatar project={project} />
+          <span className="truncate">{project.title}</span>
+        </>
+      ),
+      value: project.address,
+    })),
+  ];
   return (
     <div className="flex flex-col gap-2">
-      <Label htmlFor={id}>Members</Label>
-      <ul className="flex flex-col">
-        {members.map((member) => (
-          <MemberRow
-            key={member}
-            onRemove={
-              member === creator
-                ? undefined
-                : () => onChange(members.filter((item) => item !== member))
-            }
-            pubkey={member}
-            you={member === pubkey}
-          />
-        ))}
-      </ul>
-      <div className="flex gap-2">
-        <Input
-          aria-describedby={error ? `${id}-error` : undefined}
-          aria-invalid={error ? true : undefined}
-          autoCapitalize="off"
-          autoComplete="off"
-          autoCorrect="off"
-          id={id}
-          onChange={(event) => {
-            setCandidate(event.target.value);
-            setError(undefined);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              add();
-            }
-          }}
-          placeholder="npub1…"
-          spellCheck={false}
-          value={candidate}
-        />
-        <Button
-          disabled={!candidate.trim()}
-          onClick={add}
-          type="button"
-          variant="outline"
-        >
-          Add
-        </Button>
-      </div>
-      {error && (
-        <p className="text-destructive text-xs" id={`${id}-error`} role="alert">
-          {error}
-        </p>
-      )}
+      <Label htmlFor={id}>Project</Label>
+      <Select
+        items={options}
+        onValueChange={(next: string | null) => onChange(next ?? undefined)}
+        value={value ?? null}
+      >
+        <SelectTrigger className="w-full" id={id}>
+          <SelectValue className="items-center gap-2" />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value ?? "none"} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -279,18 +210,50 @@ function DeleteBoard({
 interface BoardFormProps {
   board?: Board;
   boards: Board[];
+  projects: Project[];
+  /** Project a new board starts in. */
+  project?: Project;
   pubkey: string;
   onDone: () => void;
 }
 
-function BoardForm({ board, boards, pubkey, onDone }: BoardFormProps) {
+// A new board in a project starts with the project's people.
+function initialDraft(
+  board: Board | undefined,
+  project: Project | undefined,
+  pubkey: string
+) {
+  if (board) {
+    return board;
+  }
+  return {
+    code: "",
+    description: "",
+    members: project?.members ?? [pubkey],
+    project: project?.address,
+    title: "",
+  };
+}
+
+function BoardForm({
+  board,
+  boards,
+  projects,
+  project,
+  pubkey,
+  onDone,
+}: BoardFormProps) {
   const id = useId();
   const [, navigate] = useLocation();
-  const [title, setTitle] = useState(board?.title ?? "");
-  const [code, setCode] = useState(board?.code ?? "");
+  // Only read on the first render, as the starting values.
+  const initial = initialDraft(board, project, pubkey);
+  const [title, setTitle] = useState(initial.title);
+  const [code, setCode] = useState(initial.code);
   const [codeEdited, setCodeEdited] = useState(board !== undefined);
-  const [description, setDescription] = useState(board?.description ?? "");
-  const [members, setMembers] = useState(board?.members ?? [pubkey]);
+  const [description, setDescription] = useState(initial.description);
+  const [members, setMembers] = useState(initial.members);
+  const [projectAddress, setProjectAddress] = useState(initial.project);
+  const parent = projects.find((item) => item.address === projectAddress);
 
   const codeError = validateCode(code, boards, board);
   const valid = title.trim() !== "" && code !== "" && !codeError;
@@ -311,6 +274,7 @@ function BoardForm({ board, boards, pubkey, onDone }: BoardFormProps) {
       code,
       description: description.trim(),
       members,
+      project: projectAddress,
       title: title.trim(),
     };
     if (board) {
@@ -360,11 +324,20 @@ function BoardForm({ board, boards, pubkey, onDone }: BoardFormProps) {
         />
       </div>
 
+      {projects.length > 0 && (
+        <ProjectField
+          onChange={setProjectAddress}
+          projects={projects}
+          value={projectAddress}
+        />
+      )}
+
       <MembersField
         creator={board?.creator ?? pubkey}
         members={members}
         onChange={setMembers}
         pubkey={pubkey}
+        suggestions={parent?.members}
       />
 
       <DialogFooter className="mt-1">

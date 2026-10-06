@@ -17,6 +17,7 @@ import { useBoardContent } from "@/hooks/use-board-content";
 import { createCard } from "@/lib/actions";
 import type { Board, Card } from "@/lib/model";
 import { rankBetween } from "@/lib/model";
+import type { Project } from "@/lib/project";
 
 const TABS = ["backlog", "sprint", "done"] as const;
 const DEFAULT_TAB = "sprint";
@@ -69,6 +70,7 @@ export function BoardSkeleton({ list = false }: { list?: boolean }) {
 interface BoardPageProps {
   board: Board;
   boards: Board[];
+  projects: Project[];
   pubkey: string;
   cardNumber?: number;
 }
@@ -76,6 +78,7 @@ interface BoardPageProps {
 export function BoardPage({
   board,
   boards,
+  projects,
   pubkey,
   cardNumber,
 }: BoardPageProps) {
@@ -182,6 +185,7 @@ export function BoardPage({
         boards={boards}
         onOpenChange={setEditing}
         open={editing}
+        projects={projects}
         pubkey={pubkey}
       />
     </BoardContext>

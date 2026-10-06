@@ -6,13 +6,19 @@ import { useRef, useState } from "react";
 import type { Card } from "@/lib/model";
 import { rankBetween } from "@/lib/model";
 
-export interface CardMove<K extends string> {
-  card: Card;
+/** Anything ordered by rank within a group: cards, CRM records. */
+interface Ranked {
+  id: string;
+  rank: number;
+}
+
+export interface CardMove<K extends string, T extends Ranked = Card> {
+  card: T;
   group: K;
   rank: number;
 }
 
-type Groups<K extends string> = Record<K, Card[]>;
+type Groups<K extends string, T> = Record<K, T[]>;
 
 // Enter follows the card link, so only Space picks a card up.
 const SENSORS = [
@@ -25,11 +31,11 @@ const SENSORS = [
   }),
 ];
 
-function rerank<K extends string>(
-  cards: Card[],
+function rerank<K extends string, T extends Ranked>(
+  cards: T[],
   index: number,
   group: K
-): CardMove<K>[] {
+): CardMove<K, T>[] {
   const card = cards[index];
   if (!card) {
     return [];
@@ -52,14 +58,14 @@ function rerank<K extends string>(
 }
 
 /** Keeps a local copy of the groups while dragging and reports the new ranks on drop. */
-export function useCardDrag<K extends string>(
-  groups: Groups<K>,
-  onMove: (moves: CardMove<K>[]) => void
+export function useCardDrag<K extends string, T extends Ranked = Card>(
+  groups: Groups<K, T>,
+  onMove: (moves: CardMove<K, T>[]) => void
 ) {
-  const [dragGroups, setDragGroups] = useState<Groups<K> | null>(null);
-  const latest = useRef<Groups<K> | null>(null);
+  const [dragGroups, setDragGroups] = useState<Groups<K, T> | null>(null);
+  const latest = useRef<Groups<K, T> | null>(null);
 
-  const update = (next: Groups<K> | null) => {
+  const update = (next: Groups<K, T> | null) => {
     latest.current = next;
     setDragGroups(next);
   };

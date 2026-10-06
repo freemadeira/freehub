@@ -10,7 +10,15 @@ import {
 } from "applesauce-signers";
 
 import { getConfig } from "@/config";
-import { BOARD_KIND, CARD_KIND, COMMENT_KIND, SPRINT_KIND } from "@/lib/model";
+import {
+  BOARD_KIND,
+  CARD_KIND,
+  COMMENT_KIND,
+  CRM_RECORD_KIND,
+  CRM_TABLE_KIND,
+  PROJECT_KIND,
+  SPRINT_KIND,
+} from "@/lib/model";
 import { accounts } from "@/lib/nostr";
 import { sleep, TimeoutError, withTimeout } from "@/lib/utils";
 
@@ -19,6 +27,9 @@ const PERMISSIONS = NostrConnectSigner.buildSigningPermissions([
   BOARD_KIND,
   CARD_KIND,
   SPRINT_KIND,
+  PROJECT_KIND,
+  CRM_TABLE_KIND,
+  CRM_RECORD_KIND,
   COMMENT_KIND,
   5,
 ]);

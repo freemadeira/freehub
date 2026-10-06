@@ -114,6 +114,25 @@ function DropdownMenuRadioItem({
   );
 }
 
+function DropdownMenuCheckboxItem({
+  className,
+  children,
+  ...props
+}: MenuPrimitive.CheckboxItem.Props) {
+  return (
+    <MenuPrimitive.CheckboxItem
+      className={cn(ITEM, "pr-8", className)}
+      data-slot="dropdown-menu-checkbox-item"
+      {...props}
+    >
+      {children}
+      <MenuPrimitive.CheckboxItemIndicator className="absolute right-2 flex items-center">
+        <CheckIcon />
+      </MenuPrimitive.CheckboxItemIndicator>
+    </MenuPrimitive.CheckboxItem>
+  );
+}
+
 function DropdownMenuSeparator({
   className,
   ...props
@@ -129,6 +148,7 @@ function DropdownMenuSeparator({
 
 export {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,

@@ -27,6 +27,11 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -58,6 +63,11 @@
   --border: rgb(9 5 6 / 0.1);
   --input: rgb(9 5 6 / 0.14);
   --ring: #090506;
+  --sidebar: #f6f0e6;
+  --sidebar-foreground: #090506;
+  --sidebar-accent: rgb(9 5 6 / 0.05);
+  --sidebar-accent-foreground: #090506;
+  --sidebar-border: rgb(9 5 6 / 0.08);
   --shadow-surface:
     0 0 0 1px rgb(9 5 6 / 0.06), 0 1px 2px -1px rgb(9 5 6 / 0.08),
     0 2px 4px rgb(9 5 6 / 0.03);
@@ -83,6 +93,11 @@
   --border: oklch(1 0 0 / 0.1);
   --input: oklch(1 0 0 / 0.15);
   --ring: var(--primary);
+  --sidebar: #110c0d;
+  --sidebar-foreground: #ffffff;
+  --sidebar-accent: oklch(1 0 0 / 0.06);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: oklch(1 0 0 / 0.08);
   --shadow-surface: 0 0 0 1px oklch(1 0 0 / 0.07), 0 1px 2px rgb(0 0 0 / 0.5);
   --shadow-raised:
     0 0 0 1px oklch(1 0 0 / 0.09), 0 8px 24px -6px rgb(0 0 0 / 0.7);

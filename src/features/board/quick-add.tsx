@@ -5,7 +5,15 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-export function QuickAdd({ onAdd }: { onAdd: (title: string) => void }) {
+export function QuickAdd({
+  onAdd,
+  label = "Add card",
+  placeholder = "Card title",
+}: {
+  onAdd: (title: string) => void;
+  label?: string;
+  placeholder?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
 
@@ -18,7 +26,7 @@ export function QuickAdd({ onAdd }: { onAdd: (title: string) => void }) {
         variant="ghost"
       >
         <PlusIcon />
-        Add card
+        {label}
       </Button>
     );
   }
@@ -34,7 +42,7 @@ export function QuickAdd({ onAdd }: { onAdd: (title: string) => void }) {
   return (
     <form onSubmit={submit}>
       <Input
-        aria-label="Card title"
+        aria-label={placeholder}
         autoComplete="off"
         autoFocus
         onBlur={(event) => {
@@ -49,7 +57,7 @@ export function QuickAdd({ onAdd }: { onAdd: (title: string) => void }) {
             setOpen(false);
           }
         }}
-        placeholder="Card title"
+        placeholder={placeholder}
         value={title}
       />
     </form>

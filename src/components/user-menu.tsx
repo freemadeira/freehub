@@ -1,5 +1,6 @@
 import { npubEncode } from "applesauce-core/helpers/pointers";
 import {
+  ChevronsUpDownIcon,
   CopyIcon,
   LogOutIcon,
   MonitorIcon,
@@ -9,7 +10,6 @@ import {
 import { toast } from "sonner";
 
 import { copyText } from "@/components/copy";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { SidebarMenuButton } from "@/components/ui/sidebar";
 import { UserAvatar } from "@/components/user-avatar";
 import { useObservableValue } from "@/hooks/use-observable-value";
 import { useProfile } from "@/hooks/use-profile";
@@ -48,20 +49,28 @@ export function UserMenu({ pubkey }: { pubkey: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button aria-label="Account" size="icon" variant="ghost" />}
+        render={
+          <SidebarMenuButton
+            aria-label="Account"
+            className="data-popup-open:bg-sidebar-accent"
+            size="lg"
+          />
+        }
       >
         <UserAvatar pubkey={pubkey} />
+        <span className="grid min-w-0 flex-1 text-left leading-tight">
+          <span className="truncate font-medium">{name}</span>
+          <span className="text-muted-foreground truncate font-mono text-xs">
+            {shortNpub(pubkey)}
+          </span>
+        </span>
+        <ChevronsUpDownIcon className="text-muted-foreground ml-auto" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-60">
-        <div className="flex items-center gap-2.5 px-2 py-1.5">
-          <UserAvatar pubkey={pubkey} />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{name}</p>
-            <p className="text-muted-foreground truncate font-mono text-xs">
-              {shortNpub(pubkey)}
-            </p>
-          </div>
-        </div>
+      <DropdownMenuContent
+        align="start"
+        className="w-(--anchor-width) min-w-56"
+        side="top"
+      >
         <DropdownMenuItem onClick={copyNpub}>
           <CopyIcon />
           Copy npub

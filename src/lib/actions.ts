@@ -19,14 +19,17 @@ import {
   tombstoneTemplate,
   upcomingSprint,
 } from "@/lib/model";
+import type { Project, ProjectFields } from "@/lib/project";
+import { deleteProjectTemplate, projectTemplate } from "@/lib/project";
 import { publish } from "@/lib/publish";
 
 const SPRINT_DAYS = 15;
 
 export type BoardDraft = Pick<
   Board,
-  "code" | "title" | "description" | "members"
+  "code" | "title" | "description" | "members" | "project"
 >;
+export type ProjectDraft = Omit<ProjectFields, "id" | "creator">;
 export type NewCard = Pick<CardFields, "title" | "status" | "rank"> &
   Partial<CardFields>;
 
@@ -50,6 +53,26 @@ export function updateBoard(
 
 export function deleteBoard(board: Board): Promise<boolean> {
   return publish(deleteBoardTemplate(board));
+}
+
+export function createProject(
+  creator: string,
+  draft: ProjectDraft
+): Promise<boolean> {
+  return publish(
+    projectTemplate({ ...draft, creator, id: crypto.randomUUID() })
+  );
+}
+
+export function updateProject(
+  project: Project,
+  changes: Partial<ProjectDraft>
+): Promise<boolean> {
+  return publish(projectTemplate({ ...project, ...changes }), project.event);
+}
+
+export function deleteProject(project: Project): Promise<boolean> {
+  return publish(deleteProjectTemplate(project));
 }
 
 export function createCard(

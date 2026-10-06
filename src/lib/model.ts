@@ -5,6 +5,9 @@ import { unixNow } from "applesauce-core/helpers/time";
 export const BOARD_KIND = 30_301;
 export const CARD_KIND = 30_302;
 export const SPRINT_KIND = 30_303;
+export const PROJECT_KIND = 30_304;
+export const CRM_TABLE_KIND = 30_305;
+export const CRM_RECORD_KIND = 30_306;
 export const COMMENT_KIND = 1111;
 export const DELETE_KIND = 5;
 
@@ -54,6 +57,8 @@ export interface Board {
   title: string;
   description: string;
   members: string[];
+  /** Address of the project the board belongs to, if any. */
+  project?: string;
   event: NostrEvent;
 }
 
@@ -107,12 +112,12 @@ export function isPubkey(value: string | undefined): value is string {
   return value !== undefined && HEX_KEY.test(value);
 }
 
-function integer(value: string | undefined): number | undefined {
+export function integer(value: string | undefined): number | undefined {
   const parsed = value === undefined ? Number.NaN : Number(value);
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
-function date(value: string | undefined): string | undefined {
+export function date(value: string | undefined): string | undefined {
   return value && DATE.test(value) ? value : undefined;
 }
 
@@ -123,8 +128,27 @@ function oneOf<T extends string>(
   return options.find(({ id }) => id === value)?.id;
 }
 
-function isDeleted(event: NostrEvent): boolean {
+export function isDeleted(event: NostrEvent): boolean {
   return event.tags.some(([name]) => name === "deleted");
+}
+
+/** The `d` part of an `a` tag pointing at the given kind, e.g. a card's board. */
+export function addressedId(
+  event: NostrEvent,
+  kind: number
+): string | undefined {
+  const prefix = `${kind}:`;
+  const value = event.tags.find(
+    ([name, address]) => name === "a" && address?.startsWith(prefix)
+  )?.[1];
+  return value?.split(":").slice(2).join(":") || undefined;
+}
+
+function addressOf(event: NostrEvent, kind: number): string | undefined {
+  const prefix = `${kind}:`;
+  return event.tags.find(
+    ([name, address]) => name === "a" && address?.startsWith(prefix)
+  )?.[1];
 }
 
 export function statusLabel(status: Status): string {
@@ -195,6 +219,7 @@ export function parseBoard(event: NostrEvent): Board | undefined {
     event,
     id,
     members: [event.pubkey, ...members],
+    project: addressOf(event, PROJECT_KIND),
     title: getTagValue(event, "title") ?? code,
   };
 }
@@ -243,7 +268,7 @@ export function parseComment(event: NostrEvent): Comment {
 }
 
 // Every member may write any card or sprint: the newest version across authors wins.
-function latestVersions(
+export function latestVersions(
   events: NostrEvent[],
   kind: number,
   authors: Set<string>
@@ -298,7 +323,7 @@ export function resolveBoard(board: Board, events: NostrEvent[]): BoardContent {
 export function boardTemplate(
   board: Pick<
     Board,
-    "id" | "code" | "title" | "description" | "members" | "creator"
+    "id" | "code" | "title" | "description" | "members" | "creator" | "project"
   >
 ): Template {
   return {
@@ -318,6 +343,7 @@ export function boardTemplate(
       ...board.members
         .filter((member) => member !== board.creator)
         .map((member) => ["p", member]),
+      ...(board.project ? [["a", board.project]] : []),
       ["alt", `Kanban board: ${board.title}`],
     ],
   };
