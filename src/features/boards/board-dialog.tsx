@@ -35,6 +35,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useEveryBoard } from "@/hooks/use-boards";
 import { createBoard, deleteBoard, updateBoard } from "@/lib/actions";
 import type { Board } from "@/lib/model";
 import { CODE, RESERVED_CODES } from "@/lib/model";
@@ -74,7 +75,9 @@ function validateCode(
   if (RESERVED_CODES.has(code)) {
     return "The app uses this code.";
   }
-  if (boards.some((item) => item.code === code && item.id !== board?.id)) {
+  if (
+    boards.some((item) => item.code === code && item.address !== board?.address)
+  ) {
     return "Another board uses this code.";
   }
   return null;
@@ -257,8 +260,10 @@ function BoardForm({
   const [members, setMembers] = useState(initial.members);
   const [projectAddress, setProjectAddress] = useState(initial.project);
   const parent = projects.find((item) => item.address === projectAddress);
+  // Includes boards the user isn't in, which teammates may still see beside theirs.
+  const everyBoard = useEveryBoard();
 
-  const codeError = validateCode(code, boards, board);
+  const codeError = validateCode(code, [...boards, ...everyBoard], board);
   const valid = title.trim() !== "" && code !== "" && !codeError;
 
   const changeTitle = (value: string) => {

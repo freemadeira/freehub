@@ -220,6 +220,70 @@ export function relationTarget(
     : undefined;
 }
 
+function same(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * A list as the user edited it, laid over its latest version: what they added,
+ * changed or removed follows them, the rest follows the latest version, and
+ * what others added meanwhile is kept at the end.
+ */
+function mergeById<T extends { id: string }>(
+  base: readonly T[],
+  mine: readonly T[],
+  latest: readonly T[],
+  mergeItem: (base: T, mine: T, latest: T) => T = (_, item) => item
+): T[] {
+  const before = new Map(base.map((item) => [item.id, item]));
+  const now = new Map(latest.map((item) => [item.id, item]));
+  const merged: T[] = [];
+  for (const item of mine) {
+    const original = before.get(item.id);
+    const current = now.get(item.id);
+    if (!original) {
+      merged.push(item);
+    } else if (current) {
+      merged.push(
+        same(original, item) ? current : mergeItem(original, item, current)
+      );
+    } else if (!same(original, item)) {
+      // Removed meanwhile, but this user changed it: keep their version.
+      merged.push(item);
+    }
+  }
+  const kept = new Set(mine.map((item) => item.id));
+  for (const item of latest) {
+    if (!(before.has(item.id) || kept.has(item.id))) {
+      merged.push(item);
+    }
+  }
+  return merged;
+}
+
+/**
+ * Fields as edited in the table settings, over the table's latest version, so
+ * fields and options a teammate or an import added while the dialog was open
+ * survive the save.
+ */
+export function mergeFields(
+  base: readonly Field[],
+  mine: readonly Field[],
+  latest: readonly Field[]
+): Field[] {
+  return mergeById(base, mine, latest, (before, edited, current) => {
+    const pick = <K extends "name" | "type" | "config">(key: K) =>
+      edited[key] === before[key] ? current[key] : edited[key];
+    return {
+      config: pick("config"),
+      id: edited.id,
+      name: pick("name"),
+      options: mergeById(before.options, edited.options, current.options),
+      type: pick("type"),
+    };
+  });
+}
+
 // A second title or stage field can't be honored: drop the title, demote the stage.
 function fieldType(
   raw: string | undefined,

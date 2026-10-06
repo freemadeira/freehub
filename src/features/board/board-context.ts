@@ -15,6 +15,8 @@ export interface BoardScope {
   cards: Card[];
   pubkey: string;
   cardHref: (card: Card) => string;
+  /** Names the board in links when another board the user sees shares its code. */
+  boardQuery: URLSearchParams;
   /** Opens the new card dialog. */
   newCard: (placement: CardPlacement) => void;
 }
@@ -27,6 +29,19 @@ export function useBoard(): BoardScope {
     throw new Error("useBoard needs a BoardContext provider.");
   }
   return scope;
+}
+
+/** `?board=` with the board's id when another of the boards shares its code. */
+export function boardQuery(board: Board, boards: Board[]): URLSearchParams {
+  const shared = boards.some(
+    (item) => item.code === board.code && item.address !== board.address
+  );
+  return new URLSearchParams(shared ? { board: board.id } : {});
+}
+
+export function boardPath(board: Board, boards: Board[]): string {
+  const search = boardQuery(board, boards).toString();
+  return `/${board.code}${search ? `?${search}` : ""}`;
 }
 
 /**

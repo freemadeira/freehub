@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import type { LinkProps } from "wouter";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearchParams } from "wouter";
 
 import { Logo } from "@/components/logo";
 import { ProjectAvatar } from "@/components/project-avatar";
@@ -36,6 +36,8 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { UserMenu } from "@/components/user-menu";
+import { boardPath } from "@/features/board/board-context";
+import { findBoard, parseSlug } from "@/features/board/board-route";
 import { TableIcon } from "@/features/crm/table-icon";
 import { INBOX_PATH } from "@/features/inbox/inbox-page";
 import type { CrmTable } from "@/lib/crm";
@@ -60,19 +62,24 @@ function NavLink(props: LinkProps) {
   );
 }
 
-function boardPath(board: Board): string {
-  return `/${board.code}`;
-}
-
-function isBoardPath(location: string, board: Board): boolean {
-  const segment = location.split("/")[1]?.toUpperCase() ?? "";
-  return segment === board.code || segment.startsWith(`${board.code}-`);
+/** The board the current page shows, if any. */
+function useOpenBoard(boards: Board[]): Board | undefined {
+  const [location] = useLocation();
+  const [search] = useSearchParams();
+  // Board pages sit one level deep: `/FREE` or `/FREE-12`.
+  const [, segment = "", ...rest] = location.split("/");
+  const slug = rest.length === 0 ? parseSlug(segment) : undefined;
+  return slug ? findBoard(boards, slug.code, search.get("board")) : undefined;
 }
 
 interface ProjectItemProps {
   project: Project;
   tables: CrmTable[];
+  /** This project's boards. */
   boards: Board[];
+  /** Every board, to tell apart boards sharing a code. */
+  allBoards: Board[];
+  openBoard?: Board;
   location: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -82,6 +89,8 @@ function ProjectItem({
   project,
   tables,
   boards,
+  allBoards,
+  openBoard,
   location,
   open,
   onOpenChange,
@@ -131,8 +140,8 @@ function ProjectItem({
           {boards.map((board) => (
             <SidebarMenuSubItem key={board.address}>
               <SidebarMenuSubButton
-                isActive={isBoardPath(location, board)}
-                render={<NavLink href={boardPath(board)} />}
+                isActive={board === openBoard}
+                render={<NavLink href={boardPath(board, allBoards)} />}
               >
                 <SquareKanbanIcon />
                 <span>{board.title}</span>
@@ -171,6 +180,7 @@ export function AppSidebar({
   onNewProject,
 }: AppSidebarProps) {
   const [location] = useLocation();
+  const openBoard = useOpenBoard(boards);
   const { isMobile } = useSidebar();
   const [folded, setFolded] = useState<Record<string, boolean>>({});
 
@@ -187,7 +197,7 @@ export function AppSidebar({
     return (
       projects.length <= OPEN_BY_DEFAULT ||
       location.startsWith(`/p/${project.slug}`) ||
-      projectBoards.some((board) => isBoardPath(location, board))
+      projectBoards.some((board) => board === openBoard)
     );
   };
 
@@ -250,8 +260,10 @@ export function AppSidebar({
               );
               return (
                 <ProjectItem
+                  allBoards={boards}
                   boards={projectBoards}
                   key={project.address}
+                  openBoard={openBoard}
                   location={location}
                   onOpenChange={(open) =>
                     setFolded({ ...folded, [project.address]: open })
@@ -282,8 +294,8 @@ export function AppSidebar({
               {looseBoards.map((board) => (
                 <SidebarMenuItem key={board.address}>
                   <SidebarMenuButton
-                    isActive={isBoardPath(location, board)}
-                    render={<NavLink href={boardPath(board)} />}
+                    isActive={board === openBoard}
+                    render={<NavLink href={boardPath(board, boards)} />}
                   >
                     <SquareKanbanIcon />
                     <span>{board.title}</span>

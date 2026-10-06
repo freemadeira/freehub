@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
+import { boardPath } from "@/features/board/board-context";
 import {
   BoardCard,
   CARD_SURFACE,
@@ -253,7 +254,11 @@ export function ProjectPage({
           {projectBoards.length > 0 ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {projectBoards.map((board) => (
-                <BoardCard board={board} key={board.address} />
+                <BoardCard
+                  board={board}
+                  href={boardPath(board, boards)}
+                  key={board.address}
+                />
               ))}
             </div>
           ) : (

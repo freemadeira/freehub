@@ -8,6 +8,7 @@ import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import { boardPath } from "@/features/board/board-context";
 import {
   BoardCard,
   CARD_SURFACE,
@@ -163,7 +164,11 @@ export function HomePage({
           <Section action={newBoard} title="Boards">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {looseBoards.map((board) => (
-                <BoardCard board={board} key={board.address} />
+                <BoardCard
+                  board={board}
+                  href={boardPath(board, boards)}
+                  key={board.address}
+                />
               ))}
             </div>
           </Section>

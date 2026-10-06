@@ -28,10 +28,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useEveryProject } from "@/hooks/use-projects";
 import { createProject, deleteProject, updateProject } from "@/lib/actions";
 import type { Color } from "@/lib/palette";
 import type { Project } from "@/lib/project";
-import { cleanSlugInput, slugify } from "@/lib/project";
+import { cleanSlugInput, slugify, uniqueSlug } from "@/lib/project";
 
 function DeleteProject({
   project,
@@ -137,10 +138,15 @@ function ProjectForm({ project, projects, pubkey, onDone }: ProjectFormProps) {
   const [color, setColor] = useState<Color>(project?.color ?? "yellow");
   const [members, setMembers] = useState(project?.members ?? [pubkey]);
 
-  const finalSlug = slugify(slug);
-  const taken = projects.some(
-    (item) => item.slug === finalSlug && item.address !== project?.address
+  // Includes projects the user isn't in, which teammates may still see beside theirs.
+  const everyProject = useEveryProject();
+  const takenSlugs = new Set(
+    [...projects, ...everyProject]
+      .filter((item) => item.address !== project?.address)
+      .map((item) => item.slug)
   );
+  const finalSlug = slugify(slug);
+  const taken = takenSlugs.has(finalSlug);
   const valid = title.trim() !== "" && finalSlug !== "" && !taken;
 
   const submit = (event: FormEvent) => {
@@ -183,7 +189,8 @@ function ProjectForm({ project, projects, pubkey, onDone }: ProjectFormProps) {
           onChange={(event) => {
             setTitle(event.target.value);
             if (!slugEdited) {
-              setSlug(slugify(event.target.value));
+              const base = slugify(event.target.value);
+              setSlug(base && uniqueSlug(base, takenSlugs));
             }
           }}
           placeholder="Bitcoin Madeira"

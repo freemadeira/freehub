@@ -8,7 +8,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AssigneeFilter } from "@/features/board/assignee-filter";
 import { BacklogView } from "@/features/board/backlog-view";
 import type { BoardScope } from "@/features/board/board-context";
-import { BoardContext, cardPath } from "@/features/board/board-context";
+import {
+  BoardContext,
+  boardQuery,
+  cardPath,
+} from "@/features/board/board-context";
 import { DoneView } from "@/features/board/done-view";
 import { SprintView } from "@/features/board/sprint-view";
 import { BoardDialog } from "@/features/boards/board-dialog";
@@ -32,6 +36,14 @@ function parseTab(value: string | null): Tab {
 function withQuery(path: string, query: URLSearchParams): string {
   const search = query.toString();
   return search ? `${path}?${search}` : path;
+}
+
+function withTab(query: URLSearchParams, tab: Tab): URLSearchParams {
+  const next = new URLSearchParams(query);
+  if (tab !== DEFAULT_TAB) {
+    next.set("tab", tab);
+  }
+  return next;
 }
 
 // Keeps the last opened card so the dialog can animate out after it closes.
@@ -96,7 +108,8 @@ export function BoardPage({
   }>();
 
   const tab = parseTab(params.get("tab"));
-  const tabQuery = new URLSearchParams(tab === DEFAULT_TAB ? {} : { tab });
+  const linkQuery = boardQuery(board, boards);
+  const tabQuery = withTab(linkQuery, tab);
   const boardHref = withQuery(`/${board.code}`, tabQuery);
   const cardId = params.get("card");
   const wantsCard = cardNumber !== undefined || cardId !== null;
@@ -106,8 +119,7 @@ export function BoardPage({
     cardId
   );
 
-  const showTab = (value: Tab) =>
-    setParams(value === DEFAULT_TAB ? {} : { tab: value });
+  const showTab = (value: Tab) => setParams(withTab(linkQuery, value));
 
   const closeCard = () => {
     if (history.state?.fromBoard) {
@@ -120,6 +132,7 @@ export function BoardPage({
   const scope: BoardScope | null = content
     ? {
         board,
+        boardQuery: linkQuery,
         cardHref: (card) =>
           cardPath(board, card, {
             query: tabQuery,

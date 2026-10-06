@@ -7,7 +7,7 @@ import {
   XIcon,
 } from "lucide-react";
 import type { FormEvent } from "react";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useLocation } from "wouter";
 
 import { IconButton } from "@/components/icon-button";
@@ -58,7 +58,7 @@ import {
 import { OptionsEditor, swap } from "@/features/crm/options-editor";
 import { TABLE_ICON_COMPONENTS } from "@/features/crm/table-icon";
 import type { CrmTable, Field, FieldType, TableIcon } from "@/lib/crm";
-import { CURRENCIES, shortId, TABLE_ICONS } from "@/lib/crm";
+import { CURRENCIES, mergeFields, shortId, TABLE_ICONS } from "@/lib/crm";
 import { deleteTable, updateTable } from "@/lib/crm-actions";
 
 function newField(
@@ -315,6 +315,8 @@ function DeleteTable({ onDeleted }: { onDeleted: () => void }) {
 function TableSettingsForm({ onDone }: { onDone: () => void }) {
   const id = useId();
   const { content, project, table } = useCrm();
+  // The table as the dialog opened; only what changed since is saved over the latest one.
+  const opened = useRef(table);
   const [title, setTitle] = useState(table.title);
   const [singular, setSingular] = useState(table.singular);
   const [description, setDescription] = useState(table.description);
@@ -323,9 +325,13 @@ function TableSettingsForm({ onDone }: { onDone: () => void }) {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    const base = opened.current;
     updateTable(project, table, {
-      description: description.trim(),
-      fields: fields.map((field) => ({
+      description:
+        description === base.description
+          ? table.description
+          : description.trim(),
+      fields: mergeFields(base.fields, fields, table.fields).map((field) => ({
         ...field,
         name: field.name.trim() || FIELD_TYPE_META[field.type].label,
         options: field.options.map((option) => ({
@@ -333,9 +339,12 @@ function TableSettingsForm({ onDone }: { onDone: () => void }) {
           label: option.label.trim() || "Untitled",
         })),
       })),
-      icon,
-      singular: singular.trim() || table.singular,
-      title: title.trim() || table.title,
+      icon: icon === base.icon ? table.icon : icon,
+      singular:
+        singular === base.singular
+          ? table.singular
+          : singular.trim() || table.singular,
+      title: title === base.title ? table.title : title.trim() || table.title,
     });
     onDone();
   };

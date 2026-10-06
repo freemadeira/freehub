@@ -6,7 +6,7 @@ import { resolveProject, resolveTables } from "@/lib/crm";
 import { CRM_RECORD_KIND, CRM_TABLE_KIND } from "@/lib/model";
 import { eventStore } from "@/lib/nostr";
 import type { Project } from "@/lib/project";
-import { addressFilters, sync } from "@/lib/relays";
+import { addressFilters, sync, whileLoading } from "@/lib/relays";
 
 /** CRM tables and records of a project, resolved across every member's versions. */
 export function useProjectContent(project: Project): {
@@ -15,16 +15,17 @@ export function useProjectContent(project: Project): {
 } {
   const kinds = [CRM_TABLE_KIND, CRM_RECORD_KIND];
   const filters = [{ "#a": [project.address], kinds }];
-  const loaded = useObservableValue(
-    () =>
-      sync(addressFilters("#a", [project.address], { kinds }, project.members)),
-    [project.address, project.members.join(",")]
-  );
+  const feed = () =>
+    sync(addressFilters("#a", [project.address], { kinds }, project.members));
+  const loaded = useObservableValue(feed, [
+    project.address,
+    project.members.join(","),
+  ]);
   const content = useObservableValue(
     () =>
-      eventStore
-        .timeline(filters)
-        .pipe(map((events) => resolveProject(project, events))),
+      whileLoading(eventStore.timeline(filters), feed()).pipe(
+        map((events) => resolveProject(project, events))
+      ),
     [project.address, project.event.id]
   );
   return { content, loaded: loaded ?? false };

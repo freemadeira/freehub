@@ -3,10 +3,10 @@ import { getTagValue, isReplaceable } from "applesauce-core/helpers/event";
 import { BehaviorSubject, combineLatest, filter, map, noop } from "rxjs";
 import { toast } from "sonner";
 
+import { getConfig } from "@/config";
 import type { Template } from "@/lib/model";
 import { DELETE_KIND, nextCreatedAt } from "@/lib/model";
 import { abortSigning, accounts, addDraft, eventStore } from "@/lib/nostr";
-import type { PublishOutcome } from "@/lib/relays";
 import { access$, publishToRelays, sessionPubkey$ } from "@/lib/relays";
 import {
   readStorage,
@@ -14,6 +14,19 @@ import {
   withTimeout,
   writeStorage,
 } from "@/lib/utils";
+
+type Outcome =
+  | { status: "ok" }
+  | { status: "rejected"; reason: string }
+  | { status: "failed" };
+
+/** A signed change and the team relays that don't have it yet. */
+interface Queued {
+  event: NostrEvent;
+  relays: string[];
+  /** A relay already has it, so it counts as saved. */
+  saved: boolean;
+}
 
 const SIGN_TIMEOUT = 60_000;
 const RETRY_INTERVAL = 30_000;
@@ -32,22 +45,31 @@ function outboxKey(pubkey: string): string {
   return `outbox:${pubkey}`;
 }
 
-function readOutbox(pubkey: string): NostrEvent[] {
+function queue(event: NostrEvent): Queued {
+  return { event, relays: getConfig().relays, saved: false };
+}
+
+// Outboxes saved before changes were tracked per relay hold bare events.
+function readOutbox(pubkey: string): Queued[] {
   try {
-    const events: unknown = JSON.parse(readStorage(outboxKey(pubkey)) ?? "[]");
-    return Array.isArray(events) ? events : [];
+    const items: unknown = JSON.parse(readStorage(outboxKey(pubkey)) ?? "[]");
+    return Array.isArray(items)
+      ? items.map((item: Queued | NostrEvent) =>
+          "event" in item ? item : queue(item)
+        )
+      : [];
   } catch {
     return [];
   }
 }
 
-function writeOutbox(pubkey: string, events: NostrEvent[]): void {
+function writeOutbox(pubkey: string, items: Queued[]): void {
   writeStorage(
     outboxKey(pubkey),
-    events.length > 0 ? JSON.stringify(events) : null
+    items.length > 0 ? JSON.stringify(items) : null
   );
   if (pubkey === accounts.active?.pubkey) {
-    outboxSize$.next(events.length);
+    outboxSize$.next(items.filter((item) => !item.saved).length);
   }
 }
 
@@ -60,22 +82,49 @@ function address(event: NostrEvent): string | undefined {
 function enqueue(event: NostrEvent): void {
   const key = address(event);
   const queued = readOutbox(event.pubkey).filter(
-    (item) => key === undefined || address(item) !== key
+    (item) => key === undefined || address(item.event) !== key
   );
-  writeOutbox(event.pubkey, [...queued, event]);
+  writeOutbox(event.pubkey, [...queued, queue(event)]);
 }
 
-async function deliver(event: NostrEvent): Promise<PublishOutcome> {
+// The relays still to send it to. If the team moved relays, an unsaved change goes to the new ones.
+function pending(item: Queued): string[] {
+  const { relays } = getConfig();
+  const known = item.relays.filter((url) => relays.includes(url));
+  return known.length > 0 || item.saved ? known : relays;
+}
+
+/** Sends a queued change to every relay that doesn't have it yet. */
+async function deliver(event: NostrEvent): Promise<Outcome> {
+  const item =
+    readOutbox(event.pubkey).find((queued) => queued.event.id === event.id) ??
+    queue(event);
   delivering.add(event.id);
   try {
-    const result = await publishToRelays(event);
-    if (result.status !== "failed") {
-      writeOutbox(
-        event.pubkey,
-        readOutbox(event.pubkey).filter((item) => item.id !== event.id)
-      );
+    const delivery = await publishToRelays(event, pending(item));
+    if (!delivery) {
+      return { status: "failed" };
     }
-    return result;
+    const saved = item.saved || delivery.accepted.length > 0;
+    // Relays that refused won't change their mind; the unreachable ones get it later.
+    writeOutbox(
+      event.pubkey,
+      readOutbox(event.pubkey).flatMap((queued) => {
+        if (queued.event.id !== event.id) {
+          return [queued];
+        }
+        return delivery.failed.length > 0
+          ? [{ ...queued, relays: delivery.failed, saved }]
+          : [];
+      })
+    );
+    const [refused] = delivery.refused;
+    if (saved) {
+      return { status: "ok" };
+    }
+    return refused && delivery.failed.length === 0
+      ? { reason: refused.reason, status: "rejected" }
+      : { status: "failed" };
   } finally {
     delivering.delete(event.id);
   }
@@ -92,10 +141,10 @@ async function redeliver(event: NostrEvent): Promise<void> {
 
 function flush(): void {
   const pubkey = accounts.active?.pubkey;
-  if (!pubkey || outboxSize$.value === 0) {
+  if (!pubkey) {
     return;
   }
-  for (const event of readOutbox(pubkey)) {
+  for (const { event } of readOutbox(pubkey)) {
     if (!delivering.has(event.id)) {
       redeliver(event);
     }
@@ -105,8 +154,8 @@ function flush(): void {
 export function startOutbox(): void {
   sessionPubkey$.subscribe((pubkey) => {
     const queued = pubkey ? readOutbox(pubkey) : [];
-    outboxSize$.next(queued.length);
-    for (const event of queued) {
+    outboxSize$.next(queued.filter((item) => !item.saved).length);
+    for (const { event } of queued) {
       eventStore.add(event);
     }
     flush();

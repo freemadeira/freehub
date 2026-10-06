@@ -126,3 +126,21 @@ export function sortProjects(projects: Project[]): Project[] {
     (a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id)
   );
 }
+
+/**
+ * Projects made by different people can share a slug. The one with the lowest
+ * id keeps it and the others get -2, -3, …, so each keeps a link of its own.
+ */
+export function distinctSlugs(projects: Project[]): Project[] {
+  const taken = new Set<string>();
+  const slugs = new Map<string, string>();
+  for (const project of projects.toSorted((a, b) => a.id.localeCompare(b.id))) {
+    const slug = uniqueSlug(project.slug, taken);
+    taken.add(slug);
+    slugs.set(project.address, slug);
+  }
+  return projects.map((project) => {
+    const slug = slugs.get(project.address) ?? project.slug;
+    return slug === project.slug ? project : { ...project, slug };
+  });
+}

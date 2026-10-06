@@ -2,7 +2,7 @@ import { SquareKanbanIcon } from "lucide-react";
 import { MotionConfig } from "motion/react";
 import { lazy, Suspense, useState } from "react";
 import type { DefaultParams } from "wouter";
-import { Redirect, Route, Switch, useRoute } from "wouter";
+import { Redirect, Route, Switch, useRoute, useSearchParams } from "wouter";
 
 import { AppSidebar } from "@/components/app-sidebar";
 import { ProjectAvatar } from "@/components/project-avatar";
@@ -13,7 +13,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { BoardRoute, parseSlug } from "@/features/board/board-route";
+import { BoardRoute, findBoard, parseSlug } from "@/features/board/board-route";
 import { HomePage } from "@/features/home/home-page";
 import { INBOX_PATH, InboxPage } from "@/features/inbox/inbox-page";
 import { LoginPage } from "@/features/login/login-page";
@@ -83,9 +83,10 @@ function Workspace({ pubkey }: { pubkey: string }) {
   const inbox = useInbox(pubkey, boards);
   const [creatingProject, setCreatingProject] = useState(false);
   const [, params] = useRoute<{ slug: string }>("/:slug");
+  const [search] = useSearchParams();
   const slug = params ? parseSlug(params.slug) : undefined;
   const board = slug
-    ? boards.find((item) => item.code === slug.code)
+    ? findBoard(boards, slug.code, search.get("board"))
     : undefined;
   const boardProject = projects.find(
     (project) => project.address === board?.project

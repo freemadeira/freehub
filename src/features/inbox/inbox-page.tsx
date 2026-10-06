@@ -53,8 +53,12 @@ function Row({ item, inbox }: { item: InboxItem; inbox: Inbox }) {
           "hover:bg-foreground/5 focus-visible:ring-ring/50 flex items-center gap-3 rounded-xl py-2.5 pr-3 pl-2 transition-colors duration-150 outline-none focus-visible:ring-3",
           read && "text-muted-foreground"
         )}
-        // The inbox doesn't know the board's other cards, so it never relies on the number alone.
-        href={cardPath(board, card, { withId: true })}
+        // The inbox knows neither the board's other cards nor other boards with
+        // its code, so it never relies on the number or the code alone.
+        href={cardPath(board, card, {
+          query: new URLSearchParams({ board: board.id }),
+          withId: true,
+        })}
         onClick={() => inbox.setRead([item], true)}
         state={OPENED_FROM_BOARD}
       >

@@ -100,9 +100,10 @@ You need a private Nostr relay for the team. It must:
 
 - require NIP-42 AUTH for reads and writes, and only let whitelisted pubkeys in;
 - store kinds 30301–30306, 1111 and 5;
+- keep its database on persistent storage, since the relay holds the only copy of the team's data;
 - be reachable over `wss://`.
 
-The private relay in [Haven](https://github.com/bitvora/haven) does all of this. Events are signed but not encrypted, so whoever runs the relay can read every board and every CRM record, including the names, emails and phone numbers in it: run it yourself or trust whoever does.
+The private relay in [Haven](https://github.com/bitvora/haven) does all of this. Haven keeps its database in a `db` folder next to it (`/app/db` in its Docker image) and reads the whitelist only when it starts, so adding someone means a restart or redeploy: put `db` on a volume, or every redeploy starts with an empty relay. Events are signed but not encrypted, so whoever runs the relay can read every board and every CRM record, including the names, emails and phone numbers in it: run it yourself or trust whoever does.
 
 Then:
 
@@ -121,7 +122,7 @@ All settings live in `public/config.json`:
 | `logo` | `/logo.svg` | Shown on the login screen and in the header. |
 | `logoDark` | same as `logo` | Logo for dark mode. |
 | `accent` | `#ffcb05` | Any CSS color. Buttons use dark or white text, whichever reads better on it. |
-| `relays` | required | Team relays. Boards are read from and written to all of them; a change is saved once any one accepts it. |
+| `relays` | required | Team relays. Boards are read from and written to all of them; a change counts as saved once one accepts it, and the others get it in the background. |
 | `signerRelays` | nos.lol, relay.primal.net, relay.damus.io | Relays the app and a signer app talk through when logging in by QR code. |
 | `lookupRelays` | purplepag.es, user.kindpag.es, relay.damus.io | Public relays used to look up members' names and avatars. |
 
@@ -168,7 +169,8 @@ There is no backend and no database. The app is a static site: every change is a
 - **Cards.** A card can have several assignees, and its description is written in Markdown. Raw HTML in a description stays plain text, and links only go to web and mail addresses.
 - **Inbox.** Typing `@` in a comment suggests the board's members. A mention is saved as a `nostr:npub…` reference in the comment with a `p` tag for that person (NIP-27), so the relay routes it and other Nostr clients show it too. Mentions land in the person's inbox; opening the card marks them read. Notifications are read from the comments themselves through the rules in `src/lib/notifications.ts`, so another way of delivering them, such as an email bridge subscribed to the relay, can reuse the same rules.
 - **CRM.** Each project can hold several tables, such as merchants, companies, people or deals. Every table has its own fields (text, numbers, money, dates, selects, members, links to other tables and more) and can have a stage field that turns it into a pipeline with won and lost endings. Any project member can add tables, change their fields and edit records. Records show up as a table (sorting, search, filters, column picker, bulk changes, CSV import and export), as a pipeline board and as insights. Every stage change is kept on the record, so its journey and the time spent in each stage can be read back. Notes, calls, emails, meetings and visits are logged on a record as comments.
-- **Saving.** Changes show up right away, then go to the signer and on to the relay. Once signed, a change is kept in the browser until a relay accepts it, so it survives reloads and time offline. A change still waiting on the signer is lost if the tab closes, and the app warns before that happens.
+- **Saving.** Changes show up right away, then go to the signer and on to the relay. Once signed, a change is kept in the browser until every team relay has it, so it survives reloads and time offline. A change still waiting on the signer is lost if the tab closes, and the app warns before that happens.
+- **Loading.** Relays only send their newest few hundred events per request, so the app pages back through everything they hold before a board or table counts as loaded, then keeps listening. When a relay drops or closes the connection, it reconnects and catches up on what it missed.
 - **Where data goes.** Board data is only sent to the team relays, plus, encrypted, the relays a signer app talks through. Lookup relays only see which profiles are being fetched.
 
 ### Events
@@ -210,6 +212,8 @@ Each member publishes their own version of a card, sprint, CRM table or record u
 ## Known limits
 
 - Card numbers are picked as highest + 1 on each device, so two people adding cards at the same moment can get the same number.
+- Board codes and project links are checked against every board and project on the relay, but two made at the same moment can still match. Links then name the board with `?board=`, and one of the projects gets a `-2` link.
+- Removing someone from a board or project hides the cards, sprints, CRM tables and records whose newest version is theirs: each falls back to an older version or disappears, a table with its records. Comments on their versions are hidden too. Adding them back shows it all again.
 - The columns are fixed: To do, In progress, Done.
 - No file attachments yet.
 - A CRM record is saved as a whole, so two people changing different fields of the same record at the same moment can undo one another's change.

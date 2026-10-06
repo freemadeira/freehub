@@ -27,9 +27,9 @@ export function MemberAvatars({
   );
 }
 
-export function BoardCard({ board }: { board: Board }) {
+export function BoardCard({ board, href }: { board: Board; href: string }) {
   return (
-    <Link className={CARD_SURFACE} href={`/${board.code}`}>
+    <Link className={CARD_SURFACE} href={href}>
       <div className="flex items-start justify-between gap-3">
         <h3 className="min-w-0 leading-snug font-medium">{board.title}</h3>
         <span className="bg-muted text-muted-foreground shrink-0 rounded-md px-1.5 py-0.5 font-mono text-xs">
