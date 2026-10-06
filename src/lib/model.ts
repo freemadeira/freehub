@@ -106,7 +106,19 @@ export interface Comment {
 
 const HEX_KEY = /^[0-9a-f]{64}$/u;
 const DATE = /^\d{4}-\d{2}-\d{2}$/u;
+const ID_BYTES = 8;
 export const CODE = /^[A-Z][A-Z0-9]{0,9}$/u;
+
+/**
+ * A random `d` tag. Relays built on fiatjaf/eventstore (Haven, most khatru
+ * relays) don't index tag values over 100 characters, so this keeps an address
+ * pointing at it (`kind:pubkey:d`, 87 characters) findable with `#a` queries.
+ */
+export function newId(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(ID_BYTES)), (byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+}
 
 export function isPubkey(value: string | undefined): value is string {
   return value !== undefined && HEX_KEY.test(value);

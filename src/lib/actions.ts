@@ -15,6 +15,7 @@ import {
   commentTemplate,
   deleteBoardTemplate,
   deleteCommentTemplate,
+  newId,
   sprintTemplate,
   tombstoneTemplate,
   upcomingSprint,
@@ -41,7 +42,7 @@ export function createBoard(
   creator: string,
   draft: BoardDraft
 ): Promise<boolean> {
-  return publish(boardTemplate({ ...draft, creator, id: crypto.randomUUID() }));
+  return publish(boardTemplate({ ...draft, creator, id: newId() }));
 }
 
 export function updateBoard(
@@ -59,9 +60,7 @@ export function createProject(
   creator: string,
   draft: ProjectDraft
 ): Promise<boolean> {
-  return publish(
-    projectTemplate({ ...draft, creator, id: crypto.randomUUID() })
-  );
+  return publish(projectTemplate({ ...draft, creator, id: newId() }));
 }
 
 export function updateProject(
@@ -85,7 +84,7 @@ export function createCard(
       description: "",
       labels: [],
       ...card,
-      id: crypto.randomUUID(),
+      id: newId(),
       number: content.nextNumber,
     })
   );
@@ -105,7 +104,7 @@ export function deleteCard(board: Board, card: Card): Promise<boolean> {
 
 function newSprint(number: number): SprintFields {
   return {
-    id: crypto.randomUUID(),
+    id: newId(),
     number,
     status: "future",
     title: `Sprint ${number}`,

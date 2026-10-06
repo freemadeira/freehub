@@ -9,6 +9,7 @@ import type {
   TableIcon,
 } from "@/lib/crm";
 import { shortId, TITLE_FIELD } from "@/lib/crm";
+import { newId } from "@/lib/model";
 import type { Color } from "@/lib/palette";
 import { slugify, uniqueSlug } from "@/lib/project";
 
@@ -271,9 +272,7 @@ export function buildPack(
   title?: string
 ): CrmTableFields[] {
   const taken = new Set(takenSlugs);
-  const ids = new Map(
-    pack.tables.map((spec) => [spec.key, crypto.randomUUID()])
-  );
+  const ids = new Map(pack.tables.map((spec) => [spec.key, newId()]));
   const now = unixNow();
   return pack.tables.map((spec, index) => {
     const name = (pack.tables.length === 1 && title?.trim()) || spec.title;
@@ -303,7 +302,7 @@ export function buildPack(
       description: spec.description,
       fields,
       icon: spec.icon,
-      id: ids.get(spec.key) ?? crypto.randomUUID(),
+      id: ids.get(spec.key) ?? newId(),
       singular: spec.singular,
       slug,
       title: name,

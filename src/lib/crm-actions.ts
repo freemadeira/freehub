@@ -16,7 +16,7 @@ import {
   tableTemplate,
   tableTombstoneTemplate,
 } from "@/lib/crm";
-import { deleteCommentTemplate } from "@/lib/model";
+import { deleteCommentTemplate, newId } from "@/lib/model";
 import { accounts } from "@/lib/nostr";
 import type { Project } from "@/lib/project";
 import { publish } from "@/lib/publish";
@@ -80,7 +80,7 @@ export function createRecord(
       withMove(table, undefined, {
         createdAt: unixNow(),
         creator: accounts.active?.pubkey,
-        id: crypto.randomUUID(),
+        id: newId(),
         moves: [],
         rank: record.rank ?? 0,
         title: record.title,
