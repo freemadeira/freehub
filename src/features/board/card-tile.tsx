@@ -1,44 +1,16 @@
 import { useSortable } from "@dnd-kit/react/sortable";
 import { cn } from "cn";
 import { format, isBefore, parseISO, startOfToday } from "date-fns";
-import type { LucideIcon } from "lucide-react";
-import {
-  CalendarIcon,
-  ChevronDownIcon,
-  ChevronsUpIcon,
-  ChevronUpIcon,
-} from "lucide-react";
+import { CalendarIcon } from "lucide-react";
 import type { ReactNode, Ref } from "react";
 import { Link } from "wouter";
 
-import { UserAvatar } from "@/components/user-avatar";
-import { useBoard } from "@/features/board/board-context";
+import { OPENED_FROM_BOARD, useBoard } from "@/features/board/board-context";
+import { CARD_SURFACE } from "@/features/board/card-surface";
+import { LABEL_COLORS, PRIORITY_STYLES } from "@/features/card/card-fields";
+import { AvatarStack } from "@/features/card/card-parts";
 import type { Card, Label, Priority } from "@/lib/model";
 import { cardKey, PRIORITIES } from "@/lib/model";
-
-/** History state that lets the card dialog close with a plain back navigation. */
-const OPENED_FROM_BOARD = { fromBoard: true };
-
-export const PRIORITY_STYLES: Record<
-  Priority,
-  { icon: LucideIcon; className: string }
-> = {
-  high: { className: "text-red-500", icon: ChevronsUpIcon },
-  low: { className: "text-sky-500", icon: ChevronDownIcon },
-  medium: { className: "text-amber-500", icon: ChevronUpIcon },
-};
-
-export const LABEL_COLORS: Record<Label, string> = {
-  blue: "text-blue-500",
-  green: "text-green-500",
-  orange: "text-orange-500",
-  purple: "text-violet-500",
-  red: "text-red-500",
-  yellow: "text-yellow-400",
-};
-
-const SURFACE =
-  "rounded-lg bg-card shadow-surface outline-none transition-shadow duration-150 [-webkit-touch-callout:none] hover:shadow-raised focus-visible:ring-3 focus-visible:ring-ring/50 data-dnd-dragging:shadow-raised";
 
 function priorityLabel(priority: Priority): string {
   return PRIORITIES.find(({ id }) => id === priority)?.label ?? priority;
@@ -95,8 +67,8 @@ function CardMeta({ card }: { card: Card }) {
       {card.priority && <PriorityIcon priority={card.priority} />}
       {card.due && <DueDate done={card.status === "done"} due={card.due} />}
       {card.labels.length > 0 && <LabelDots labels={card.labels} />}
-      {card.assignee && (
-        <UserAvatar className="ml-auto" pubkey={card.assignee} size="xs" />
+      {card.assignees.length > 0 && (
+        <AvatarStack className="ml-auto" pubkeys={card.assignees} />
       )}
     </>
   );
@@ -146,7 +118,7 @@ function CardLink({
   const { cardHref } = useBoard();
   return (
     <Link
-      className={cn(SURFACE, "select-none", className)}
+      className={cn(CARD_SURFACE, "select-none", className)}
       draggable={false}
       href={cardHref(card)}
       ref={ref}

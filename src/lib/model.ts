@@ -2,6 +2,8 @@ import type { NostrEvent } from "applesauce-core/helpers/event";
 import { getTagValue } from "applesauce-core/helpers/event";
 import { unixNow } from "applesauce-core/helpers/time";
 
+import { mentionedPubkeys } from "@/lib/mentions";
+
 export const BOARD_KIND = 30_301;
 export const CARD_KIND = 30_302;
 export const SPRINT_KIND = 30_303;
@@ -69,7 +71,7 @@ export interface CardFields {
   description: string;
   status: Status;
   rank: number;
-  assignee?: string;
+  assignees: string[];
   priority?: Priority;
   due?: string;
   labels: Label[];
@@ -108,6 +110,8 @@ const HEX_KEY = /^[0-9a-f]{64}$/u;
 const DATE = /^\d{4}-\d{2}-\d{2}$/u;
 const ID_BYTES = 8;
 export const CODE = /^[A-Z][A-Z0-9]{0,9}$/u;
+/** Codes taken by app pages, which share the top-level path with boards. */
+export const RESERVED_CODES: ReadonlySet<string> = new Set(["INBOX"]);
 
 /**
  * A random `d` tag. Relays built on fiatjaf/eventstore (Haven, most khatru
@@ -156,7 +160,8 @@ export function addressedId(
   return value?.split(":").slice(2).join(":") || undefined;
 }
 
-function addressOf(event: NostrEvent, kind: number): string | undefined {
+/** The full `a` tag pointing at the given kind, e.g. a card's board address. */
+export function addressOf(event: NostrEvent, kind: number): string | undefined {
   const prefix = `${kind}:`;
   return event.tags.find(
     ([name, address]) => name === "a" && address?.startsWith(prefix)
@@ -238,7 +243,13 @@ export function parseBoard(event: NostrEvent): Board | undefined {
 
 function parseCard(event: NostrEvent, id: string): Card {
   return {
-    assignee: [getTagValue(event, "p")].find(isPubkey),
+    assignees: [
+      ...new Set(
+        event.tags.flatMap(([name, value]) =>
+          name === "p" && isPubkey(value) ? [value] : []
+        )
+      ),
+    ],
     author: event.pubkey,
     description: getTagValue(event, "description") ?? event.content,
     due: date(getTagValue(event, "due")),
@@ -297,6 +308,23 @@ export function latestVersions(
     }
   }
   return latest;
+}
+
+/** One card's newest version on the board, unless it was deleted. */
+export function resolveCard(
+  board: Board,
+  events: NostrEvent[],
+  id: string
+): Card | undefined {
+  const versions = events.filter(
+    (event) =>
+      getTagValue(event, "d") === id &&
+      addressOf(event, BOARD_KIND) === board.address
+  );
+  const event = latestVersions(versions, CARD_KIND, new Set(board.members)).get(
+    id
+  );
+  return event && !isDeleted(event) ? parseCard(event, id) : undefined;
 }
 
 function highestNumber(events: Iterable<NostrEvent>): number {
@@ -373,8 +401,8 @@ export function cardTemplate(board: Board, card: CardFields): Template {
   if (card.number !== undefined) {
     tags.push(["number", String(card.number)]);
   }
-  if (card.assignee) {
-    tags.push(["p", card.assignee]);
+  for (const assignee of card.assignees) {
+    tags.push(["p", assignee]);
   }
   if (card.priority) {
     tags.push(["priority", card.priority]);
@@ -418,8 +446,12 @@ export function tombstoneTemplate(board: Board, item: Card | Sprint): Template {
   return { content: "", kind: item.event.kind, tags };
 }
 
+/** A NIP-22 comment on a card, with a `p` tag for everyone it mentions. */
 export function commentTemplate(card: Card, content: string): Template {
   const address = `${CARD_KIND}:${card.author}:${card.id}`;
+  const mentioned = mentionedPubkeys(content).filter(
+    (pubkey) => pubkey !== card.author
+  );
   return {
     content,
     kind: COMMENT_KIND,
@@ -430,6 +462,7 @@ export function commentTemplate(card: Card, content: string): Template {
       ["a", address],
       ["k", String(CARD_KIND)],
       ["p", card.author],
+      ...mentioned.map((pubkey) => ["p", pubkey]),
     ],
   };
 }

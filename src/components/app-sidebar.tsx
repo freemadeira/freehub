@@ -1,6 +1,7 @@
 import {
   ChevronRightIcon,
   HouseIcon,
+  InboxIcon,
   PlusIcon,
   SquareKanbanIcon,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import {
   SidebarHeader,
   SidebarMenu,
   SidebarMenuAction,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -35,12 +37,14 @@ import {
 } from "@/components/ui/sidebar";
 import { UserMenu } from "@/components/user-menu";
 import { TableIcon } from "@/features/crm/table-icon";
+import { INBOX_PATH } from "@/features/inbox/inbox-page";
 import type { CrmTable } from "@/lib/crm";
 import type { Board } from "@/lib/model";
 import type { Project } from "@/lib/project";
 
 /** Projects shown open until the user folds them. */
 const OPEN_BY_DEFAULT = 3;
+const MAX_BADGE = 99;
 
 // The mobile sheet covers the page, so it closes once a link is followed.
 function NavLink(props: LinkProps) {
@@ -153,6 +157,8 @@ interface AppSidebarProps {
   projects: Project[];
   tables: Map<string, CrmTable[]>;
   pubkey: string;
+  /** Unread notifications in the inbox. */
+  unread: number;
   onNewProject: () => void;
 }
 
@@ -161,6 +167,7 @@ export function AppSidebar({
   projects,
   tables,
   pubkey,
+  unread,
   onNewProject,
 }: AppSidebarProps) {
   const [location] = useLocation();
@@ -207,6 +214,26 @@ export function AppSidebar({
                 <HouseIcon />
                 <span>Home</span>
               </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={location === INBOX_PATH}
+                render={<NavLink href={INBOX_PATH} />}
+              >
+                <InboxIcon />
+                <span>Inbox</span>
+                {unread > 0 && (
+                  <span className="sr-only">, {unread} unread</span>
+                )}
+              </SidebarMenuButton>
+              {unread > 0 && (
+                <SidebarMenuBadge
+                  aria-hidden
+                  className="text-foreground font-medium"
+                >
+                  {unread > MAX_BADGE ? `${MAX_BADGE}+` : unread}
+                </SidebarMenuBadge>
+              )}
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>

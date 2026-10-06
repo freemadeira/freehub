@@ -16,14 +16,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { Label } from "@/components/ui/label";
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { recordPath, useCrm } from "@/features/crm/crm-context";
 import { FieldInput } from "@/features/crm/field-input";
@@ -274,19 +269,21 @@ function RecordDetails({
           <TableIcon className="size-4 shrink-0" icon={table.icon} />
           <span className="truncate">{table.singular}</span>
         </SheetTitle>
-        <CopyButton
-          label="Copy link"
-          value={
-            new URL(recordPath(project, table, record), window.location.origin)
-              .href
-          }
-        />
-        <DeleteRecord onDeleted={onClose} record={record} />
-        <SheetClose
-          render={<Button aria-label="Close" size="icon-sm" variant="ghost" />}
-        >
-          <XIcon />
-        </SheetClose>
+        <FluidTooltip.Group>
+          <CopyButton
+            label="Copy link"
+            value={
+              new URL(
+                recordPath(project, table, record),
+                window.location.origin
+              ).href
+            }
+          />
+          <DeleteRecord onDeleted={onClose} record={record} />
+          <IconButton label="Close" onClick={onClose}>
+            <XIcon />
+          </IconButton>
+        </FluidTooltip.Group>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-5 pt-1 pb-8">
         <div className="flex flex-col gap-3">

@@ -1,8 +1,13 @@
 import { createContext, use } from "react";
 
-import type { NewCard } from "@/lib/actions";
-import type { Board, BoardContent, Card } from "@/lib/model";
+import type { Board, BoardContent, Card, CardFields } from "@/lib/model";
 import { cardKey } from "@/lib/model";
+
+/** History state that lets the card dialog close with a plain back navigation. */
+export const OPENED_FROM_BOARD = { fromBoard: true };
+
+/** Where a new card starts, from the column or list it was added in. */
+export type CardPlacement = Pick<CardFields, "status" | "sprint">;
 
 export interface BoardScope {
   board: Board;
@@ -10,7 +15,8 @@ export interface BoardScope {
   cards: Card[];
   pubkey: string;
   cardHref: (card: Card) => string;
-  addCard: (fields: Pick<NewCard, "title" | "status" | "sprint">) => void;
+  /** Opens the new card dialog. */
+  newCard: (placement: CardPlacement) => void;
 }
 
 export const BoardContext = createContext<BoardScope | null>(null);

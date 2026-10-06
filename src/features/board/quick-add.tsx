@@ -5,30 +5,42 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+/** The quiet "+ Add …" button at the foot of a column or list. */
+export function AddButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      className="text-muted-foreground hover:bg-foreground/5 w-full justify-start rounded-lg"
+      onClick={onClick}
+      size="sm"
+      variant="ghost"
+    >
+      <PlusIcon />
+      {label}
+    </Button>
+  );
+}
+
+/** An add button that turns into a title field, for adding many items fast. */
 export function QuickAdd({
   onAdd,
-  label = "Add card",
-  placeholder = "Card title",
+  label,
+  placeholder,
 }: {
   onAdd: (title: string) => void;
-  label?: string;
-  placeholder?: string;
+  label: string;
+  placeholder: string;
 }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
 
   if (!open) {
-    return (
-      <Button
-        className="text-muted-foreground hover:bg-foreground/5 w-full justify-start rounded-lg"
-        onClick={() => setOpen(true)}
-        size="sm"
-        variant="ghost"
-      >
-        <PlusIcon />
-        {label}
-      </Button>
-    );
+    return <AddButton label={label} onClick={() => setOpen(true)} />;
   }
 
   const submit = (event: FormEvent) => {

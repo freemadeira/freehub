@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Empty, EmptyTitle } from "@/components/ui/empty";
 import { useBoard } from "@/features/board/board-context";
 import { CardTile } from "@/features/board/card-tile";
-import { QuickAdd } from "@/features/board/quick-add";
+import { AddButton } from "@/features/board/quick-add";
 import { SprintDialog } from "@/features/board/sprint-dialog";
 import { useCardDrag } from "@/features/board/use-card-drag";
 import { endSprint, startSprint, updateCard } from "@/lib/actions";
@@ -107,7 +107,7 @@ interface ColumnProps {
   status: Status;
   label: string;
   cards: Card[];
-  onAdd?: (title: string) => void;
+  onAdd?: () => void;
 }
 
 function Column({ status, label, cards, onAdd }: ColumnProps) {
@@ -131,13 +131,13 @@ function Column({ status, label, cards, onAdd }: ColumnProps) {
       {cards.map((card, index) => (
         <CardTile card={card} group={status} index={index} key={card.id} />
       ))}
-      {onAdd && <QuickAdd onAdd={onAdd} />}
+      {onAdd && <AddButton label="Add card" onClick={onAdd} />}
     </section>
   );
 }
 
 function Kanban({ sprint }: { sprint: Sprint }) {
-  const { board, cards, addCard } = useBoard();
+  const { board, cards, newCard } = useBoard();
   const columns: Record<Status, Card[]> = { done: [], progress: [], todo: [] };
   for (const card of cards) {
     if (card.sprint === sprint.id) {
@@ -161,7 +161,7 @@ function Kanban({ sprint }: { sprint: Sprint }) {
             onAdd={
               id === "done"
                 ? undefined
-                : (title) => addCard({ sprint: sprint.id, status: id, title })
+                : () => newCard({ sprint: sprint.id, status: id })
             }
             status={id}
           />

@@ -79,17 +79,20 @@ pnpm fix
 
 ### Project layout
 
-| Path                         | Holds                                           |
-| ---------------------------- | ----------------------------------------------- |
-| `src/config.ts`              | Loading and checking `config.json`              |
-| `src/lib/model.ts`           | Event kinds, boards, cards and sprints          |
-| `src/lib/project.ts`         | Projects                                        |
-| `src/lib/crm.ts`             | CRM tables, fields, records and activity        |
-| `src/lib/crm-templates.ts`   | The table templates offered in "New table"      |
-| `src/lib/relays.ts`          | Team relay connections, AUTH and access         |
-| `src/lib/publish.ts`         | Optimistic edits, signing and the outbox        |
-| `src/components/ui/`         | shadcn/ui components, including the sidebar     |
-| `src/features/`              | Screens                                         |
+| Path                       | Holds                                          |
+| -------------------------- | ---------------------------------------------- |
+| `src/config.ts`            | Loading and checking `config.json`             |
+| `src/lib/model.ts`         | Event kinds, boards, cards and sprints         |
+| `src/lib/project.ts`       | Projects                                       |
+| `src/lib/crm.ts`           | CRM tables, fields, records and activity       |
+| `src/lib/crm-templates.ts` | The table templates offered in "New table"     |
+| `src/lib/mentions.ts`      | Mentions in comments (NIP-27)                  |
+| `src/lib/notifications.ts` | The rules that turn events into notifications  |
+| `src/lib/inbox.ts`         | What each person read or archived in the inbox |
+| `src/lib/relays.ts`        | Team relay connections, AUTH and access        |
+| `src/lib/publish.ts`       | Optimistic edits, signing and the outbox       |
+| `src/components/ui/`       | shadcn/ui components, including the sidebar    |
+| `src/features/`            | Screens                                        |
 
 ## Make it yours
 
@@ -162,6 +165,8 @@ There is no backend and no database. The app is a static site: every change is a
 
 - **Projects.** A project groups boards and CRM tables, and the sidebar lists them under it. Its creator picks the members, renames it and can delete it. An organization can run as many projects as it likes, for example one per city or per product.
 - **Boards.** A board's creator picks its members. Members see the board and can edit any card or sprint. Only the creator can rename the board, change its members or delete it. A board can sit in a project or on its own. Anything from non-members is ignored, even if it reaches the relay.
+- **Cards.** A card can have several assignees, and its description is written in Markdown. Raw HTML in a description stays plain text, and links only go to web and mail addresses.
+- **Inbox.** Typing `@` in a comment suggests the board's members. A mention is saved as a `nostr:npub…` reference in the comment with a `p` tag for that person (NIP-27), so the relay routes it and other Nostr clients show it too. Mentions land in the person's inbox; opening the card marks them read. Notifications are read from the comments themselves through the rules in `src/lib/notifications.ts`, so another way of delivering them, such as an email bridge subscribed to the relay, can reuse the same rules.
 - **CRM.** Each project can hold several tables, such as merchants, companies, people or deals. Every table has its own fields (text, numbers, money, dates, selects, members, links to other tables and more) and can have a stage field that turns it into a pipeline with won and lost endings. Any project member can add tables, change their fields and edit records. Records show up as a table (sorting, search, filters, column picker, bulk changes, CSV import and export), as a pipeline board and as insights. Every stage change is kept on the record, so its journey and the time spent in each stage can be read back. Notes, calls, emails, meetings and visits are logged on a record as comments.
 - **Saving.** Changes show up right away, then go to the signer and on to the relay. Once signed, a change is kept in the browser until a relay accepts it, so it survives reloads and time offline. A change still waiting on the signer is lost if the tab closes, and the app warns before that happens.
 - **Where data goes.** Board data is only sent to the team relays, plus, encrypted, the relays a signer app talks through. Lookup relays only see which profiles are being fetched.
@@ -173,12 +178,12 @@ Boards and cards follow the draft kanban NIP used by [kanbanstr](https://github.
 | Kind | Event | Tags |
 | --- | --- | --- |
 | 30301 | Board | `d`, `title`, `description`, `code`, `col`, `p` (members), `a` (project, optional) |
-| 30302 | Card | `d`, `a` (board), `title`, `description`, `s` (status), `rank`, `number`, `p` (assignee), `priority`, `due`, `sprint`, `label` |
+| 30302 | Card | `d`, `a` (board), `title`, `description`, `s` (status), `rank`, `number`, `p` (assignees), `priority`, `due`, `sprint`, `label` |
 | 30303 | Sprint | `d`, `a` (board), `title`, `number`, `status`, `start`, `end` |
 | 30304 | Project | `d`, `title`, `description`, `slug`, `color`, `p` (members) |
 | 30305 | CRM table | `d`, `a` (project), `title`, `singular`, `slug`, `icon`, `description`, `creator`, `created`, `field` (id, type, name, config), `option` (field, id, label, color, stage outcome) |
 | 30306 | CRM record | `d`, `a` (table), `a` (project), `title`, `rank`, `created`, `creator`, `val` (field, value), `moved` (stage, time, member) |
-| 1111 | Comment on a card, or activity on a record ([NIP-22](https://github.com/nostr-protocol/nips/blob/master/22.md)) | `A`, `K`, `P`, `a`, `k`, `p`, `activity` (records only) |
+| 1111 | Comment on a card, or activity on a record ([NIP-22](https://github.com/nostr-protocol/nips/blob/master/22.md)) | `A`, `K`, `P`, `a`, `k`, `p` (plus one per person mentioned), `activity` (records only) |
 | 5 | Deleted board, project or comment ([NIP-09](https://github.com/nostr-protocol/nips/blob/master/09.md)) | `a` or `e`, `k` |
 
 `d` tags are 16 random hex characters, so every address (`kind:pubkey:d`) stays under the 100 characters that relays built on [eventstore](https://github.com/fiatjaf/eventstore), Haven among them, index for `#a` queries.
@@ -194,6 +199,7 @@ Each member publishes their own version of a card, sprint, CRM table or record u
 - [TanStack Table](https://tanstack.com/table) — the CRM's sorting, filtering, selection and paging
 - [Motion](https://motion.dev/) — animations
 - [dnd-kit](https://dndkit.com/) — drag and drop
+- [Comark](https://comark.dev/) — Markdown in card descriptions
 - [applesauce](https://github.com/hzrd149/applesauce) — Nostr event store, relay connections and signers
 - [RxJS](https://rxjs.dev/) — streams from the event store
 - [wouter](https://github.com/molefrog/wouter) — routing
@@ -209,6 +215,8 @@ Each member publishes their own version of a card, sprint, CRM table or record u
 - A CRM record is saved as a whole, so two people changing different fields of the same record at the same moment can undo one another's change.
 - Importing a CSV signs one event per row; a signer app may ask to approve each one. At most 500 rows go in per import.
 - A record remembers its last 100 stage changes.
+- The inbox keeps what you read or archived in the browser, so another device starts with every mention unread. It shows the newest 200 mentions, and only mentions in card comments for now.
+- `INBOX` can't be a board code, since the inbox lives at `/inbox`.
 
 ## License
 

@@ -1,7 +1,6 @@
 import { cn } from "cn";
 import { format, isBefore, parseISO, startOfToday } from "date-fns";
 import { ChevronDownIcon } from "lucide-react";
-import type { ReactNode } from "react";
 import { useId, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -20,22 +19,31 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { UserAvatar } from "@/components/user-avatar";
 import { useBoard } from "@/features/board/board-context";
-import { LABEL_COLORS, PRIORITY_STYLES } from "@/features/board/card-tile";
-import { useProfile } from "@/hooks/use-profile";
+import {
+  assignable,
+  inOfferedOrder,
+  LABEL_COLORS,
+  sprintChoices,
+} from "@/features/card/card-fields";
+import type { Option } from "@/features/card/card-options";
+import {
+  PRIORITY_OPTIONS,
+  sprintOptions,
+  STATUS_OPTIONS,
+} from "@/features/card/card-options";
+import { Muted, People, Person } from "@/features/card/card-parts";
 import { updateCard } from "@/lib/actions";
 import type { Card, CardFields } from "@/lib/model";
-import { LABELS, PRIORITIES, STATUSES } from "@/lib/model";
+import { LABELS } from "@/lib/model";
 
 const NAME = "font-normal text-muted-foreground";
 const VALUE =
   "h-8 w-full rounded-lg px-2 hover:bg-foreground/5 data-popup-open:bg-foreground/5";
-
-interface Option<T> {
-  value: T;
-  label: ReactNode;
-}
+const SELECT_VALUE = cn(
+  VALUE,
+  "border-transparent bg-transparent dark:bg-transparent"
+);
 
 interface PropertySelectProps<T> {
   id: string;
@@ -58,13 +66,7 @@ function PropertySelect<T>({
         {label}
       </Label>
       <Select items={options} onValueChange={onChange} value={value}>
-        <SelectTrigger
-          className={cn(
-            VALUE,
-            "border-transparent bg-transparent dark:bg-transparent"
-          )}
-          id={id}
-        >
+        <SelectTrigger className={SELECT_VALUE} id={id}>
           <SelectValue className="items-center gap-2" />
         </SelectTrigger>
         <SelectContent>
@@ -79,16 +81,42 @@ function PropertySelect<T>({
   );
 }
 
-function Muted({ children }: { children: ReactNode }) {
-  return <span className="text-muted-foreground">{children}</span>;
-}
-
-function Person({ pubkey }: { pubkey: string }) {
-  const { name } = useProfile(pubkey);
+function Assignees({
+  id,
+  people,
+  value,
+  onChange,
+}: {
+  id: string;
+  people: string[];
+  value: string[];
+  onChange: (assignees: string[]) => void;
+}) {
   return (
     <>
-      <UserAvatar aria-hidden pubkey={pubkey} size="xs" />
-      <span className="truncate">{name}</span>
+      <Label className={NAME} htmlFor={id}>
+        Assignees
+      </Label>
+      <Select
+        multiple
+        onValueChange={(next: string[]) =>
+          onChange(inOfferedOrder(people, next))
+        }
+        value={value}
+      >
+        <SelectTrigger className={SELECT_VALUE} id={id}>
+          <SelectValue className="items-center gap-2">
+            {(current: string[]) => <People pubkeys={current} />}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {people.map((pubkey) => (
+            <SelectItem key={pubkey} value={pubkey}>
+              <Person pubkey={pubkey} />
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </>
   );
 }
@@ -160,14 +188,7 @@ export function CardProperties({
   const { board, content } = useBoard();
   const save = (changes: Partial<CardFields>) =>
     updateCard(board, card, changes);
-
-  const people =
-    card.assignee && !board.members.includes(card.assignee)
-      ? [...board.members, card.assignee]
-      : board.members;
-  const sprints = content.sprints.filter(
-    (sprint) => sprint.status !== "ended" || sprint.id === card.sprint
-  );
+  const sprints = sprintChoices(content.sprints, card.sprint);
 
   return (
     <div
@@ -184,59 +205,27 @@ export function CardProperties({
             save({ status });
           }
         }}
-        options={STATUSES.map(({ id: value, label }) => ({ label, value }))}
+        options={STATUS_OPTIONS}
         value={card.status}
       />
-      <PropertySelect
-        id={`${id}-assignee`}
-        label="Assignee"
-        onChange={(assignee) => save({ assignee: assignee ?? undefined })}
-        options={[
-          { label: <Muted>Unassigned</Muted>, value: null },
-          ...people.map((pubkey) => ({
-            label: <Person pubkey={pubkey} />,
-            value: pubkey,
-          })),
-        ]}
-        value={card.assignee ?? null}
+      <Assignees
+        id={`${id}-assignees`}
+        onChange={(assignees) => save({ assignees })}
+        people={assignable(board, card.assignees)}
+        value={card.assignees}
       />
       <PropertySelect
         id={`${id}-priority`}
         label="Priority"
         onChange={(priority) => save({ priority: priority ?? undefined })}
-        options={[
-          { label: <Muted>No priority</Muted>, value: null },
-          ...PRIORITIES.map(({ id: value, label }) => {
-            const { icon: Icon, className: tone } = PRIORITY_STYLES[value];
-            return {
-              label: (
-                <>
-                  <Icon className={tone} />
-                  {label}
-                </>
-              ),
-              value,
-            };
-          }),
-        ]}
+        options={PRIORITY_OPTIONS}
         value={card.priority ?? null}
       />
       <PropertySelect
         id={`${id}-sprint`}
         label="Sprint"
         onChange={(sprint) => save({ sprint: sprint ?? undefined })}
-        options={[
-          { label: <Muted>No sprint</Muted>, value: null },
-          ...sprints.map((sprint) => ({
-            label: (
-              <>
-                <span className="truncate">{sprint.title}</span>
-                {sprint.status === "active" && <Muted>Active</Muted>}
-              </>
-            ),
-            value: sprint.id,
-          })),
-        ]}
+        options={sprintOptions(sprints)}
         value={sprints.find((sprint) => sprint.id === card.sprint)?.id ?? null}
       />
       <DueDate card={card} id={`${id}-due`} onChange={(due) => save({ due })} />

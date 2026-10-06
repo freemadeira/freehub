@@ -15,9 +15,11 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BoardRoute, parseSlug } from "@/features/board/board-route";
 import { HomePage } from "@/features/home/home-page";
+import { INBOX_PATH, InboxPage } from "@/features/inbox/inbox-page";
 import { LoginPage } from "@/features/login/login-page";
 import { ProjectDialog } from "@/features/projects/project-dialog";
 import { useBoards } from "@/hooks/use-boards";
+import { useInbox } from "@/hooks/use-inbox";
 import { useObservableValue } from "@/hooks/use-observable-value";
 import { useProjectTables } from "@/hooks/use-project-content";
 import { useProjects } from "@/hooks/use-projects";
@@ -78,6 +80,7 @@ function Workspace({ pubkey }: { pubkey: string }) {
   const { boards, loaded: boardsLoaded } = useBoards(pubkey);
   const { projects, loaded: projectsLoaded } = useProjects(pubkey);
   const tables = useProjectTables(projects);
+  const inbox = useInbox(pubkey, boards);
   const [creatingProject, setCreatingProject] = useState(false);
   const [, params] = useRoute<{ slug: string }>("/:slug");
   const slug = params ? parseSlug(params.slug) : undefined;
@@ -97,6 +100,7 @@ function Workspace({ pubkey }: { pubkey: string }) {
         projects={projects}
         pubkey={pubkey}
         tables={tables}
+        unread={inbox.unread}
       />
       <SidebarInset>
         <Switch>
@@ -124,6 +128,9 @@ function Workspace({ pubkey }: { pubkey: string }) {
                 />
               </Suspense>
             )}
+          </Route>
+          <Route path={INBOX_PATH}>
+            <InboxPage inbox={inbox} />
           </Route>
           {slug && (
             <Route path="/:slug">

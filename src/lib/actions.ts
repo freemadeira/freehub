@@ -81,6 +81,7 @@ export function createCard(
 ): Promise<boolean> {
   return publish(
     cardTemplate(board, {
+      assignees: [],
       description: "",
       labels: [],
       ...card,

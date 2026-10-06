@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,11 +13,17 @@ import {
 
 type IconButtonProps = Omit<ComponentProps<typeof Button>, "aria-label"> & {
   label: string;
+  /** Shown instead of the label, e.g. to confirm the click worked. */
+  tooltip?: ReactNode;
+  /** Keeps the tooltip open after a click, so a changed `tooltip` is seen. */
+  keepTooltipOnClick?: boolean;
 };
 
 /** Icon-only button with its label as a tooltip; joins an enclosing FluidTooltip.Group. */
 export function IconButton({
   label,
+  tooltip = label,
+  keepTooltipOnClick = false,
   children,
   size = "icon-sm",
   variant = "ghost",
@@ -32,15 +38,17 @@ export function IconButton({
   if (grouped) {
     return (
       <FluidTooltip.Root>
-        <FluidTooltip.Trigger>{button}</FluidTooltip.Trigger>
-        <FluidTooltip.Content>{label}</FluidTooltip.Content>
+        <FluidTooltip.Trigger keepOpenOnClick={keepTooltipOnClick}>
+          {button}
+        </FluidTooltip.Trigger>
+        <FluidTooltip.Content>{tooltip}</FluidTooltip.Content>
       </FluidTooltip.Root>
     );
   }
   return (
     <Tooltip>
-      <TooltipTrigger render={button} />
-      <TooltipContent>{label}</TooltipContent>
+      <TooltipTrigger closeOnClick={!keepTooltipOnClick} render={button} />
+      <TooltipContent>{tooltip}</TooltipContent>
     </Tooltip>
   );
 }

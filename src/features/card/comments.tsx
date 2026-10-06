@@ -2,9 +2,11 @@ import { cn } from "cn";
 import { format, formatDistanceToNowStrict } from "date-fns";
 import { Trash2Icon } from "lucide-react";
 import type { FormEvent } from "react";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { IconButton } from "@/components/icon-button";
+import { MentionText } from "@/components/mention-text";
+import { MentionTextarea } from "@/components/mention-textarea";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,12 +18,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { UserAvatar } from "@/components/user-avatar";
 import { useBoard } from "@/features/board/board-context";
 import { useComments } from "@/hooks/use-comments";
 import { useProfile } from "@/hooks/use-profile";
 import { addComment, deleteComment } from "@/lib/actions";
+import { inboxStore } from "@/lib/inbox";
+import type { Mention } from "@/lib/mentions";
+import { encodeMentions, mentions } from "@/lib/mentions";
 import type { Card, Comment } from "@/lib/model";
 
 function ago(date: Date): string {
@@ -94,20 +98,26 @@ function CommentItem({ comment, own }: { comment: Comment; own: boolean }) {
           </time>
           {own && signed && <DeleteComment comment={comment} />}
         </div>
-        <p className="wrap-break-word whitespace-pre-wrap">{comment.content}</p>
+        <p className="wrap-break-word whitespace-pre-wrap">
+          <MentionText content={comment.content} />
+        </p>
       </div>
     </li>
   );
 }
 
 function Composer({ card }: { card: Card }) {
+  const { board, pubkey } = useBoard();
   const [text, setText] = useState("");
+  // Who was picked from the list, read only when sending.
+  const picked = useRef<Mention[]>([]);
 
   const send = () => {
-    const content = text.trim();
+    const content = encodeMentions(text.trim(), picked.current);
     if (content) {
       addComment(card, content);
       setText("");
+      picked.current = [];
     }
   };
 
@@ -118,17 +128,21 @@ function Composer({ card }: { card: Card }) {
 
   return (
     <form className="flex flex-col gap-2" onSubmit={submit}>
-      <Textarea
+      <MentionTextarea
         aria-label="Comment"
         className="min-h-16"
-        onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
             event.preventDefault();
             send();
           }
         }}
-        placeholder="Add a comment…"
+        onMention={(mention) => {
+          picked.current = [...picked.current, mention];
+        }}
+        onValueChange={setText}
+        people={board.members.filter((member) => member !== pubkey)}
+        placeholder="Add a comment… Type @ to mention someone."
         value={text}
       />
       {text.trim() && (
@@ -150,6 +164,21 @@ export function Comments({
   const id = useId();
   const { board, pubkey } = useBoard();
   const comments = useComments(board, card);
+
+  // Seeing the card counts as reading the mentions of you in it.
+  const mentionKey = comments
+    .filter(
+      (comment) =>
+        comment.author !== pubkey && mentions(comment.content, pubkey)
+    )
+    .map((comment) => comment.id)
+    .join(",");
+  useEffect(() => {
+    if (mentionKey) {
+      inboxStore(pubkey).setRead(mentionKey.split(","), true);
+    }
+  }, [mentionKey, pubkey]);
+
   return (
     <section
       aria-labelledby={id}

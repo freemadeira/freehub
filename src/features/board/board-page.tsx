@@ -13,10 +13,10 @@ import { DoneView } from "@/features/board/done-view";
 import { SprintView } from "@/features/board/sprint-view";
 import { BoardDialog } from "@/features/boards/board-dialog";
 import { CardDialog } from "@/features/card/card-dialog";
+import type { NewCardDefaults } from "@/features/card/new-card-dialog";
+import { NewCardDialog } from "@/features/card/new-card-dialog";
 import { useBoardContent } from "@/hooks/use-board-content";
-import { createCard } from "@/lib/actions";
 import type { Board, Card } from "@/lib/model";
-import { rankBetween } from "@/lib/model";
 import type { Project } from "@/lib/project";
 
 const TABS = ["backlog", "sprint", "done"] as const;
@@ -87,6 +87,11 @@ export function BoardPage({
   const [, navigate] = useLocation();
   const [assignee, setAssignee] = useState<string>();
   const [editing, setEditing] = useState(false);
+  // Kept after closing so the dialog keeps its content while it animates out.
+  const [adding, setAdding] = useState<{
+    open: boolean;
+    defaults: NewCardDefaults;
+  }>();
 
   const tab = parseTab(params.get("tab"));
   const tabQuery = new URLSearchParams(tab === DEFAULT_TAB ? {} : { tab });
@@ -112,18 +117,17 @@ export function BoardPage({
 
   const scope: BoardScope | null = content
     ? {
-        addCard: (fields) =>
-          createCard(board, content, {
-            ...fields,
-            assignee,
-            rank: rankBetween(content.cards.at(-1)?.rank),
-          }),
         board,
         cardHref: (card) => cardPath(board, card, tabQuery),
         cards: assignee
-          ? content.cards.filter((card) => card.assignee === assignee)
+          ? content.cards.filter((card) => card.assignees.includes(assignee))
           : content.cards,
         content,
+        newCard: (placement) =>
+          setAdding({
+            defaults: { ...placement, assignees: assignee ? [assignee] : [] },
+            open: true,
+          }),
         pubkey,
       }
     : null;
@@ -179,6 +183,13 @@ export function BoardPage({
       )}
       {loaded && content && wantsCard && !shownCard && (
         <Redirect replace to={boardHref} />
+      )}
+      {scope && adding && (
+        <NewCardDialog
+          defaults={adding.defaults}
+          onOpenChange={(open) => setAdding({ ...adding, open })}
+          open={adding.open}
+        />
       )}
       <BoardDialog
         board={board}

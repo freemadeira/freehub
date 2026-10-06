@@ -24,7 +24,7 @@ import {
 import { useBoard } from "@/features/board/board-context";
 import { Bucket } from "@/features/board/bucket";
 import { SortableCardRow } from "@/features/board/card-tile";
-import { QuickAdd } from "@/features/board/quick-add";
+import { AddButton } from "@/features/board/quick-add";
 import { SprintDialog } from "@/features/board/sprint-dialog";
 import { useCardDrag } from "@/features/board/use-card-drag";
 import {
@@ -51,7 +51,7 @@ interface DropBucketProps {
 }
 
 function DropBucket({ id, title, cards, actions }: DropBucketProps) {
-  const { addCard } = useBoard();
+  const { newCard } = useBoard();
   const { ref } = useDroppable({
     accept: "card",
     collisionPriority: CollisionPriority.Low,
@@ -63,10 +63,9 @@ function DropBucket({ id, title, cards, actions }: DropBucketProps) {
       {cards.map((card, index) => (
         <SortableCardRow card={card} group={id} index={index} key={card.id} />
       ))}
-      <QuickAdd
-        onAdd={(cardTitle) =>
-          addCard({ sprint: sprintOf(id), status: "todo", title: cardTitle })
-        }
+      <AddButton
+        label="Add card"
+        onClick={() => newCard({ sprint: sprintOf(id), status: "todo" })}
       />
     </Bucket>
   );

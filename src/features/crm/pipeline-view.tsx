@@ -6,6 +6,7 @@ import { CalendarIcon } from "lucide-react";
 import { Link } from "wouter";
 
 import { UserAvatar } from "@/components/user-avatar";
+import { CARD_SURFACE } from "@/features/board/card-surface";
 import { QuickAdd } from "@/features/board/quick-add";
 import { useCardDrag } from "@/features/board/use-card-drag";
 import { useCrm } from "@/features/crm/crm-context";
@@ -26,9 +27,6 @@ import { SWATCH_COLORS } from "@/lib/palette";
 
 /** Column for records whose stage is unset or was removed. */
 const NO_STAGE = "none";
-
-const SURFACE =
-  "rounded-lg bg-card shadow-surface outline-none transition-shadow duration-150 [-webkit-touch-callout:none] hover:shadow-raised focus-visible:ring-3 focus-visible:ring-ring/50 data-dnd-dragging:shadow-raised";
 
 function firstOfType(fields: Field[], type: Field["type"]): Field | undefined {
   return fields.find((field) => field.type === type);
@@ -90,7 +88,7 @@ function RecordCard({
   });
   return (
     <Link
-      className={cn(SURFACE, "flex flex-col gap-2.5 p-3 select-none")}
+      className={cn(CARD_SURFACE, "flex flex-col gap-2.5 p-3 select-none")}
       draggable={false}
       href={recordHref(record)}
       ref={ref}

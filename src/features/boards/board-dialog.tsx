@@ -37,7 +37,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { createBoard, deleteBoard, updateBoard } from "@/lib/actions";
 import type { Board } from "@/lib/model";
-import { CODE } from "@/lib/model";
+import { CODE, RESERVED_CODES } from "@/lib/model";
 import type { Project } from "@/lib/project";
 
 const DIACRITICS = /\p{Diacritic}/gu;
@@ -70,6 +70,9 @@ function validateCode(
 ): string | null {
   if (code && !CODE.test(code)) {
     return "Start with a letter.";
+  }
+  if (RESERVED_CODES.has(code)) {
+    return "The app uses this code.";
   }
   if (boards.some((item) => item.code === code && item.id !== board?.id)) {
     return "Another board uses this code.";

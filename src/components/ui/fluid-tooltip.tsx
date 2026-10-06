@@ -5,14 +5,13 @@
  */
 import { Tooltip } from "@base-ui/react/tooltip";
 import { cn } from "cn";
-import type { ReactElement, ReactNode, RefObject } from "react";
+import type { ReactElement, ReactNode } from "react";
 import {
   createContext,
   use,
-  useCallback,
   useLayoutEffect,
   useMemo,
-  useRef,
+  useSyncExternalStore,
 } from "react";
 
 type FluidTooltipSide = "top" | "right" | "bottom" | "left";
@@ -24,9 +23,37 @@ interface FluidTooltipContentState {
   showArrow: boolean;
 }
 
+interface ContentStore {
+  get: () => FluidTooltipContentState;
+  set: (content: FluidTooltipContentState) => void;
+  subscribe: (listener: () => void) => () => void;
+}
+
+// Kept outside React state so a trigger can open before its sibling Content
+// has rendered, while a label that changes as it shows (Copy, then Copied)
+// still re-renders the popup.
+function createContentStore(): ContentStore {
+  let content: FluidTooltipContentState = { children: null, showArrow: false };
+  const listeners = new Set<() => void>();
+  return {
+    get: () => content,
+    set(next) {
+      content = next;
+      for (const listener of listeners) {
+        listener();
+      }
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+
 interface FluidTooltipPayload {
-  // A ref so a trigger can open before its sibling Content has rendered.
-  content: RefObject<FluidTooltipContentState>;
+  content: ContentStore;
   side: FluidTooltipSide;
   align: FluidTooltipAlign;
   sideOffset: number;
@@ -81,6 +108,61 @@ interface FluidTooltipGroupProps {
   className?: string;
 }
 
+function FluidTooltipPopup({
+  payload,
+  className,
+}: {
+  payload: FluidTooltipPayload;
+  className?: string;
+}) {
+  const content = useSyncExternalStore(
+    payload.content.subscribe,
+    payload.content.get
+  );
+  return (
+    <Tooltip.Portal>
+      <Tooltip.Positioner
+        align={payload.align}
+        className="isolate z-50 h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] duration-200 ease-out data-instant:transition-none"
+        collisionPadding={8}
+        side={payload.side}
+        sideOffset={payload.sideOffset}
+      >
+        <Tooltip.Popup
+          className={cn(
+            "bg-foreground text-background relative h-(--popup-height,auto) w-(--popup-width,auto) max-w-(--available-width) origin-(--transform-origin) rounded-lg text-xs",
+            "transition-[width,height,scale,translate,opacity] duration-200 ease-out data-instant:transition-none",
+            "data-starting-style:translate-y-1 data-starting-style:scale-[0.96] data-starting-style:opacity-0",
+            "data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-ending-style:duration-100",
+            className,
+            content.className
+          )}
+        >
+          <Tooltip.Viewport
+            className={cn(
+              "relative size-full overflow-clip px-2.5 py-1",
+              // The outgoing label vanishes; the incoming one slides
+              // in from the side the pointer came from.
+              "[&_[data-previous]]:pointer-events-none [&_[data-previous]]:w-[calc(var(--popup-width)-1.25rem)] [&_[data-previous]]:opacity-0 [&_[data-previous]]:transition-none",
+              "[&_[data-current]]:w-[calc(var(--popup-width)-1.25rem)] [&_[data-current]]:transition-[translate,opacity] [&_[data-current]]:duration-[200ms,120ms] data-instant:[&_[data-current]]:transition-none",
+              "[&_[data-current][data-starting-style]]:opacity-0",
+              "data-[activation-direction~='left']:[&_[data-current][data-starting-style]]:-translate-x-2",
+              "data-[activation-direction~='right']:[&_[data-current][data-starting-style]]:translate-x-2",
+              "data-[activation-direction~='up']:[&_[data-current][data-starting-style]]:-translate-y-2",
+              "data-[activation-direction~='down']:[&_[data-current][data-starting-style]]:translate-y-2"
+            )}
+          >
+            {content.children}
+          </Tooltip.Viewport>
+          {content.showArrow && (
+            <Tooltip.Arrow className="bg-foreground absolute size-2 rotate-45 data-[side=bottom]:-top-1 data-[side=left]:-right-1 data-[side=right]:-left-1 data-[side=top]:-bottom-1" />
+          )}
+        </Tooltip.Popup>
+      </Tooltip.Positioner>
+    </Tooltip.Portal>
+  );
+}
+
 function FluidTooltipGroup({
   children,
   orientation = "horizontal",
@@ -103,54 +185,11 @@ function FluidTooltipGroup({
     <Tooltip.Provider closeDelay={closeDelay} delay={openDelay} timeout={50}>
       <GroupContext value={context}>{children}</GroupContext>
       <Tooltip.Root disabled={disabled} handle={handle}>
-        {({ payload }) => {
-          if (!payload) {
-            return null;
-          }
-          const content = payload.content.current;
-          return (
-            <Tooltip.Portal>
-              <Tooltip.Positioner
-                align={payload.align}
-                className="isolate z-50 h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] duration-200 ease-out data-instant:transition-none"
-                collisionPadding={8}
-                side={payload.side}
-                sideOffset={payload.sideOffset}
-              >
-                <Tooltip.Popup
-                  className={cn(
-                    "bg-foreground text-background relative h-(--popup-height,auto) w-(--popup-width,auto) max-w-(--available-width) origin-(--transform-origin) rounded-lg text-xs",
-                    "transition-[width,height,scale,translate,opacity] duration-200 ease-out data-instant:transition-none",
-                    "data-starting-style:translate-y-1 data-starting-style:scale-[0.96] data-starting-style:opacity-0",
-                    "data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-ending-style:duration-100",
-                    className,
-                    content.className
-                  )}
-                >
-                  <Tooltip.Viewport
-                    className={cn(
-                      "relative size-full overflow-clip px-2.5 py-1",
-                      // The outgoing label vanishes; the incoming one slides
-                      // in from the side the pointer came from.
-                      "[&_[data-previous]]:pointer-events-none [&_[data-previous]]:w-[calc(var(--popup-width)-1.25rem)] [&_[data-previous]]:opacity-0 [&_[data-previous]]:transition-none",
-                      "[&_[data-current]]:w-[calc(var(--popup-width)-1.25rem)] [&_[data-current]]:transition-[translate,opacity] [&_[data-current]]:duration-[200ms,120ms] data-instant:[&_[data-current]]:transition-none",
-                      "[&_[data-current][data-starting-style]]:opacity-0",
-                      "data-[activation-direction~='left']:[&_[data-current][data-starting-style]]:-translate-x-2",
-                      "data-[activation-direction~='right']:[&_[data-current][data-starting-style]]:translate-x-2",
-                      "data-[activation-direction~='up']:[&_[data-current][data-starting-style]]:-translate-y-2",
-                      "data-[activation-direction~='down']:[&_[data-current][data-starting-style]]:translate-y-2"
-                    )}
-                  >
-                    {content.children}
-                  </Tooltip.Viewport>
-                  {content.showArrow && (
-                    <Tooltip.Arrow className="bg-foreground absolute size-2 rotate-45 data-[side=bottom]:-top-1 data-[side=left]:-right-1 data-[side=right]:-left-1 data-[side=top]:-bottom-1" />
-                  )}
-                </Tooltip.Popup>
-              </Tooltip.Positioner>
-            </Tooltip.Portal>
-          );
-        }}
+        {({ payload }) =>
+          payload ? (
+            <FluidTooltipPopup className={className} payload={payload} />
+          ) : null
+        }
       </Tooltip.Root>
     </Tooltip.Provider>
   );
@@ -174,21 +213,15 @@ function FluidTooltipRoot({
   disabled = false,
 }: FluidTooltipRootProps) {
   const group = useGroupContext("FluidTooltip.Root");
-  const content = useRef<FluidTooltipContentState>({
-    children: null,
-    showArrow: false,
-  });
-  const setContent = useCallback((next: FluidTooltipContentState) => {
-    content.current = next;
-  }, []);
+  const content = useMemo(() => createContentStore(), []);
   const resolvedSide = side ?? group.defaultSide;
   const context = useMemo<FluidTooltipRootContextValue>(
     () => ({
       disabled,
       payload: { align, content, side: resolvedSide, sideOffset },
-      setContent,
+      setContent: content.set,
     }),
-    [align, disabled, resolvedSide, setContent, sideOffset]
+    [align, content, disabled, resolvedSide, sideOffset]
   );
   return <RootContext value={context}>{children}</RootContext>;
 }

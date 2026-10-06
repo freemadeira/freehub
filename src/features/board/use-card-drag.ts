@@ -1,8 +1,14 @@
 import { move } from "@dnd-kit/helpers";
-import type { DragEndEvent, DragOverEvent } from "@dnd-kit/react";
+import type {
+  DragEndEvent,
+  DragMoveEvent,
+  DragOverEvent,
+  DragStartEvent,
+} from "@dnd-kit/react";
 import { KeyboardSensor, PointerSensor } from "@dnd-kit/react";
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { createDragTilt } from "@/features/board/drag-tilt";
 import type { Card } from "@/lib/model";
 import { rankBetween } from "@/lib/model";
 
@@ -57,20 +63,35 @@ function rerank<K extends string, T extends Ranked>(
   );
 }
 
-/** Keeps a local copy of the groups while dragging and reports the new ranks on drop. */
+/**
+ * Keeps a local copy of the groups while dragging and reports the new ranks on
+ * drop. A card dragged by pointer tilts with its movement.
+ */
 export function useCardDrag<K extends string, T extends Ranked = Card>(
   groups: Groups<K, T>,
   onMove: (moves: CardMove<K, T>[]) => void
 ) {
   const [dragGroups, setDragGroups] = useState<Groups<K, T> | null>(null);
   const latest = useRef<Groups<K, T> | null>(null);
+  const tilt = useMemo(() => createDragTilt(), []);
+
+  useEffect(() => tilt.stop, [tilt]);
 
   const update = (next: Groups<K, T> | null) => {
     latest.current = next;
     setDragGroups(next);
   };
 
+  const start = (event: DragStartEvent) => {
+    update(groups);
+    const { activatorEvent, position, source } = event.operation;
+    if (!(activatorEvent instanceof KeyboardEvent)) {
+      tilt.start(source?.element, position.current);
+    }
+  };
+
   const drop = (event: DragEndEvent) => {
+    tilt.stop();
     const final = latest.current;
     update(null);
     const id = event.operation.source?.id;
@@ -92,9 +113,11 @@ export function useCardDrag<K extends string, T extends Ranked = Card>(
     groups: dragGroups ?? groups,
     props: {
       onDragEnd: drop,
+      onDragMove: ({ operation }: DragMoveEvent) =>
+        tilt.move(operation.source?.element, operation.position.current),
       onDragOver: (event: DragOverEvent) =>
         update(move(latest.current ?? groups, event)),
-      onDragStart: () => update(groups),
+      onDragStart: start,
       sensors: SENSORS,
     },
   };

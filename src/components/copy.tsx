@@ -3,12 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { IconButton } from "@/components/icon-button";
 
 const ICON_SWAP = {
   animate: { filter: "blur(0px)", opacity: 1, scale: 1 },
@@ -45,32 +40,25 @@ export function useCopy(): { copied: boolean; copy: (text: string) => void } {
   return { copied, copy };
 }
 
+/** Copies the value on click; joins an enclosing FluidTooltip.Group. */
 export function CopyButton({ value, label }: { value: string; label: string }) {
   const { copied, copy } = useCopy();
   return (
-    <Tooltip>
-      <TooltipTrigger
-        closeOnClick={false}
-        render={
-          <Button
-            aria-label={label}
-            onClick={() => copy(value)}
-            size="icon-sm"
-            variant="ghost"
-          />
-        }
-      >
-        <AnimatePresence initial={false} mode="popLayout">
-          <motion.span
-            className="flex"
-            key={copied ? "copied" : "copy"}
-            {...ICON_SWAP}
-          >
-            {copied ? <CheckIcon /> : <CopyIcon />}
-          </motion.span>
-        </AnimatePresence>
-      </TooltipTrigger>
-      <TooltipContent>{copied ? "Copied" : label}</TooltipContent>
-    </Tooltip>
+    <IconButton
+      keepTooltipOnClick
+      label={label}
+      onClick={() => copy(value)}
+      tooltip={copied ? "Copied" : label}
+    >
+      <AnimatePresence initial={false} mode="popLayout">
+        <motion.span
+          className="flex"
+          key={copied ? "copied" : "copy"}
+          {...ICON_SWAP}
+        >
+          {copied ? <CheckIcon /> : <CopyIcon />}
+        </motion.span>
+      </AnimatePresence>
+    </IconButton>
   );
 }
