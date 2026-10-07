@@ -2,6 +2,7 @@ import {
   ChevronRightIcon,
   HouseIcon,
   InboxIcon,
+  MapIcon,
   PlusIcon,
   SquareKanbanIcon,
 } from "lucide-react";
@@ -36,11 +37,13 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { UserMenu } from "@/components/user-menu";
+import { getConfig } from "@/config";
 import { boardPath } from "@/features/board/board-context";
 import { findBoard, parseSlug } from "@/features/board/board-route";
 import { TableIcon } from "@/features/crm/table-icon";
 import { SidebarDocs } from "@/features/docs/sidebar-docs";
 import { INBOX_PATH } from "@/features/inbox/inbox-page";
+import { MAP_PATH } from "@/features/map/map-path";
 import type { CrmTable } from "@/lib/crm";
 import type { DocsContent } from "@/lib/docs";
 import { EMPTY_DOCS } from "@/lib/docs";
@@ -218,6 +221,17 @@ export function AppSidebar({
                 <span>Home</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
+            {getConfig().map && (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location === MAP_PATH}
+                  render={<NavLink href={MAP_PATH} />}
+                >
+                  <MapIcon />
+                  <span>Map</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
             <SidebarMenuItem>
               <SidebarMenuButton
                 isActive={location === INBOX_PATH}

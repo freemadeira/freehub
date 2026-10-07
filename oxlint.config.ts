@@ -14,6 +14,31 @@ export default defineConfig({
         "jsx-a11y/label-has-associated-control": "off",
       },
     },
+    {
+      // The map engine stays free of the app, so it can become a package.
+      files: ["src/features/map/engine/**"],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            patterns: [
+              {
+                group: [
+                  "@/*",
+                  "react",
+                  "react-*",
+                  "applesauce-*",
+                  "wouter",
+                  "rxjs",
+                ],
+                message:
+                  "The map engine only uses three.js and its own modules; the React side passes it what it needs.",
+              },
+            ],
+          },
+        ],
+      },
+    },
   ],
   rules: {
     // Match the function declarations that the shadcn CLI generates.

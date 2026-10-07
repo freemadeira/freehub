@@ -4,11 +4,13 @@ import {
   ChevronDownIcon,
   ExternalLinkIcon,
   MailIcon,
+  MapPinIcon,
   PhoneIcon,
   SearchIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
+import { Link } from "wouter";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -37,6 +39,13 @@ import {
   parseCell,
   toNumber,
 } from "@/lib/crm-values";
+import {
+  formatLocation,
+  locationValue,
+  openStreetMapUrl,
+  parseLocation,
+  readLocation,
+} from "@/lib/location";
 
 /** Looks like plain text until hovered, like the card properties. */
 export const VALUE =
@@ -52,6 +61,8 @@ interface FieldInputProps {
   field: Field;
   values: string[];
   onChange: (values: string[]) => void;
+  /** Location fields: where to choose the place on the map, when there is one. */
+  pickHref?: string;
 }
 
 function displayText(field: Field, value: string | undefined): string {
@@ -154,6 +165,82 @@ function TextInput({ id, field, values, onChange }: FieldInputProps) {
           variant="ghost"
         >
           <LinkIcon />
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** Coordinates or a pasted map link, or a place picked on the map. */
+function LocationInput({ id, values, onChange, pickHref }: FieldInputProps) {
+  const [draft, setDraft] = useState<string>();
+  const [value] = values;
+  const location = readLocation(value);
+
+  const commit = () => {
+    if (draft === undefined) {
+      return;
+    }
+    const parsed = parseLocation(draft);
+    const next = parsed ? [locationValue(parsed)] : [];
+    // Text that isn't a place leaves the old one alone rather than clearing it.
+    const unreadable = !parsed && draft.trim() !== "";
+    if (!unreadable && JSON.stringify(next) !== JSON.stringify(values)) {
+      onChange(next);
+    }
+    setDraft(undefined);
+  };
+
+  return (
+    <div className="flex min-w-0 items-center gap-1">
+      <input
+        autoComplete="off"
+        className={cn(
+          VALUE,
+          "placeholder:text-muted-foreground bg-transparent tabular-nums"
+        )}
+        id={id}
+        onBlur={commit}
+        onChange={(event) => setDraft(event.target.value)}
+        onFocus={() =>
+          setDraft(location ? `${location.lat}, ${location.lng}` : "")
+        }
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+            event.currentTarget.blur();
+          }
+        }}
+        placeholder="Paste a map link"
+        spellCheck={false}
+        value={draft ?? (location ? formatLocation(location) : "")}
+      />
+      {pickHref && (
+        <Button
+          className="text-muted-foreground shrink-0"
+          nativeButton={false}
+          render={<Link aria-label="Choose on the map" href={pickHref} />}
+          size="icon-sm"
+          variant="ghost"
+        >
+          <MapPinIcon />
+        </Button>
+      )}
+      {!pickHref && location && (
+        <Button
+          className="text-muted-foreground shrink-0"
+          nativeButton={false}
+          render={
+            <a
+              aria-label="Open in OpenStreetMap"
+              href={openStreetMapUrl(location)}
+              rel="noreferrer"
+              target="_blank"
+            />
+          }
+          size="icon-sm"
+          variant="ghost"
+        >
+          <ExternalLinkIcon />
         </Button>
       )}
     </div>
@@ -469,6 +556,9 @@ export function FieldInput(props: FieldInputProps) {
     }
     case "longtext": {
       return <LongTextInput {...props} />;
+    }
+    case "location": {
+      return <LocationInput {...props} />;
     }
     default: {
       return <TextInput {...props} />;

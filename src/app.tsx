@@ -13,10 +13,12 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { getConfig } from "@/config";
 import { BoardRoute, findBoard, parseSlug } from "@/features/board/board-route";
 import { HomePage } from "@/features/home/home-page";
 import { INBOX_PATH, InboxPage } from "@/features/inbox/inbox-page";
 import { LoginPage } from "@/features/login/login-page";
+import { MAP_PATH } from "@/features/map/map-path";
 import { ProjectDialog } from "@/features/projects/project-dialog";
 import { useBoards } from "@/hooks/use-boards";
 import { useDocs } from "@/hooks/use-docs";
@@ -61,6 +63,12 @@ function boardCrumbs(code: string, board?: Board, project?: Project): Crumb[] {
 const ProjectRoute = lazy(async () => {
   const module = await import("@/features/projects/project-route");
   return { default: module.ProjectRoute };
+});
+
+// The map brings three.js and its workers; only organizations with a map load them.
+const MapRoute = lazy(async () => {
+  const module = await import("@/features/map/map-route");
+  return { default: module.MapRoute };
 });
 
 function RouteFallback() {
@@ -139,6 +147,13 @@ function Workspace({ pubkey }: { pubkey: string }) {
           <Route path={INBOX_PATH}>
             <InboxPage inbox={inbox} />
           </Route>
+          {getConfig().map && (
+            <Route path={MAP_PATH}>
+              <Suspense fallback={<RouteFallback />}>
+                <MapRoute projects={projects} pubkey={pubkey} />
+              </Suspense>
+            </Route>
+          )}
           {slug && (
             <Route path="/:slug">
               <TopBar crumbs={boardCrumbs(slug.code, board, boardProject)} />

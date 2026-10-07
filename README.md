@@ -2,7 +2,7 @@
 
 <div align="center">
 <h1>Freehub</h1>
-<p>Nostr-first project management, CRM and docs</p>
+<p>Nostr-first project management, CRM, docs and maps</p>
 </div>
 
 ## Screenshots
@@ -79,22 +79,25 @@ pnpm fix
 
 ### Project layout
 
-| Path                       | Holds                                          |
-| -------------------------- | ---------------------------------------------- |
-| `src/config.ts`            | Loading and checking `config.json`             |
-| `src/lib/model.ts`         | Event kinds, boards, cards and sprints         |
-| `src/lib/project.ts`       | Projects                                       |
-| `src/lib/crm.ts`           | CRM tables, fields, records and activity       |
-| `src/lib/crm-templates.ts` | The table templates offered in "New table"     |
-| `src/lib/docs.ts`          | Doc pages and how they nest                    |
-| `src/lib/merge.ts`         | Merging two edits of the same page             |
-| `src/lib/mentions.ts`      | Mentions in comments (NIP-27)                  |
-| `src/lib/notifications.ts` | The rules that turn events into notifications  |
-| `src/lib/inbox.ts`         | What each person read or archived in the inbox |
-| `src/lib/relays.ts`        | Team relay connections, AUTH and access        |
-| `src/lib/publish.ts`       | Optimistic edits, signing and the outbox       |
-| `src/components/ui/`       | shadcn/ui components, including the sidebar    |
-| `src/features/`            | Screens                                        |
+| Path                       | Holds                                           |
+| -------------------------- | ----------------------------------------------- |
+| `src/config.ts`            | Loading and checking `config.json`              |
+| `src/lib/model.ts`         | Event kinds, boards, cards and sprints          |
+| `src/lib/project.ts`       | Projects                                        |
+| `src/lib/crm.ts`           | CRM tables, fields, records and activity        |
+| `src/lib/crm-templates.ts` | The table templates offered in "New table"      |
+| `src/lib/docs.ts`          | Doc pages and how they nest                     |
+| `src/lib/merge.ts`         | Merging two edits of the same page              |
+| `src/lib/mentions.ts`      | Mentions in comments (NIP-27)                   |
+| `src/lib/notifications.ts` | The rules that turn events into notifications   |
+| `src/lib/inbox.ts`         | What each person read or archived in the inbox  |
+| `src/lib/relays.ts`        | Team relay connections, AUTH and access         |
+| `src/lib/publish.ts`       | Optimistic edits, signing and the outbox        |
+| `src/lib/location.ts`      | Reading places typed or pasted into the CRM     |
+| `src/components/ui/`       | shadcn/ui components, including the sidebar     |
+| `src/features/`            | Screens                                         |
+| `src/features/map/engine/` | The 3D map: three.js, no React or app code      |
+| `tools/world/`             | Bakes an OpenStreetMap region into a world pack |
 
 ## Make it yours
 
@@ -112,7 +115,8 @@ Then:
 1. Fork this repo.
 2. Set `relays` in `public/config.json` to your team relay.
 3. Replace `public/logo.svg`, `public/logo-dark.svg` and `public/favicon.svg`.
-4. Whitelist the npub of everyone who uses the app, viewers too, on the relay. Anyone who isn't whitelisted gets a "No access" screen showing their npub, ready to copy and send to you. The app can't read the whitelist, so the first time someone joins a project or board, paste their npub (or the whole whitelist file) into its members field; after that they're suggested by name everywhere.
+4. Optionally, give the team a map of your region: see [Map](#map).
+5. Whitelist the npub of everyone who uses the app, viewers too, on the relay. Anyone who isn't whitelisted gets a "No access" screen showing their npub, ready to copy and send to you. The app can't read the whitelist, so the first time someone joins a project or board, paste their npub (or the whole whitelist file) into its members field; after that they're suggested by name everywhere.
 
 ### Configuration
 
@@ -127,8 +131,59 @@ All settings live in `public/config.json`:
 | `relays` | required | Team relays. Boards are read from and written to all of them; a change counts as saved once one accepts it, and the others get it in the background. |
 | `signerRelays` | nos.lol, relay.primal.net, relay.damus.io | Relays the app and a signer app talk through when logging in by QR code. |
 | `lookupRelays` | purplepag.es, user.kindpag.es, relay.damus.io | Public relays used to look up members' names and avatars. |
+| `map` | none | `{ "world": "/worlds/<name>/world.json" }`, the address of a world pack. Without it there's no Map tab, and the map's code is never downloaded. See [Map](#map). |
 
 Relay URLs must start with `wss://`. `ws://` is accepted only for localhost.
+
+### Map
+
+The Map tab shows your region in 3D, in soft pastels, with every CRM record that has a Location field as a pin on it. It's off unless `config.json` has a `map` entry pointing at a world pack: the region's ground heights, land cover and OpenStreetMap features, baked once and served as static files.
+
+Bake one with `tools/world`, which needs [node v22.18+](https://nodejs.org/) and an internet connection the first time:
+
+```bash
+cd tools/world
+pnpm install
+pnpm bake --config path/to/world.config.json --out ../../public/worlds/<name>
+```
+
+The config names the region and where the camera starts:
+
+```json
+{
+  "name": "Madeira",
+  "bounds": [-17.28, 32.62, -16.64, 32.88],
+  "view": {
+    "lat": 32.6505,
+    "lng": -16.9095,
+    "distance": 2600,
+    "pitch": 42,
+    "heading": 0
+  },
+  "landmarks": []
+}
+```
+
+`bounds` is west, south, east, north in degrees; keep it to an island or a city, since everything inside is baked at street detail. `view` sets where the map opens: `distance` in meters from the camera to that point, `pitch` in degrees above the horizon and `heading` in degrees from north. Each landmark is a model you made (glTF binary, meters, y up) that replaces the map's own buildings within `clear` meters of its spot, with an optional round `badge` picture beside its name:
+
+```json
+{
+  "id": "se",
+  "name": "Sé do Funchal",
+  "lat": 32.64822,
+  "lng": -16.90823,
+  "model": "landmarks/se.glb",
+  "badge": "badges/se.png",
+  "heading": 0,
+  "clear": 30
+}
+```
+
+The bake downloads OpenStreetMap data through [Overpass](https://overpass-api.de/), the [Copernicus GLO-30](https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM) elevation model and [ESA WorldCover](https://esa-worldcover.org/) land cover, keeps them in a `.cache` folder next to the config, and writes the pack in about ten seconds. Run it again with `--refresh` to pick up newer OpenStreetMap data. `public/worlds/` is ignored by git; a pack is data, not code.
+
+To serve a pack, put it where the app can reach it: under `public/worlds/` when running locally, or mounted at `/branding/worlds/<name>` in the container, like `config.json`. Any other web address works too if it allows cross-origin requests.
+
+The map comes from your own server: no tiles or fonts are fetched from anyone else. OpenStreetMap data is under the [ODbL](https://www.openstreetmap.org/copyright), so the map credits its contributors, and a world pack you publish is shared under the same license.
 
 ## Deploy
 
@@ -171,6 +226,7 @@ There is no backend and no database. The app is a static site: every change is a
 - **Cards.** A card can have several assignees. Its description is rich text saved as Markdown: Markdown typed into it formats as you go (`### ` makes a heading, `[] ` or `- [ ] ` a checklist), pasted Markdown and web content keep their formatting, and text copied out across several blocks reads as Markdown. Raw HTML in a description stays plain text, and links only go to web and mail addresses.
 - **Inbox.** Typing `@` in a comment suggests the board's people, viewers included. A mention is saved as a `nostr:npub…` reference in the comment with a `p` tag for that person (NIP-27), so the relay routes it and other Nostr clients show it too. Mentions land in the person's inbox; opening the card marks them read. Notifications are read from the comments themselves through the rules in `src/lib/notifications.ts`, so another way of delivering them, such as an email bridge subscribed to the relay, can reuse the same rules.
 - **CRM.** Each project can hold several tables, such as merchants, companies, people or deals. Every table has its own fields (text, numbers, money, dates, selects, members, links to other tables and more) and can have a stage field that turns it into a pipeline with won and lost endings. Any project member can add tables, change their fields and edit records. Records show up as a table (sorting, search, filters, column picker, bulk changes, CSV import and export), as a pipeline board and as insights. Every stage change is kept on the record, so its journey and the time spent in each stage can be read back. Notes, calls, emails, meetings and visits are logged on a record as comments.
+- **Map.** With a world pack set up, the Map tab shows the region in 3D: terrain, buildings with their windows and roofs, trees, roads, the sea and its surf, place names and landmarks. It follows the app's theme, with lit windows and streets at night. Records of every table with a Location field show as pins in the color of their stage, and in a list in the corner that filters by table and folds away; clicking either opens the record. A Location field takes coordinates or a pasted Google Maps, Apple Maps or OpenStreetMap link, or a click on the map through the pin button next to the field. Drag to move, right-drag or two fingers to turn and tilt, scroll or pinch to zoom; arrow keys pan and `+`/`-` zoom.
 - **Docs.** Each project has docs: pages that can hold pages of their own, shown as a tree under the project in the sidebar. Any project member can write, move or delete any page. Pages are edited in place, as in Notion. Typing `/` opens a menu of blocks. Hovering a block shows `+`, which adds a block below it, and a handle that drags it somewhere else or opens its menu. List items move on their own, and `Mod+Shift+↑`/`↓` moves the block the cursor is in. Pages in the sidebar can be dragged before, after or into each other. The text is saved as Markdown a second after typing pauses.
 - **Editing a page together.** When two people edit a page at once, each one's saved edits show up in the other's page as they arrive, without moving their cursor. The two versions are merged line by line, so edits to different lines, even neighbouring list items, are all kept. When both change the same line, the person still typing keeps theirs; between two saved versions, every device picks the same one.
 - **Saving.** Changes show up right away, then go to the signer and on to the relay. Once signed, a change is kept in the browser until every team relay has it, so it survives reloads and time offline. A change still waiting on the signer is lost if the tab closes, and the app warns before that happens.
@@ -195,7 +251,7 @@ Boards and cards follow the draft kanban NIP used by [kanbanstr](https://github.
 
 `d` tags are 16 random hex characters, so every address (`kind:pubkey:d`) stays under the 100 characters that relays built on [eventstore](https://github.com/fiatjaf/eventstore), Haven among them, index for `#a` queries. Boards and projects made before that used longer `d` tags, so their cards, sprints, tables, records and comments are fetched by author instead and matched by address in the browser.
 
-Each member publishes their own version of a card, sprint, CRM table, record or doc page under the same `d` tag, and the newest version from any member wins. Deleting one publishes a new version tagged `deleted`. A record keeps one `val` tag per value, so a multi-select holds several, and field values are stored as plain text: numbers as decimals, dates as `YYYY-MM-DD`, members as hex pubkeys and links to other records by their `d` tag.
+Each member publishes their own version of a card, sprint, CRM table, record or doc page under the same `d` tag, and the newest version from any member wins. Deleting one publishes a new version tagged `deleted`. A record keeps one `val` tag per value, so a multi-select holds several, and field values are stored as plain text: numbers as decimals, dates as `YYYY-MM-DD`, places as `lat,lng` in degrees, members as hex pubkeys and links to other records by their `d` tag.
 
 A doc page's text is the event's content, as Markdown. Its `parent` is the `d` tag of the page it sits under, and pages at the top have none. `prev` is the id of the version the editor started from, so a teammate's editor knows what each side changed when it merges two versions saved at once. Deleting a page deletes the pages under it too.
 
@@ -208,6 +264,7 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 - [TanStack Table](https://tanstack.com/table) — the CRM's sorting, filtering, selection and paging
 - [Motion](https://motion.dev/) — animations
 - [dnd-kit](https://dndkit.com/) — drag and drop
+- [three.js](https://threejs.org/) — the 3D map, with [postprocessing](https://github.com/pmndrs/postprocessing) for its night glow, [earcut](https://github.com/mapbox/earcut) for roofs and [vector-tile](https://github.com/mapbox/vector-tile-js) for its data
 - [Tiptap](https://tiptap.dev/) — the card description and doc page editor, on [ProseMirror](https://prosemirror.net/), with [marked](https://marked.js.org/) reading its Markdown
 - [node-diff3](https://github.com/bhousel/node-diff3) — line diffs for merging edits of the same page
 - [applesauce](https://github.com/hzrd149/applesauce) — Nostr event store, relay connections and signers
@@ -233,7 +290,9 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 - A deleted page can't be brought back. Deleting a page while someone else has it open drops whatever they hadn't saved yet.
 - Pages have no links to other pages yet, other than the ones under them; a link to a page's address works as any web link.
 - The inbox keeps what you read or archived in the browser, so another device starts with every mention unread. It shows the newest 200 mentions, and only mentions in card comments for now.
-- `INBOX` can't be a board code, since the inbox lives at `/inbox`. Likewise a table named "Docs" gets the link `docs-2`, since a project's docs live at `/p/<project>/docs`.
+- The map needs WebGL 2. It draws one region per app, and a pin per record, so thousands of located records crowd it.
+- The map guesses most building heights, since few are tagged in OpenStreetMap, and builds windows and roofs from rules rather than the real buildings.
+- `INBOX` and `MAP` can't be board codes, since the inbox lives at `/inbox` and the map at `/map`. Likewise a table named "Docs" gets the link `docs-2`, since a project's docs live at `/p/<project>/docs`.
 
 ## License
 
