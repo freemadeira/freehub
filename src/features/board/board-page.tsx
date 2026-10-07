@@ -21,7 +21,7 @@ import type { NewCardDefaults } from "@/features/card/new-card-dialog";
 import { NewCardDialog } from "@/features/card/new-card-dialog";
 import { useBoardContent } from "@/hooks/use-board-content";
 import type { Board, Card } from "@/lib/model";
-import { needsCardId } from "@/lib/model";
+import { canEdit, needsCardId } from "@/lib/model";
 import type { Project } from "@/lib/project";
 
 const TABS = ["backlog", "sprint", "done"] as const;
@@ -133,6 +133,7 @@ export function BoardPage({
     ? {
         board,
         boardQuery: linkQuery,
+        canEdit: canEdit(board, pubkey),
         cardHref: (card) =>
           cardPath(board, card, {
             query: tabQuery,

@@ -311,7 +311,7 @@ export function RecordActivity({
   className?: string;
 }) {
   const id = useId();
-  const { project } = useCrm();
+  const { canEdit, project } = useCrm();
   const activity = useRecordActivity(project, record);
   const created: Entry = {
     at: record.createdAt,
@@ -341,7 +341,7 @@ export function RecordActivity({
           </span>
         )}
       </h3>
-      <Composer record={record} />
+      {canEdit && <Composer record={record} />}
       <ol className="before:bg-border relative flex flex-col gap-4 before:absolute before:top-3 before:bottom-3 before:left-3 before:w-px">
         {entries.map((entry) => {
           if (entry.kind === "activity") {

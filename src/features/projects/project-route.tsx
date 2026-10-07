@@ -131,7 +131,9 @@ function DocsView({ project, docs, loaded, pageParam, pubkey }: DocsViewProps) {
   }, [navigate, pageParam, path]);
 
   if (!pageParam) {
-    return <DocsPage docs={docs} loaded={loaded} project={project} />;
+    return (
+      <DocsPage docs={docs} loaded={loaded} project={project} pubkey={pubkey} />
+    );
   }
   if (page) {
     return (

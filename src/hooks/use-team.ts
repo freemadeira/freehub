@@ -10,9 +10,9 @@ export function useTeam(): string[] {
   const boards = useEveryBoard();
   const projects = useEveryProject();
   const involvement = new Map<string, number>();
-  for (const { members } of [...boards, ...projects]) {
-    for (const member of members) {
-      involvement.set(member, (involvement.get(member) ?? 0) + 1);
+  for (const { members, viewers } of [...boards, ...projects]) {
+    for (const person of [...members, ...viewers]) {
+      involvement.set(person, (involvement.get(person) ?? 0) + 1);
     }
   }
   return [...involvement]

@@ -52,14 +52,20 @@ export interface Template {
   tags: string[][];
 }
 
-export interface Board {
+/** Who's on a board or project: members edit it, viewers can only read it. */
+export interface Membership {
+  /** The creator first. */
+  members: string[];
+  viewers: string[];
+}
+
+export interface Board extends Membership {
   id: string;
   address: string;
   creator: string;
   code: string;
   title: string;
   description: string;
-  members: string[];
   /** Address of the project the board belongs to, if any. */
   project?: string;
   event: NostrEvent;
@@ -112,6 +118,8 @@ export interface Comment {
 const HEX_KEY = /^[0-9a-f]{64}$/u;
 const DATE = /^\d{4}-\d{2}-\d{2}$/u;
 const ID_BYTES = 8;
+/** The role on a `p` tag of someone who can only read the board or project. */
+const VIEWER = "viewer";
 export const CODE = /^[A-Z][A-Z0-9]{0,9}$/u;
 /** Codes taken by app pages, which share the top-level path with boards. */
 export const RESERVED_CODES: ReadonlySet<string> = new Set(["INBOX"]);
@@ -145,6 +153,48 @@ function oneOf<T extends string>(
   value: string | undefined
 ): T | undefined {
   return options.find(({ id }) => id === value)?.id;
+}
+
+/**
+ * Members and viewers from a board or project's `p` tags, with the creator as
+ * the first member. A viewer's tag carries the role after the relay hint, as
+ * in NIP-53: `["p", pubkey, "", "viewer"]`.
+ */
+export function parseMembership(event: NostrEvent): Membership {
+  const members = new Set([event.pubkey]);
+  const viewers = new Set<string>();
+  for (const [name, pubkey, , role] of event.tags) {
+    if (name === "p" && isPubkey(pubkey)) {
+      (role === VIEWER ? viewers : members).add(pubkey);
+    }
+  }
+  return {
+    members: [...members],
+    viewers: [...viewers].filter((viewer) => !members.has(viewer)),
+  };
+}
+
+/** `p` tags for everyone but the creator, who is the event's author. */
+export function membershipTags(
+  creator: string,
+  { members, viewers }: Membership
+): string[][] {
+  const others = (people: string[]) =>
+    people.filter((person) => person !== creator);
+  return [
+    ...others(members).map((member) => ["p", member]),
+    ...others(viewers)
+      .filter((viewer) => !members.includes(viewer))
+      .map((viewer) => ["p", viewer, "", VIEWER]),
+  ];
+}
+
+/** Whether the person may change what's in a board or project, not just read it. */
+export function canEdit(
+  { members }: Pick<Membership, "members">,
+  pubkey: string
+): boolean {
+  return members.includes(pubkey);
 }
 
 export function isDeleted(event: NostrEvent): boolean {
@@ -226,20 +276,14 @@ export function parseBoard(event: NostrEvent): Board | undefined {
   if (!id || !code || !CODE.test(code)) {
     return undefined;
   }
-  const members = new Set(
-    event.tags.flatMap(([name, value]) =>
-      name === "p" && isPubkey(value) ? [value] : []
-    )
-  );
-  members.delete(event.pubkey);
   return {
+    ...parseMembership(event),
     address: boardAddress(event.pubkey, id),
     code,
     creator: event.pubkey,
     description: getTagValue(event, "description") ?? "",
     event,
     id,
-    members: [event.pubkey, ...members],
     project: addressOf(event, PROJECT_KIND),
     title: getTagValue(event, "title") ?? code,
   };
@@ -384,7 +428,14 @@ export function needsCardId(content: BoardContent, card: Card): boolean {
 export function boardTemplate(
   board: Pick<
     Board,
-    "id" | "code" | "title" | "description" | "members" | "creator" | "project"
+    | "id"
+    | "code"
+    | "title"
+    | "description"
+    | "members"
+    | "viewers"
+    | "creator"
+    | "project"
   >
 ): Template {
   return {
@@ -401,9 +452,7 @@ export function boardTemplate(
         label,
         String(index),
       ]),
-      ...board.members
-        .filter((member) => member !== board.creator)
-        .map((member) => ["p", member]),
+      ...membershipTags(board.creator, board),
       ...(board.project ? [["a", board.project]] : []),
       ["alt", `Kanban board: ${board.title}`],
     ],

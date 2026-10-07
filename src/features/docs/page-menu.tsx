@@ -43,6 +43,8 @@ interface PageMenuProps {
   project: Project;
   docs: DocsContent;
   page: DocPage;
+  /** Whether the user is a member of the project; viewers can only copy the link. */
+  canEdit: boolean;
   /** The button that opens the menu. */
   trigger: ReactElement;
   align?: "start" | "end";
@@ -53,6 +55,7 @@ export function PageMenu({
   project,
   docs,
   page,
+  canEdit,
   trigger,
   align = "end",
 }: PageMenuProps) {
@@ -89,26 +92,32 @@ export function PageMenu({
       <DropdownMenu>
         <DropdownMenuTrigger render={trigger} />
         <DropdownMenuContent align={align}>
-          <DropdownMenuItem onClick={addPage}>
-            <FilePlusIcon />
-            Add a page inside
-          </DropdownMenuItem>
+          {canEdit && (
+            <DropdownMenuItem onClick={addPage}>
+              <FilePlusIcon />
+              Add a page inside
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={copyLink}>
             <LinkIcon />
             Copy link
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setDialog("move")}>
-            <CornerUpRightIcon />
-            Move to…
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={() => setDialog("delete")}
-            variant="destructive"
-          >
-            <Trash2Icon />
-            Delete
-          </DropdownMenuItem>
+          {canEdit && (
+            <>
+              <DropdownMenuItem onClick={() => setDialog("move")}>
+                <CornerUpRightIcon />
+                Move to…
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setDialog("delete")}
+                variant="destructive"
+              >
+                <Trash2Icon />
+                Delete
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       <MovePageDialog

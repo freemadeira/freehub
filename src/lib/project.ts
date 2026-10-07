@@ -1,15 +1,21 @@
 import type { NostrEvent } from "applesauce-core/helpers/event";
 import { getTagValue } from "applesauce-core/helpers/event";
 
-import type { Template } from "@/lib/model";
-import { DELETE_KIND, isPubkey, PROJECT_KIND } from "@/lib/model";
+import type { Board, Membership, Template } from "@/lib/model";
+import {
+  canEdit,
+  DELETE_KIND,
+  membershipTags,
+  parseMembership,
+  PROJECT_KIND,
+} from "@/lib/model";
 import type { Color } from "@/lib/palette";
 import { parseColor } from "@/lib/palette";
 
 const DIACRITICS = /\p{Diacritic}/gu;
 const MAX_SLUG = 32;
 
-export interface Project {
+export interface Project extends Membership {
   id: string;
   address: string;
   creator: string;
@@ -17,13 +23,19 @@ export interface Project {
   title: string;
   description: string;
   color: Color;
-  members: string[];
   event: NostrEvent;
 }
 
 export type ProjectFields = Pick<
   Project,
-  "id" | "creator" | "slug" | "title" | "description" | "color" | "members"
+  | "id"
+  | "creator"
+  | "slug"
+  | "title"
+  | "description"
+  | "color"
+  | "members"
+  | "viewers"
 >;
 
 /** Lowercase words joined by hyphens, safe for a URL path segment. */
@@ -70,20 +82,14 @@ export function parseProject(event: NostrEvent): Project | undefined {
     return undefined;
   }
   const title = getTagValue(event, "title")?.trim() || "Untitled project";
-  const members = new Set(
-    event.tags.flatMap(([name, value]) =>
-      name === "p" && isPubkey(value) ? [value] : []
-    )
-  );
-  members.delete(event.pubkey);
   return {
+    ...parseMembership(event),
     address: projectAddress(event.pubkey, id),
     color: parseColor(getTagValue(event, "color"), "yellow"),
     creator: event.pubkey,
     description: getTagValue(event, "description") ?? "",
     event,
     id,
-    members: [event.pubkey, ...members],
     slug:
       slugify(getTagValue(event, "slug") ?? "") ||
       slugify(title) ||
@@ -102,12 +108,28 @@ export function projectTemplate(project: ProjectFields): Template {
       ["description", project.description],
       ["slug", project.slug],
       ["color", project.color],
-      ...project.members
-        .filter((member) => member !== project.creator)
-        .map((member) => ["p", member]),
+      ...membershipTags(project.creator, project),
       ["alt", `Project: ${project.title}`],
     ],
   };
+}
+
+/**
+ * Whether the board sits in the project. Anyone can tag a board with a
+ * project, so it only counts when the board's creator is a member of it.
+ */
+export function inProject(
+  board: Pick<Board, "creator" | "project">,
+  project: Project
+): boolean {
+  return board.project === project.address && canEdit(project, board.creator);
+}
+
+/** Boards that sit in none of the projects. */
+export function outsideProjects(boards: Board[], projects: Project[]): Board[] {
+  return boards.filter(
+    (board) => !projects.some((project) => inProject(board, project))
+  );
 }
 
 export function deleteProjectTemplate(project: Project): Template {

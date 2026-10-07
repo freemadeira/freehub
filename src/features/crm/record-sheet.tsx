@@ -16,6 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -25,11 +26,16 @@ import { FieldInput } from "@/features/crm/field-input";
 import { FIELD_TYPE_META } from "@/features/crm/field-meta";
 import { RecordActivity } from "@/features/crm/record-activity";
 import { TableIcon } from "@/features/crm/table-icon";
-import { OptionChip } from "@/features/crm/values";
+import { FieldValue, OptionChip } from "@/features/crm/values";
 import type { CrmRecord, Field } from "@/lib/crm";
 import { firstValue, recordStage, recordTitle, stageField } from "@/lib/crm";
 import { deleteRecord, setValues, updateRecord } from "@/lib/crm-actions";
+import { isChecked } from "@/lib/crm-values";
 import { CHIP_COLORS, SWATCH_COLORS } from "@/lib/palette";
+
+const TITLE = "py-1 text-xl leading-snug font-semibold";
+const FIELD_NAME =
+  "text-muted-foreground flex h-8 min-w-0 items-center gap-2 font-normal";
 
 function TitleField({ record }: { record: CrmRecord }) {
   const { table } = useCrm();
@@ -37,7 +43,10 @@ function TitleField({ record }: { record: CrmRecord }) {
   return (
     <textarea
       aria-label="Name"
-      className="placeholder:text-muted-foreground hover:not-focus:bg-foreground/5 focus-visible:ring-ring/30 -mx-2 field-sizing-content w-[calc(100%+1rem)] resize-none rounded-lg px-2 py-1 text-xl leading-snug font-semibold transition-[background-color,box-shadow] duration-150 outline-none focus-visible:ring-3"
+      className={cn(
+        TITLE,
+        "placeholder:text-muted-foreground hover:not-focus:bg-foreground/5 focus-visible:ring-ring/30 -mx-2 field-sizing-content w-[calc(100%+1rem)] resize-none rounded-lg px-2 transition-[background-color,box-shadow] duration-150 outline-none focus-visible:ring-3"
+      )}
       onBlur={() => {
         const title = draft?.trim();
         if (title !== undefined && title !== record.title) {
@@ -63,7 +72,7 @@ function TitleField({ record }: { record: CrmRecord }) {
 
 /** The stages as steps; the passed ones are ticked off. */
 function JourneyBar({ field, record }: { field: Field; record: CrmRecord }) {
-  const { table } = useCrm();
+  const { canEdit, table } = useCrm();
   const current = firstValue(record, field.id);
   const index = field.options.findIndex((option) => option.id === current);
   const ended = field.options[index]?.kind === "lost";
@@ -71,6 +80,7 @@ function JourneyBar({ field, record }: { field: Field; record: CrmRecord }) {
     <ToggleGroup
       aria-label={field.name}
       className="flex-wrap gap-1.5"
+      disabled={!canEdit}
       onValueChange={(next) => {
         if (next[0]) {
           setValues(table, record, field.id, [next[0]]);
@@ -89,7 +99,7 @@ function JourneyBar({ field, record }: { field: Field; record: CrmRecord }) {
                     CHIP_COLORS[option.color],
                     "inset-ring inset-ring-current/20"
                   )
-                : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground inset-ring-border inset-ring",
+                : "text-muted-foreground enabled:hover:bg-foreground/5 enabled:hover:text-foreground inset-ring-border inset-ring",
               passed && "text-foreground/80"
             )}
             key={option.id}
@@ -114,6 +124,28 @@ function JourneyBar({ field, record }: { field: Field; record: CrmRecord }) {
   );
 }
 
+/** A field's value as text, for viewers of the project. */
+function ReadOnlyValue({ field, record }: { field: Field; record: CrmRecord }) {
+  const values = record.values[field.id] ?? [];
+  let value = <FieldValue field={field} record={record} />;
+  if (field.type === "checkbox") {
+    value = <Checkbox checked={isChecked(values)} readOnly />;
+  } else if (values.length === 0) {
+    value = <span className="text-muted-foreground">Empty</span>;
+  } else if (field.type === "longtext") {
+    value = (
+      <p className="leading-relaxed wrap-break-word whitespace-pre-wrap">
+        {values[0]}
+      </p>
+    );
+  }
+  return (
+    <div className="flex min-h-8 min-w-0 items-center px-2 py-1 text-sm">
+      {value}
+    </div>
+  );
+}
+
 function Properties({
   record,
   fields,
@@ -122,26 +154,41 @@ function Properties({
   fields: Field[];
 }) {
   const id = useId();
-  const { table } = useCrm();
+  const { canEdit, table } = useCrm();
   return (
     <div className="grid grid-cols-[8.5rem_minmax(0,1fr)] items-start gap-x-2 gap-y-0.5">
       {fields.map((field) => {
         const Icon = FIELD_TYPE_META[field.type].icon;
+        const name = (
+          <>
+            <Icon aria-hidden className="size-3.5 shrink-0" />
+            <span className="truncate">{field.name}</span>
+          </>
+        );
         return (
           <Fragment key={field.id}>
-            <Label
-              className="text-muted-foreground flex h-8 min-w-0 items-center gap-2 font-normal"
-              htmlFor={`${id}-${field.id}`}
-            >
-              <Icon aria-hidden className="size-3.5 shrink-0" />
-              <span className="truncate">{field.name}</span>
-            </Label>
-            <FieldInput
-              field={field}
-              id={`${id}-${field.id}`}
-              onChange={(values) => setValues(table, record, field.id, values)}
-              values={record.values[field.id] ?? []}
-            />
+            {canEdit ? (
+              <>
+                <Label className={FIELD_NAME} htmlFor={`${id}-${field.id}`}>
+                  {name}
+                </Label>
+                <FieldInput
+                  field={field}
+                  id={`${id}-${field.id}`}
+                  onChange={(values) =>
+                    setValues(table, record, field.id, values)
+                  }
+                  values={record.values[field.id] ?? []}
+                />
+              </>
+            ) : (
+              <>
+                <span className={cn(FIELD_NAME, "text-sm select-none")}>
+                  {name}
+                </span>
+                <ReadOnlyValue field={field} record={record} />
+              </>
+            )}
           </Fragment>
         );
       })}
@@ -257,7 +304,7 @@ function RecordDetails({
   record: CrmRecord;
   onClose: () => void;
 }) {
-  const { project, table } = useCrm();
+  const { canEdit, project, table } = useCrm();
   const stage = stageField(table);
   const fields = table.fields.filter(
     (field) => field.type !== "title" && field !== stage
@@ -279,7 +326,7 @@ function RecordDetails({
               ).href
             }
           />
-          <DeleteRecord onDeleted={onClose} record={record} />
+          {canEdit && <DeleteRecord onDeleted={onClose} record={record} />}
           <IconButton label="Close" onClick={onClose}>
             <XIcon />
           </IconButton>
@@ -287,7 +334,19 @@ function RecordDetails({
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-5 pt-1 pb-8">
         <div className="flex flex-col gap-3">
-          <TitleField record={record} />
+          {canEdit ? (
+            <TitleField record={record} />
+          ) : (
+            <p
+              className={cn(
+                TITLE,
+                "wrap-break-word",
+                !record.title && "text-muted-foreground"
+              )}
+            >
+              {recordTitle(record)}
+            </p>
+          )}
           {stage && stage.options.length > 0 && (
             <JourneyBar field={stage} record={record} />
           )}

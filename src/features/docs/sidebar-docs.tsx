@@ -59,6 +59,11 @@ const ACTION =
 // Shown while the row is hovered or focused, and always on touch screens.
 const REVEAL =
   "opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 group-focus-within/row:opacity-100 has-data-popup-open:opacity-100 pointer-coarse:opacity-100";
+// Room for those actions: two buttons for members, one for viewers.
+const ROOM_FOR_TWO =
+  "group-focus-within/row:pr-14 group-hover/row:pr-14 has-data-popup-open:pr-14";
+const ROOM_FOR_ONE =
+  "group-focus-within/row:pr-8 group-hover/row:pr-8 has-data-popup-open:pr-8";
 
 function ActionButton({
   label,
@@ -79,6 +84,8 @@ function ActionButton({
 interface TreeProps {
   project: Project;
   docs: DocsContent;
+  /** Whether the user is a member of the project, not just a viewer. */
+  canEdit: boolean;
   /** The page the current link opens, if any. */
   openId?: string;
   isExpanded: (page: DocPage) => boolean;
@@ -96,8 +103,8 @@ function PageRow({
   depth,
   ...tree
 }: TreeProps & { page: DocPage; depth: number }) {
-  const { project, docs, openId, isExpanded, onExpandedChange, onAdd } = tree;
-  const { dragged, drop, dnd } = tree;
+  const { project, docs, canEdit, openId, isExpanded, onExpandedChange } = tree;
+  const { onAdd, dragged, drop, dnd } = tree;
   const over = drop?.id === page.id ? drop.where : undefined;
   const children = docs.children.get(page.id) ?? [];
   const expanded = children.length > 0 && isExpanded(page);
@@ -123,7 +130,7 @@ function PageRow({
           />
         )}
         <SidebarMenuSubButton
-          className="group-focus-within/row:pr-14 group-hover/row:pr-14 has-data-popup-open:pr-14"
+          className={canEdit ? ROOM_FOR_TWO : ROOM_FOR_ONE}
           isActive={page.id === openId}
           render={<NavLink href={pagePath(project, page)} />}
           style={{ paddingLeft: inset }}
@@ -160,6 +167,7 @@ function PageRow({
         >
           <PageMenu
             align="start"
+            canEdit={canEdit}
             docs={docs}
             page={page}
             project={project}
@@ -169,12 +177,14 @@ function PageRow({
               </ActionButton>
             }
           />
-          <ActionButton
-            label={`Add a page inside ${pageTitle(page)}`}
-            onClick={() => onAdd(page)}
-          >
-            <PlusIcon />
-          </ActionButton>
+          {canEdit && (
+            <ActionButton
+              label={`Add a page inside ${pageTitle(page)}`}
+              onClick={() => onAdd(page)}
+            >
+              <PlusIcon />
+            </ActionButton>
+          )}
         </div>
       </div>
       {expanded && (
@@ -192,9 +202,11 @@ function PageRow({
 export function SidebarDocs({
   project,
   docs,
+  canEdit,
 }: {
   project: Project;
   docs: DocsContent;
+  canEdit: boolean;
 }) {
   const [location, navigate] = useLocation();
   const { setOpenMobile } = useSidebar();
@@ -296,7 +308,7 @@ export function SidebarDocs({
     }
   };
 
-  const dnd = (page: DocPage): HTMLAttributes<HTMLDivElement> => ({
+  const movable = (page: DocPage): HTMLAttributes<HTMLDivElement> => ({
     draggable: true,
     onDragEnd: endDrag,
     onDragLeave: leave,
@@ -321,7 +333,12 @@ export function SidebarDocs({
     },
   });
 
+  // Viewers can't move pages, so their rows don't drag.
+  const dnd = (page: DocPage): HTMLAttributes<HTMLDivElement> =>
+    canEdit ? movable(page) : {};
+
   const tree: TreeProps = {
+    canEdit,
     dnd,
     docs,
     dragged,
@@ -356,7 +373,11 @@ export function SidebarDocs({
         }}
       >
         <SidebarMenuSubButton
-          className="group-focus-within/row:pr-14 group-hover/row:pr-14"
+          className={
+            canEdit
+              ? "group-focus-within/row:pr-14 group-hover/row:pr-14"
+              : "group-focus-within/row:pr-8 group-hover/row:pr-8"
+          }
           isActive={location === base}
           render={<NavLink href={base} />}
         >
@@ -364,13 +385,15 @@ export function SidebarDocs({
           <span>Docs</span>
         </SidebarMenuSubButton>
         <div className="absolute top-1 right-1 flex items-center gap-px">
-          <ActionButton
-            className={REVEAL}
-            label={`New page in ${project.title}`}
-            onClick={() => add()}
-          >
-            <PlusIcon />
-          </ActionButton>
+          {canEdit && (
+            <ActionButton
+              className={REVEAL}
+              label={`New page in ${project.title}`}
+              onClick={() => add()}
+            >
+              <PlusIcon />
+            </ActionButton>
+          )}
           {docs.roots.length > 0 && (
             <CollapsibleTrigger
               render={

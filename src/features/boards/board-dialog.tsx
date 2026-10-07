@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { useId, useState } from "react";
 import { useLocation } from "wouter";
 
-import { MembersField } from "@/components/members-field";
+import { fromRoster, MembersField, toRoster } from "@/components/members-field";
 import { ProjectAvatar } from "@/components/project-avatar";
 import {
   AlertDialog,
@@ -38,7 +38,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useEveryBoard } from "@/hooks/use-boards";
 import { createBoard, deleteBoard, updateBoard } from "@/lib/actions";
 import type { Board } from "@/lib/model";
-import { CODE, RESERVED_CODES } from "@/lib/model";
+import { canEdit, CODE, RESERVED_CODES } from "@/lib/model";
 import type { Project } from "@/lib/project";
 
 const DIACRITICS = /\p{Diacritic}/gu;
@@ -238,6 +238,7 @@ function initialDraft(
     members: project?.members ?? [pubkey],
     project: project?.address,
     title: "",
+    viewers: project?.viewers ?? [],
   };
 }
 
@@ -257,8 +258,12 @@ function BoardForm({
   const [code, setCode] = useState(initial.code);
   const [codeEdited, setCodeEdited] = useState(board !== undefined);
   const [description, setDescription] = useState(initial.description);
-  const [members, setMembers] = useState(initial.members);
+  const [roster, setRoster] = useState(() => toRoster(initial));
   const [projectAddress, setProjectAddress] = useState(initial.project);
+  // Viewers of a project can't put boards in it; a board already there stays.
+  const choices = projects.filter(
+    (item) => canEdit(item, pubkey) || item.address === initial.project
+  );
   const parent = projects.find((item) => item.address === projectAddress);
   // Includes boards the user isn't in, which teammates may still see beside theirs.
   const everyBoard = useEveryBoard();
@@ -279,9 +284,9 @@ function BoardForm({
       return;
     }
     const draft = {
+      ...fromRoster(roster),
       code,
       description: description.trim(),
-      members,
       project: projectAddress,
       title: title.trim(),
     };
@@ -332,20 +337,20 @@ function BoardForm({
         />
       </div>
 
-      {projects.length > 0 && (
+      {choices.length > 0 && (
         <ProjectField
           onChange={setProjectAddress}
-          projects={projects}
+          projects={choices}
           value={projectAddress}
         />
       )}
 
       <MembersField
         creator={board?.creator ?? pubkey}
-        members={members}
-        onChange={setMembers}
+        group={parent && { name: parent.title, roster: toRoster(parent) }}
+        onChange={setRoster}
         pubkey={pubkey}
-        group={parent && { members: parent.members, name: parent.title }}
+        roster={roster}
       />
 
       <DialogFooter className="mt-1">

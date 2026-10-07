@@ -27,6 +27,7 @@ import { TableIcon } from "@/features/crm/table-icon";
 import { TableSettingsDialog } from "@/features/crm/table-settings-dialog";
 import type { CrmRecord, CrmTable, ProjectContent } from "@/lib/crm";
 import { stageField } from "@/lib/crm";
+import { canEdit } from "@/lib/model";
 import type { Project } from "@/lib/project";
 
 const VIEWS = ["table", "pipeline", "insights"] as const;
@@ -79,6 +80,7 @@ export function TablePage({
   const { selected, shown } = useSelectedRecord(records, recordId);
 
   const scope: CrmScope = {
+    canEdit: canEdit(project, pubkey),
     content,
     project,
     pubkey,
@@ -142,25 +144,27 @@ export function TablePage({
                 Insights
               </TabsTrigger>
             </TabsList>
-            <div className="flex items-center gap-1">
-              <FluidTooltip.Group>
-                <IconButton label="Import CSV" onClick={openDialog("import")}>
-                  <UploadIcon />
-                </IconButton>
-                <IconButton
-                  label="Table settings"
-                  onClick={openDialog("settings")}
-                >
-                  <Settings2Icon />
-                </IconButton>
-              </FluidTooltip.Group>
-              <Button className="ml-1" onClick={openDialog("new")}>
-                <PlusIcon />
-                <span className="max-sm:sr-only">
-                  New {table.singular.toLowerCase()}
-                </span>
-              </Button>
-            </div>
+            {scope.canEdit && (
+              <div className="flex items-center gap-1">
+                <FluidTooltip.Group>
+                  <IconButton label="Import CSV" onClick={openDialog("import")}>
+                    <UploadIcon />
+                  </IconButton>
+                  <IconButton
+                    label="Table settings"
+                    onClick={openDialog("settings")}
+                  >
+                    <Settings2Icon />
+                  </IconButton>
+                </FluidTooltip.Group>
+                <Button className="ml-1" onClick={openDialog("new")}>
+                  <PlusIcon />
+                  <span className="max-sm:sr-only">
+                    New {table.singular.toLowerCase()}
+                  </span>
+                </Button>
+              </div>
+            )}
           </div>
           <TabsContent className="flex flex-col" value="table">
             <RecordsView

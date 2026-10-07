@@ -105,14 +105,14 @@ You need a private Nostr relay for the team. It must:
 - keep its database on persistent storage, since the relay holds the only copy of the team's data;
 - be reachable over `wss://`.
 
-The private relay in [Haven](https://github.com/bitvora/haven) does all of this. Haven keeps its database in a `db` folder next to it (`/app/db` in its Docker image) and reads the whitelist only when it starts, so adding someone means a restart or redeploy: put `db` on a volume, or every redeploy starts with an empty relay. Events are signed but not encrypted, so whoever runs the relay can read every board and every CRM record, including the names, emails and phone numbers in it: run it yourself or trust whoever does.
+The private relay in [Haven](https://github.com/bitvora/haven) does all of this. Haven keeps its database in a `db` folder next to it (`/app/db` in its Docker image) and reads the whitelist only when it starts, so adding someone means a restart or redeploy: put `db` on a volume, or every redeploy starts with an empty relay. Events are signed but not encrypted, so whoever runs the relay can read every board and every CRM record, including the names, emails and phone numbers in it: run it yourself or trust whoever does. The whitelist is all the relay knows: anyone on it can read every board and project there with any Nostr client. Whether someone can edit or only view is kept by the app, which ignores changes from viewers.
 
 Then:
 
 1. Fork this repo.
 2. Set `relays` in `public/config.json` to your team relay.
 3. Replace `public/logo.svg`, `public/logo-dark.svg` and `public/favicon.svg`.
-4. Whitelist every member's npub on the relay. Anyone who isn't whitelisted gets a "No access" screen showing their npub, ready to copy and send to you. The app can't read the whitelist, so the first time someone joins a project or board, paste their npub (or the whole whitelist file) into its members field; after that they're suggested by name everywhere.
+4. Whitelist the npub of everyone who uses the app, viewers too, on the relay. Anyone who isn't whitelisted gets a "No access" screen showing their npub, ready to copy and send to you. The app can't read the whitelist, so the first time someone joins a project or board, paste their npub (or the whole whitelist file) into its members field; after that they're suggested by name everywhere.
 
 ### Configuration
 
@@ -166,10 +166,10 @@ Run `pnpm build` and serve `dist/` from the root of a domain. Send unknown paths
 
 There is no backend and no database. The app is a static site: every change is a signed Nostr event sent to your relay, and the relay's whitelist decides who gets in. People log in with a Nostr browser extension (NIP-07) or a signer app (NIP-46, by QR code or `bunker://` link), so the app never sees anyone's private key.
 
-- **Projects.** A project groups boards, CRM tables and docs, and the sidebar lists them under it. Its creator picks the members, renames it and can delete it. An organization can run as many projects as it likes, for example one per city or per product.
-- **Boards.** A board's creator picks its members. Members see the board and can edit any card or sprint. Only the creator can rename the board, change its members or delete it. A board can sit in a project or on its own. Anything from non-members is ignored, even if it reaches the relay.
+- **Projects.** A project groups boards, CRM tables and docs, and the sidebar lists them under it. Its creator picks its people, renames it and can delete it. Each person either can edit or can only view: viewers see the project's tables and docs but can't change them, add to them or comment. An organization can run as many projects as it likes, for example one per city or per product.
+- **Boards.** A board's creator picks its people the same way. Members can edit any card or sprint; viewers can read the board, its cards and their comments. Only the creator can rename the board, change who's on it or delete it. A board can sit in a project or on its own, and only the project's members can put boards in it. A new board in a project starts with the project's people and roles. Anything from viewers or anyone else not a member is ignored, even if it reaches the relay.
 - **Cards.** A card can have several assignees. Its description is rich text saved as Markdown: Markdown typed into it formats as you go (`### ` makes a heading, `[] ` or `- [ ] ` a checklist), pasted Markdown and web content keep their formatting, and text copied out across several blocks reads as Markdown. Raw HTML in a description stays plain text, and links only go to web and mail addresses.
-- **Inbox.** Typing `@` in a comment suggests the board's members. A mention is saved as a `nostr:npub…` reference in the comment with a `p` tag for that person (NIP-27), so the relay routes it and other Nostr clients show it too. Mentions land in the person's inbox; opening the card marks them read. Notifications are read from the comments themselves through the rules in `src/lib/notifications.ts`, so another way of delivering them, such as an email bridge subscribed to the relay, can reuse the same rules.
+- **Inbox.** Typing `@` in a comment suggests the board's people, viewers included. A mention is saved as a `nostr:npub…` reference in the comment with a `p` tag for that person (NIP-27), so the relay routes it and other Nostr clients show it too. Mentions land in the person's inbox; opening the card marks them read. Notifications are read from the comments themselves through the rules in `src/lib/notifications.ts`, so another way of delivering them, such as an email bridge subscribed to the relay, can reuse the same rules.
 - **CRM.** Each project can hold several tables, such as merchants, companies, people or deals. Every table has its own fields (text, numbers, money, dates, selects, members, links to other tables and more) and can have a stage field that turns it into a pipeline with won and lost endings. Any project member can add tables, change their fields and edit records. Records show up as a table (sorting, search, filters, column picker, bulk changes, CSV import and export), as a pipeline board and as insights. Every stage change is kept on the record, so its journey and the time spent in each stage can be read back. Notes, calls, emails, meetings and visits are logged on a record as comments.
 - **Docs.** Each project has docs: pages that can hold pages of their own, shown as a tree under the project in the sidebar. Any project member can write, move or delete any page. Pages are edited in place, as in Notion. Typing `/` opens a menu of blocks. Hovering a block shows `+`, which adds a block below it, and a handle that drags it somewhere else or opens its menu. List items move on their own, and `Mod+Shift+↑`/`↓` moves the block the cursor is in. Pages in the sidebar can be dragged before, after or into each other. The text is saved as Markdown a second after typing pauses.
 - **Editing a page together.** When two people edit a page at once, each one's saved edits show up in the other's page as they arrive, without moving their cursor. The two versions are merged line by line, so edits to different lines, even neighbouring list items, are all kept. When both change the same line, the person still typing keeps theirs; between two saved versions, every device picks the same one.
@@ -183,10 +183,10 @@ Boards and cards follow the draft kanban NIP used by [kanbanstr](https://github.
 
 | Kind | Event | Tags |
 | --- | --- | --- |
-| 30301 | Board | `d`, `title`, `description`, `code`, `col`, `p` (members), `a` (project, optional) |
+| 30301 | Board | `d`, `title`, `description`, `code`, `col`, `p` (members, and viewers as `["p", pubkey, "", "viewer"]`), `a` (project, optional) |
 | 30302 | Card | `d`, `a` (board), `title`, `description`, `s` (status), `rank`, `number`, `p` (assignees), `priority`, `due`, `sprint`, `label` |
 | 30303 | Sprint | `d`, `a` (board), `title`, `number`, `status`, `start`, `end` |
-| 30304 | Project | `d`, `title`, `description`, `slug`, `color`, `p` (members) |
+| 30304 | Project | `d`, `title`, `description`, `slug`, `color`, `p` (members and viewers, as on a board) |
 | 30305 | CRM table | `d`, `a` (project), `title`, `singular`, `slug`, `icon`, `description`, `creator`, `created`, `field` (id, type, name, config), `option` (field, id, label, color, stage outcome) |
 | 30306 | CRM record | `d`, `a` (table), `a` (project), `title`, `rank`, `created`, `creator`, `val` (field, value), `moved` (stage, time, member) |
 | 30307 | Doc page | `d`, `a` (project), `title`, `icon`, `parent`, `rank`, `created`, `creator`, `prev` (the version it was edited from) |
@@ -221,7 +221,8 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 
 - Card numbers are picked as highest + 1 on each device, so two people adding cards at the same moment can get the same number.
 - Board codes and project links are checked against every board and project on the relay, but two made at the same moment can still match. Links then name the board with `?board=`, and one of the projects gets a `-2` link.
-- Removing someone from a board or project hides the cards, sprints, CRM tables, records and doc pages whose newest version is theirs: each falls back to an older version or disappears, a table with its records. Comments on their versions are hidden too. Adding them back shows it all again.
+- Removing someone from a board or project, or making them a viewer, hides the cards, sprints, CRM tables, records and doc pages whose newest version is theirs: each falls back to an older version or disappears, a table with its records. Comments on their versions are hidden too, and boards they made in a project move out of it. Adding them back as a member shows it all again.
+- Other clients of the kanban NIP, and copies of this app from before viewers, read a viewer as a member.
 - The columns are fixed: To do, In progress, Done.
 - No file attachments yet.
 - A linked image in a description, such as a `[![badge](…)](…)` badge, loses its link once the description is edited.

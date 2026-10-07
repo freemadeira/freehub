@@ -47,11 +47,11 @@ interface DropBucketProps {
   id: string;
   title: string;
   cards: Card[];
-  actions: ReactNode;
+  actions?: ReactNode;
 }
 
 function DropBucket({ id, title, cards, actions }: DropBucketProps) {
-  const { newCard } = useBoard();
+  const { canEdit, newCard } = useBoard();
   const { ref } = useDroppable({
     accept: "card",
     collisionPriority: CollisionPriority.Low,
@@ -63,10 +63,12 @@ function DropBucket({ id, title, cards, actions }: DropBucketProps) {
       {cards.map((card, index) => (
         <SortableCardRow card={card} group={id} index={index} key={card.id} />
       ))}
-      <AddButton
-        label="Add card"
-        onClick={() => newCard({ sprint: sprintOf(id), status: "todo" })}
-      />
+      {canEdit && (
+        <AddButton
+          label="Add card"
+          onClick={() => newCard({ sprint: sprintOf(id), status: "todo" })}
+        />
+      )}
     </Bucket>
   );
 }
@@ -160,7 +162,7 @@ export function BacklogView({
 }: {
   onSprintStarted: () => void;
 }) {
-  const { board, content, cards } = useBoard();
+  const { board, canEdit, content, cards } = useBoard();
   const active = activeSprint(content);
   const future = content.sprints.filter((sprint) => sprint.status === "future");
 
@@ -189,10 +191,12 @@ export function BacklogView({
         {future.map((sprint) => (
           <DropBucket
             actions={
-              <SprintActions
-                onStart={active ? undefined : onSprintStarted}
-                sprint={sprint}
-              />
+              canEdit && (
+                <SprintActions
+                  onStart={active ? undefined : onSprintStarted}
+                  sprint={sprint}
+                />
+              )
             }
             cards={drag.groups[sprint.id] ?? []}
             id={sprint.id}
@@ -202,15 +206,17 @@ export function BacklogView({
         ))}
         <DropBucket
           actions={
-            <Button
-              className="text-muted-foreground"
-              onClick={() => createSprint(board, content)}
-              size="sm"
-              variant="ghost"
-            >
-              <PlusIcon />
-              New sprint
-            </Button>
+            canEdit && (
+              <Button
+                className="text-muted-foreground"
+                onClick={() => createSprint(board, content)}
+                size="sm"
+                variant="ghost"
+              >
+                <PlusIcon />
+                New sprint
+              </Button>
+            )
           }
           cards={drag.groups[BACKLOG] ?? []}
           id={BACKLOG}

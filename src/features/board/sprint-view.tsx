@@ -80,6 +80,7 @@ function EndSprint({ sprint }: { sprint: Sprint }) {
 }
 
 function SprintHeader({ sprint }: { sprint: Sprint }) {
+  const { canEdit } = useBoard();
   const [editing, setEditing] = useState(false);
   const dates = sprintDates(sprint);
   return (
@@ -90,15 +91,23 @@ function SprintHeader({ sprint }: { sprint: Sprint }) {
           <p className="text-muted-foreground text-sm tabular-nums">{dates}</p>
         )}
       </div>
-      <IconButton
-        className="text-muted-foreground -ml-1.5"
-        label="Edit sprint"
-        onClick={() => setEditing(true)}
-      >
-        <PencilIcon />
-      </IconButton>
-      <EndSprint sprint={sprint} />
-      <SprintDialog onOpenChange={setEditing} open={editing} sprint={sprint} />
+      {canEdit && (
+        <>
+          <IconButton
+            className="text-muted-foreground -ml-1.5"
+            label="Edit sprint"
+            onClick={() => setEditing(true)}
+          >
+            <PencilIcon />
+          </IconButton>
+          <EndSprint sprint={sprint} />
+          <SprintDialog
+            onOpenChange={setEditing}
+            open={editing}
+            sprint={sprint}
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -137,7 +146,7 @@ function Column({ status, label, cards, onAdd }: ColumnProps) {
 }
 
 function Kanban({ sprint }: { sprint: Sprint }) {
-  const { board, cards, newCard } = useBoard();
+  const { board, canEdit, cards, newCard } = useBoard();
   const columns: Record<Status, Card[]> = { done: [], progress: [], todo: [] };
   for (const card of cards) {
     if (card.sprint === sprint.id) {
@@ -159,9 +168,9 @@ function Kanban({ sprint }: { sprint: Sprint }) {
             key={id}
             label={label}
             onAdd={
-              id === "done"
-                ? undefined
-                : () => newCard({ sprint: sprint.id, status: id })
+              canEdit && id !== "done"
+                ? () => newCard({ sprint: sprint.id, status: id })
+                : undefined
             }
             status={id}
           />
@@ -172,15 +181,17 @@ function Kanban({ sprint }: { sprint: Sprint }) {
 }
 
 function NoActiveSprint() {
-  const { board, content } = useBoard();
+  const { board, canEdit, content } = useBoard();
   return (
     <Empty>
       <EmptyTitle>No active sprint</EmptyTitle>
-      <Button
-        onClick={() => startSprint(board, upcomingSprint(content), content)}
-      >
-        Start {upcomingTitle(content)}
-      </Button>
+      {canEdit && (
+        <Button
+          onClick={() => startSprint(board, upcomingSprint(content), content)}
+        >
+          Start {upcomingTitle(content)}
+        </Button>
+      )}
     </Empty>
   );
 }
