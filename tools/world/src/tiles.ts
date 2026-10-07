@@ -98,6 +98,48 @@ function project(points: Vec[]): Vec[] {
   return points.map(([lng, lat]) => [mercatorX(lng), mercatorY(lat)]);
 }
 
+/** Deck height anywhere along a bridge: straight from one abutment to the other. */
+export function deckOf(
+  line: Vec[],
+  elevation: Elevation
+): (point: Vec) => number {
+  const lengths = [0];
+  for (let index = 1; index < line.length; index += 1) {
+    const [ax, ay] = line[index - 1] ?? [0, 0];
+    const [bx, by] = line[index] ?? [0, 0];
+    lengths.push((lengths.at(-1) ?? 0) + Math.hypot(bx - ax, by - ay));
+  }
+  const total = lengths.at(-1) || 1;
+  const [sx, sy] = line[0] ?? [0, 0];
+  const [ex, ey] = line.at(-1) ?? [0, 0];
+  const start = elevation(sx, sy) + 0.4;
+  const end = elevation(ex, ey) + 0.4;
+  return ([px, py]) => {
+    let best = Number.POSITIVE_INFINITY;
+    let along = 0;
+    for (let index = 1; index < line.length; index += 1) {
+      const [ax, ay] = line[index - 1] ?? [0, 0];
+      const [bx, by] = line[index] ?? [0, 0];
+      const dx = bx - ax;
+      const dy = by - ay;
+      const length = dx * dx + dy * dy;
+      const t =
+        length === 0
+          ? 0
+          : Math.max(
+              0,
+              Math.min(1, ((px - ax) * dx + (py - ay) * dy) / length)
+            );
+      const distance = Math.hypot(ax + dx * t - px, ay + dy * t - py);
+      if (distance < best) {
+        best = distance;
+        along = (lengths[index - 1] ?? 0) + t * Math.sqrt(length);
+      }
+    }
+    return Math.round((start + ((end - start) * along) / total) * 10) / 10;
+  };
+}
+
 class Tiler {
   readonly tiles = new Map<string, TileLayers>();
   private readonly level: Level;
@@ -263,43 +305,8 @@ class Tiler {
     }
   }
 
-  /** Deck height anywhere along a bridge: straight from one abutment to the other. */
   private deck(line: Vec[]): (point: Vec) => number {
-    const lengths = [0];
-    for (let index = 1; index < line.length; index += 1) {
-      const [ax, ay] = line[index - 1] ?? [0, 0];
-      const [bx, by] = line[index] ?? [0, 0];
-      lengths.push((lengths.at(-1) ?? 0) + Math.hypot(bx - ax, by - ay));
-    }
-    const total = lengths.at(-1) || 1;
-    const [sx, sy] = line[0] ?? [0, 0];
-    const [ex, ey] = line.at(-1) ?? [0, 0];
-    const start = this.elevation(sx, sy) + 0.4;
-    const end = this.elevation(ex, ey) + 0.4;
-    return ([px, py]) => {
-      let best = Number.POSITIVE_INFINITY;
-      let along = 0;
-      for (let index = 1; index < line.length; index += 1) {
-        const [ax, ay] = line[index - 1] ?? [0, 0];
-        const [bx, by] = line[index] ?? [0, 0];
-        const dx = bx - ax;
-        const dy = by - ay;
-        const length = dx * dx + dy * dy;
-        const t =
-          length === 0
-            ? 0
-            : Math.max(
-                0,
-                Math.min(1, ((px - ax) * dx + (py - ay) * dy) / length)
-              );
-        const distance = Math.hypot(ax + dx * t - px, ay + dy * t - py);
-        if (distance < best) {
-          best = distance;
-          along = (lengths[index - 1] ?? 0) + t * Math.sqrt(length);
-        }
-      }
-      return Math.round((start + ((end - start) * along) / total) * 10) / 10;
-    };
+    return deckOf(line, this.elevation);
   }
 
   addPoint(layer: string, feature: PointFeature): void {

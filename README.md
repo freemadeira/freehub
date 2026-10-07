@@ -139,6 +139,8 @@ Relay URLs must start with `wss://`. `ws://` is accepted only for localhost.
 
 The Map tab shows your region in 3D, in soft pastels, with every CRM record that has a Location field as a pin on it. It's off unless `config.json` has a `map` entry pointing at a world pack: the region's ground heights, land cover and OpenStreetMap features, baked once and served as static files.
 
+The map is alive, all from the same data: cars drive the roads, people walk the paths, squares and sidewalks, boats rock at their moorings, and planes and ferries come and go where the region has an airport or a ferry route. Everything stands still for people whose system asks for reduced motion. Packs baked before planes and ferries were added still load; bake again to get them.
+
 Bake one with `tools/world`, which needs [node v22.18+](https://nodejs.org/) and an internet connection the first time:
 
 ```bash

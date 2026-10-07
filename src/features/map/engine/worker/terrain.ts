@@ -47,27 +47,28 @@ function surfaceOf(
 }
 
 /**
- * Heights near OSM's coast. Within `reach` of it, on either side, the ground
- * rises with the distance at a single slope, so the water's edge on every cell
- * that crosses the coast lands where the coast is, rather than stepping along
- * the grid. The slope comes from the ground a little inland, which keeps
- * cliffs falling straight into the sea; the sea floor under them is never seen.
+ * Heights near OSM's coast. The coast itself is drawn by the terrain's shader,
+ * from the tile's coast map, which is far sharper than the cells, so it stays
+ * put as tiles change detail; the mesh only has to keep land out of the water
+ * and go under it out to sea. The ground stays at least `LOWEST_LAND` up to the
+ * coast, then falls into the sea at the slope of the ground a little inland.
+ * Low shores fall gently, a whole `reach` out, so no cell touching land dips
+ * below the water; cliffs fall right under themselves, so the sea painted on
+ * their faces stays low.
  */
 function shoreOf(
   field: HeightField,
   coast: CoastDistance,
   cell: number
 ): (x: number, z: number) => number {
-  // A cell's diagonal is the longest edge that can cross the coast.
+  // A cell's diagonal is the farthest a vertex can be from land it touches.
   const reach = cell * 1.5;
   const inland = reach * 2;
   const step = cell / 2;
-  // The water reaches a little past the coast, so its surf covers the seam.
-  const overlap = cell / 4;
   const ground = (x: number, z: number) =>
     Math.max(LOWEST_LAND, field.sample(x, z));
   return (x, z) => {
-    const distance = coast(x, z) - overlap;
+    const distance = coast(x, z);
     if (distance >= inland) {
       return ground(x, z);
     }
@@ -82,11 +83,17 @@ function shoreOf(
       LOWEST_LAND / reach,
       ground(x + east * ahead, z + south * ahead) / inland
     );
+    if (distance < 0) {
+      return LOWEST_LAND + distance * slope;
+    }
     if (distance <= reach) {
-      return distance * slope;
+      return Math.max(LOWEST_LAND, distance * slope);
     }
     const blend = (distance - reach) / (inland - reach);
-    return reach * slope + (ground(x, z) - reach * slope) * blend;
+    return Math.max(
+      LOWEST_LAND,
+      reach * slope + (ground(x, z) - reach * slope) * blend
+    );
   };
 }
 

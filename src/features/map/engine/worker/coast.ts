@@ -1,4 +1,5 @@
 import type { Square } from "../geo.ts";
+import type { CoastMap } from "../protocol.ts";
 import type { TileFeatures } from "./vector.ts";
 
 /** Meters to OSM's coast: positive on land, negative at sea. */
@@ -84,22 +85,150 @@ function distances(
   return grid;
 }
 
+/** Pixels from the drawn coast within which distances are measured exactly. */
+const EXACT = 2.5;
+/** Pixels on a side of the buckets the coast's edges are sorted into. */
+const BUCKET = 4;
+
+/**
+ * The edges of the land that are coast: those reaching into each data tile's
+ * own square. The rest lie in its buffer, where the neighbouring tile has them
+ * too, and the buffer's rim is where the polygons were cut, not coast.
+ */
+function coastEdges(data: TileFeatures[]): Float64Array {
+  const edges: number[] = [];
+  for (const { land, square } of data) {
+    const right = square.x + square.size;
+    const bottom = square.z + square.size;
+    for (const ring of land.flatMap((polygon) => polygon.rings)) {
+      for (let index = 1; index < ring.length; index += 1) {
+        const a = ring[index - 1] ?? { x: 0, z: 0 };
+        const b = ring[index] ?? a;
+        const outside =
+          Math.max(a.x, b.x) < square.x ||
+          Math.min(a.x, b.x) > right ||
+          Math.max(a.z, b.z) < square.z ||
+          Math.min(a.z, b.z) > bottom;
+        if (!outside) {
+          edges.push(a.x, a.z, b.x, b.z);
+        }
+      }
+    }
+  }
+  return Float64Array.from(edges);
+}
+
+function edgeDistance(
+  edges: Float64Array,
+  at: number,
+  x: number,
+  z: number
+): number {
+  const ax = edges[at] ?? 0;
+  const az = edges[at + 1] ?? 0;
+  const dx = (edges[at + 2] ?? 0) - ax;
+  const dz = (edges[at + 3] ?? 0) - az;
+  const length = dx * dx + dz * dz;
+  const t =
+    length === 0
+      ? 0
+      : Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / length));
+  return Math.hypot(ax + dx * t - x, az + dz * t - z);
+}
+
+interface Raster {
+  signed: Float32Array;
+  size: number;
+  left: number;
+  top: number;
+  pixel: number;
+}
+
+/** Each edge listed in the buckets its bounds cover. */
+function bucketsOf(edges: Float64Array, raster: Raster): Map<number, number[]> {
+  const { left, top, pixel, size } = raster;
+  const span = BUCKET * pixel;
+  const count = Math.ceil(size / BUCKET);
+  const index = (value: number, origin: number) =>
+    Math.min(count - 1, Math.max(0, Math.floor((value - origin) / span)));
+  const buckets = new Map<number, number[]>();
+  for (let at = 0; at < edges.length; at += 4) {
+    const ax = edges[at] ?? 0;
+    const az = edges[at + 1] ?? 0;
+    const bx = edges[at + 2] ?? 0;
+    const bz = edges[at + 3] ?? 0;
+    const rowEnd = index(Math.max(az, bz), top);
+    const columnEnd = index(Math.max(ax, bx), left);
+    for (let row = index(Math.min(az, bz), top); row <= rowEnd; row += 1) {
+      for (
+        let column = index(Math.min(ax, bx), left);
+        column <= columnEnd;
+        column += 1
+      ) {
+        const key = row * count + column;
+        const list = buckets.get(key) ?? [];
+        list.push(at);
+        buckets.set(key, list);
+      }
+    }
+  }
+  return buckets;
+}
+
+/**
+ * Pixels near the coast measure their distance to OSM's edges themselves,
+ * keeping the side the drawing gave them: the drawing alone steps by pixels,
+ * which would make the coast wobble as tiles change detail.
+ */
+function refine(raster: Raster, edges: Float64Array): void {
+  const { signed, size, left, top, pixel } = raster;
+  const buckets = bucketsOf(edges, raster);
+  const count = Math.ceil(size / BUCKET);
+  for (let row = 0; row < size; row += 1) {
+    for (let column = 0; column < size; column += 1) {
+      const cell = row * size + column;
+      const value = signed[cell] ?? 0;
+      if (Math.abs(value) > EXACT * pixel) {
+        continue;
+      }
+      const x = left + (column + 0.5) * pixel;
+      const z = top + (row + 0.5) * pixel;
+      const bucketRow = Math.floor(row / BUCKET);
+      const bucketColumn = Math.floor(column / BUCKET);
+      let best = Number.POSITIVE_INFINITY;
+      for (let dr = -1; dr <= 1; dr += 1) {
+        for (let dc = -1; dc <= 1; dc += 1) {
+          const list =
+            buckets.get((bucketRow + dr) * count + bucketColumn + dc) ?? [];
+          for (const at of list) {
+            best = Math.min(best, edgeDistance(edges, at, x, z));
+          }
+        }
+      }
+      if (best <= BUCKET * pixel) {
+        signed[cell] = value > 0 ? best : -best;
+      }
+    }
+  }
+}
+
 /**
  * The coast as a smooth signed distance over a tile and `COAST_MARGIN` cells
- * around it, from OSM's land polygons drawn a few pixels per terrain cell.
- * `data` has to hold every data tile under that margin too: land polygons
- * stop a little past their own tile, which would read as coast.
+ * around it, from OSM's land polygons drawn in `pixel`-meter pixels, a whole
+ * number of them per cell. `data` has to hold every data tile under that
+ * margin too: land polygons stop a little past their own tile, which would
+ * read as coast.
  */
 export function coastOf(
   square: Square,
   data: TileFeatures[],
-  cell: number
+  cell: number,
+  pixel: number
 ): CoastDistance | undefined {
   // Every zoom carries all the land, so a tile without any is open sea.
   if (data.every((tile) => tile.land.length === 0)) {
     return () => -FAR;
   }
-  const pixel = cell / 3;
   const margin = cell * COAST_MARGIN;
   const size = Math.ceil((square.size + margin * 2) / pixel);
   const canvas = new OffscreenCanvas(size, size);
@@ -141,6 +270,7 @@ export function coastOf(
         ? (Math.sqrt(toSea[cellIndex] ?? 0) - 0.5) * pixel
         : -(Math.sqrt(toLand[cellIndex] ?? 0) - 0.5) * pixel;
   }
+  refine({ left, pixel, signed, size, top }, coastEdges(data));
   return (x, z) => {
     const fx = Math.min(size - 1.001, Math.max(0, (x - left) / pixel - 0.5));
     const fz = Math.min(size - 1.001, Math.max(0, (z - top) / pixel - 0.5));
@@ -155,4 +285,39 @@ export function coastOf(
       (at(0, 1) * (1 - tx) + at(1, 1) * tx) * tz
     );
   };
+}
+
+/** Texels either side of the coast the map tells apart; past them it saturates. */
+const COAST_RANGE = 4;
+
+/**
+ * The coast as a texture over the tile, `pixel` meters a texel, so the terrain
+ * can draw it sharper than its own cells. A map that's all land or all sea
+ * shrinks to one texel.
+ */
+export function coastMap(
+  coast: CoastDistance,
+  square: Square,
+  pixel: number
+): CoastMap {
+  const size = Math.round(square.size / pixel);
+  const step = square.size / size;
+  const perMeter = 127 / (COAST_RANGE * step);
+  const data = new Uint8Array(size * size);
+  let uniform = true;
+  for (let row = 0; row < size; row += 1) {
+    const z = square.z + (row + 0.5) * step;
+    for (let column = 0; column < size; column += 1) {
+      const distance = coast(square.x + (column + 0.5) * step, z);
+      const value = Math.round(
+        Math.min(255, Math.max(0, 128 + distance * perMeter))
+      );
+      data[row * size + column] = value;
+      uniform &&= value === data[0];
+    }
+  }
+  const scale = 255 / perMeter;
+  return uniform
+    ? { data: data.slice(0, 1), scale, size: 1 }
+    : { data, scale, size };
 }

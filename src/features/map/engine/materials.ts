@@ -1,18 +1,26 @@
 import type { Texture, WebGLProgramParametersWithUniforms } from "three";
 import {
   Color,
+  DataTexture,
+  LinearFilter,
   MeshBasicMaterial,
   MeshLambertMaterial,
+  RedFormat,
   SRGBColorSpace,
 } from "three";
 
 import { PALETTE } from "./palette.ts";
+import type { CoastMap } from "./protocol.ts";
+import type { SeaUniforms } from "./sea.ts";
+import { SEA_COLOR } from "./sea.ts";
 
 /** Uniforms every map material reads, so one change reaches them all. */
 export interface SharedUniforms {
   /** 0 by day, 1 at night. */
   uNight: { value: number };
   uTime: { value: number };
+  /** Seconds of life on the map; it stands still for reduced motion. */
+  uLife: { value: number };
 }
 
 const GRADE = `
@@ -26,7 +34,8 @@ vec3 nightGrade(vec3 color) {
 
 type Shader = WebGLProgramParametersWithUniforms;
 
-function graded(
+/** Darkens a material at night; `glow` adds light that shines through. */
+export function graded(
   shader: Shader,
   shared: SharedUniforms,
   options: { glow?: string; before?: string; after?: string } = {}
@@ -53,6 +62,38 @@ function graded(
 function srgb(hex: number): string {
   const color = new Color().setHex(hex, SRGBColorSpace);
   return `vec3(${color.r.toFixed(4)}, ${color.g.toFixed(4)}, ${color.b.toFixed(4)})`;
+}
+
+/**
+ * The sea painted over the terrain up to the coast its coast map draws, so the
+ * shore doesn't move with the mesh's detail. It matches the water exactly,
+ * which takes over wherever the ground dips under it.
+ */
+const WET = `
+float coastDistance = (texture2D(coastMap, vMapUv).r - 128.0 / 255.0) * coastScale;
+float coastChange = fwidth(coastDistance);
+// Only near the coast. The margin takes in every pixel next to a wet one, so
+// whole 2×2 blocks agree and the sea's own derivatives hold.
+if (coastDistance < coastChange * 2.5 + 0.01) {
+  float coastBlur = max(coastChange * 0.7, 1e-3);
+  float wet = smoothstep(coastBlur, -coastBlur, coastDistance);
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, seaColor(vSeaXZ), wet);
+}
+`;
+
+/** A coast map's texture, sampled smoothly between its texels. */
+export function coastTexture(coast: CoastMap): DataTexture {
+  const texture = new DataTexture(
+    coast.data,
+    coast.size,
+    coast.size,
+    RedFormat
+  );
+  texture.magFilter = LinearFilter;
+  texture.minFilter = LinearFilter;
+  texture.unpackAlignment = 1;
+  texture.needsUpdate = true;
+  return texture;
 }
 
 /** Steep ground turns to bare rock, like the island's cliffs. */
@@ -94,7 +135,12 @@ if (vFacade.z > 0.5) {
 
 export interface Materials {
   shared: SharedUniforms;
-  terrain: (map: Texture) => MeshLambertMaterial;
+  sea: SeaUniforms;
+  /** Ground for one tile; without a coast map, it's all land. */
+  terrain: (
+    map: Texture,
+    coast?: { texture: Texture; scale: number }
+  ) => MeshLambertMaterial;
   /** Painted street names, dimmed at night. */
   label: (map: Texture) => MeshBasicMaterial;
   buildings: MeshLambertMaterial;
@@ -108,8 +154,13 @@ export interface Materials {
   dispose: () => void;
 }
 
-export function createMaterials(): Materials {
-  const shared: SharedUniforms = { uNight: { value: 0 }, uTime: { value: 0 } };
+export function createMaterials(sea: SeaUniforms): Materials {
+  const shared: SharedUniforms = {
+    uLife: { value: 0 },
+    uNight: { value: 0 },
+    uTime: { value: 0 },
+  };
+  const land = coastTexture({ data: Uint8Array.of(255), scale: 1, size: 1 });
 
   const buildings = new MeshLambertMaterial({ vertexColors: true });
   buildings.onBeforeCompile = (shader) => {
@@ -131,26 +182,36 @@ export function createMaterials(): Materials {
   };
   buildings.customProgramCacheKey = () => "map-buildings";
 
-  const terrainPrograms: MeshLambertMaterial[] = [];
-  const terrain = (map: Texture) => {
+  const allLand: { scale: number; texture: Texture } = {
+    scale: 1,
+    texture: land,
+  };
+  const terrain = (map: Texture, coast = allLand) => {
     const material = new MeshLambertMaterial({ map });
     material.onBeforeCompile = (shader) => {
       graded(shader, shared, {
         after: ROCK,
-        before: "varying float vSlope;\nvarying float vRockBand;",
+        before: `varying float vSlope;\nvarying float vRockBand;\nvarying vec2 vSeaXZ;\nuniform float uTime;\nuniform sampler2D coastMap;\nuniform float coastScale;\n${SEA_COLOR}`,
       });
+      Object.assign(shader.uniforms, sea, {
+        coastMap: { value: coast.texture },
+        coastScale: { value: coast.scale },
+      });
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <tonemapping_fragment>",
+        `${WET}\n#include <tonemapping_fragment>`
+      );
       shader.vertexShader = shader.vertexShader
         .replace(
           "#include <common>",
-          "#include <common>\nvarying float vSlope;\nvarying float vRockBand;"
+          "#include <common>\nvarying float vSlope;\nvarying float vRockBand;\nvarying vec2 vSeaXZ;"
         )
         .replace(
           "#include <begin_vertex>",
-          "#include <begin_vertex>\nvSlope = 1.0 - normalize(objectNormal).y;\nvRockBand = position.y * 0.35;"
+          "#include <begin_vertex>\nvSlope = 1.0 - normalize(objectNormal).y;\nvRockBand = position.y * 0.35;\nvSeaXZ = (modelMatrix * vec4(transformed, 1.0)).xz;"
         );
     };
     material.customProgramCacheKey = () => "map-terrain";
-    terrainPrograms.push(material);
     return material;
   };
 
@@ -228,11 +289,13 @@ export function createMaterials(): Materials {
       ]) {
         material.dispose();
       }
+      land.dispose();
     },
     label,
     landmark,
     pole,
     roads,
+    sea,
     shared,
     solid,
     terrain,

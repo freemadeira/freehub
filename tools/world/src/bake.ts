@@ -8,6 +8,7 @@ import type {
 } from "../../../src/features/map/engine/format.ts";
 import { WORLD_FORMAT } from "../../../src/features/map/engine/format.ts";
 import { createFrame } from "../../../src/features/map/engine/geo.ts";
+import { airportsOf } from "./airports.ts";
 import { loadConfig } from "./config.ts";
 import {
   coverFile,
@@ -76,7 +77,7 @@ async function main() {
   console.log(`Reading OpenStreetMap… (${elapsed()})`);
   const osm = await readOsm(cache);
   console.log(
-    `  ${osm.buildings.length} buildings, ${osm.roads.length} roads, ${osm.landuse.length} areas, ${osm.trees.length} trees, ${osm.land.length} land polygons`
+    `  ${osm.buildings.length} buildings, ${osm.roads.length} roads, ${osm.landuse.length} areas, ${osm.trees.length} trees, ${osm.land.length} land polygons, ${osm.airports.length} airports, ${osm.ferries.length} ferry routes`
   );
 
   await rm(out, { force: true, recursive: true });
@@ -111,16 +112,17 @@ async function main() {
   await writeFile(path.join(out, "sea.png"), encodeGray(sea));
 
   console.log(`Vector tiles… (${elapsed()})`);
+  const elevation = (mx: number, my: number) =>
+    sampleHeight(
+      heightGrid,
+      (mx - frame.mx) * frame.scale,
+      (my - frame.my) * frame.scale
+    );
   const available = await writeTiles(
     osm,
     config.zooms,
     config.origin.lat,
-    (mx, my) =>
-      sampleHeight(
-        heightGrid,
-        (mx - frame.mx) * frame.scale,
-        (my - frame.my) * frame.scale
-      ),
+    elevation,
     out
   );
 
@@ -161,8 +163,10 @@ async function main() {
     lat >= south && lat <= north && lng >= west && lng <= east;
   const manifest: WorldManifest = {
     aerialways: osm.aerialways,
+    airports: airportsOf(osm.airports, elevation),
     attribution: ATTRIBUTION,
     bounds: config.bounds,
+    ferries: osm.ferries,
     format: WORLD_FORMAT,
     heights: {
       height: heightGrid.height,

@@ -6,13 +6,17 @@ import { HeightField } from "../heights.ts";
 import { buffersOf } from "../mesh.ts";
 import { PALETTE } from "../palette.ts";
 import type { BuiltTile, FromWorker, Quality, ToWorker } from "../protocol.ts";
+import { buildBoats } from "./boats.ts";
 import type { Detail } from "./buildings.ts";
 import { buildBuildings } from "./buildings.ts";
-import { COAST_MARGIN, coastOf } from "./coast.ts";
+import type { CoastDistance } from "./coast.ts";
+import { COAST_MARGIN, coastMap, coastOf } from "./coast.ts";
 import { paintGround } from "./ground.ts";
 import { buildPiers, buildRoads } from "./roads.ts";
 import { buildStreetLabels } from "./street-labels.ts";
+import type { Surface } from "./terrain.ts";
 import { buildTerrain } from "./terrain.ts";
+import { buildTraffic } from "./traffic.ts";
 import { buildTrees } from "./trees.ts";
 import type { Area, TileFeatures } from "./vector.ts";
 import { VectorSource } from "./vector.ts";
@@ -233,6 +237,68 @@ function centroidIn(area: Area, square: Square): boolean {
   );
 }
 
+/** What moves on the closest tiles: traffic, and boats at their moorings. */
+function buildLife(
+  stateNow: State,
+  data: TileFeatures[],
+  square: Square,
+  surface: Surface,
+  coast: CoastDistance | undefined
+): Pick<BuiltTile, "boats" | "traffic"> {
+  const { quality } = stateNow;
+  const [detailData] = data;
+  return {
+    boats:
+      coast && quality.boats > 0
+        ? buildBoats({ coast, data, density: quality.boats, square, surface })
+        : undefined,
+    traffic:
+      detailData && data.length === 1
+        ? buildTraffic({
+            cars: quality.cars,
+            cover: stateNow.cover,
+            coverGrid: stateNow.coverGrid,
+            data: detailData,
+            field: stateNow.field,
+            people: quality.people,
+            square,
+            surface,
+          })
+        : undefined,
+  };
+}
+
+/** The terrain, shaped to OSM's coast, and the coast map it's drawn with. */
+async function groundOf(
+  stateNow: State,
+  tile: TileId,
+  square: Square,
+  zoom: number
+) {
+  const segments = tile.z >= 14 ? 64 : 128;
+  const cell = square.size / segments;
+  // The coast map: a few texels a cell, about two ground texels each.
+  const pixel = cell / (segments === 64 ? 4 : 3);
+  const around = await Promise.all(
+    tilesAround(stateNow.frame, square, cell * COAST_MARGIN, zoom).map((id) =>
+      stateNow.source.get(id)
+    )
+  );
+  const coast = coastOf(square, around, cell, pixel);
+  const { data: terrain, surface } = buildTerrain(
+    stateNow.field,
+    square,
+    segments,
+    coast
+  );
+  return {
+    coast,
+    coastTexture: coast ? coastMap(coast, square, pixel) : undefined,
+    surface,
+    terrain,
+  };
+}
+
 const DETAIL: Record<number, Detail> = {
   14: "simple",
   15: "medium",
@@ -245,18 +311,11 @@ async function build(stateNow: State, tile: TileId): Promise<BuiltTile> {
   const data: TileFeatures[] = await Promise.all(
     dataTiles(tile, zoom).map((id) => stateNow.source.get(id))
   );
-  const segments = tile.z >= 14 ? 64 : 128;
-  const cell = square.size / segments;
-  const around = await Promise.all(
-    tilesAround(stateNow.frame, square, cell * COAST_MARGIN, zoom).map((id) =>
-      stateNow.source.get(id)
-    )
-  );
-  const { data: terrain, surface } = buildTerrain(
-    stateNow.field,
+  const { coast, coastTexture, surface, terrain } = await groundOf(
+    stateNow,
+    tile,
     square,
-    segments,
-    coastOf(square, around, cell)
+    zoom
   );
   const detail = DETAIL[Math.min(16, tile.z)];
   const buildings = detail
@@ -293,6 +352,7 @@ async function build(stateNow: State, tile: TileId): Promise<BuiltTile> {
         { lamps: stateNow.quality.lamps, square, surface }
       )
     : undefined;
+  const life = near ? buildLife(stateNow, data, square, surface, coast) : {};
   const labels = near
     ? buildStreetLabels(
         data.flatMap((item) => item.roads),
@@ -319,7 +379,9 @@ async function build(stateNow: State, tile: TileId): Promise<BuiltTile> {
     trees: tile.z >= 15 ? (trees?.shade ?? []) : [],
   });
   return {
+    ...life,
     buildings: buildingMesh,
+    coast: coastTexture,
     ground,
     labels,
     lamps: roads?.lamps,
@@ -338,6 +400,7 @@ function transferables(tile: BuiltTile): Transferable[] {
     tile.terrain.normals.buffer as ArrayBuffer,
     tile.terrain.uvs.buffer as ArrayBuffer,
     tile.terrain.indices.buffer as ArrayBuffer,
+    ...(tile.coast ? [tile.coast.data.buffer as ArrayBuffer] : []),
     ...buffersOf(tile.buildings),
     ...buffersOf(tile.roads),
     ...buffersOf(tile.structures),
@@ -347,6 +410,17 @@ function transferables(tile: BuiltTile): Transferable[] {
       batch.colors.buffer as ArrayBuffer,
     ]),
     ...(tile.lamps ? [tile.lamps.buffer as ArrayBuffer] : []),
+    ...(tile.boats ?? []).flatMap((batch) => [
+      batch.matrices.buffer as ArrayBuffer,
+      batch.colors.buffer as ArrayBuffer,
+    ]),
+    ...(tile.traffic
+      ? [
+          tile.traffic.paths.buffer as ArrayBuffer,
+          tile.traffic.cars.buffer as ArrayBuffer,
+          tile.traffic.people.buffer as ArrayBuffer,
+        ]
+      : []),
     ...(tile.labels
       ? [
           tile.labels.atlas,

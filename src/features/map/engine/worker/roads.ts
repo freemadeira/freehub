@@ -6,6 +6,7 @@ import type { MeshData, Rgb } from "../mesh.ts";
 import { MeshBuilder } from "../mesh.ts";
 import { linear, PALETTE } from "../palette.ts";
 import { ROAD_WIDTH } from "./ground.ts";
+import { deckAlong } from "./routes.ts";
 import type { Surface } from "./terrain.ts";
 import type { Area, Line } from "./vector.ts";
 
@@ -440,33 +441,17 @@ export function buildRoads(roads: Line[], options: RoadOptions): RoadResult {
     if (width === undefined) {
       return [];
     }
+    const deck = deckAlong(road);
     return clipToSquare(road.points, square).map((points) => {
       const dense = densify(points, STEP);
-      const elevated = road.properties.bridge === 1;
-      const e0 = Number(road.properties.e0);
-      const e1 = Number(road.properties.e1);
-      let total = 0;
-      const lengths = dense.map((point, index) => {
-        const before = dense[index - 1];
-        total += before
-          ? Math.hypot(point.x - before.x, point.z - before.z)
-          : 0;
-        return total;
-      });
-      const heights = dense.map((point, index) => {
+      const heights = dense.map((point) => {
         const ground = surface.height(point.x, point.z);
-        if (elevated && Number.isFinite(e0) && Number.isFinite(e1)) {
-          return Math.max(
-            ground,
-            e0 + ((e1 - e0) * (lengths[index] ?? 0)) / (total || 1)
-          );
-        }
-        return ground;
+        return deck ? Math.max(ground, deck(point)) : ground;
       });
       const [first] = dense;
       const last = dense.at(-1);
       return {
-        bridge: elevated && Number.isFinite(e0),
+        bridge: deck !== undefined,
         caps: [
           first ? !onEdge(first, square) : false,
           last ? !onEdge(last, square) : false,

@@ -1,6 +1,8 @@
 /**
  * The world pack: what `tools/world` bakes and the engine reads. Bump
- * `WORLD_FORMAT` whenever either side changes shape.
+ * `WORLD_FORMAT` whenever either side changes shape in a way the other can't
+ * read. Optional fields were added later: packs baked before them still load,
+ * and simply go without.
  *
  * Positions live in a local frame: Web Mercator scaled to meters at the
  * origin's latitude, x to the east and z to the south. Tiles of any zoom are
@@ -114,6 +116,35 @@ export interface Aerialway {
   path: LngLat[];
 }
 
+/** A point along a runway or taxiway; `deck` where it stands on a bridge. */
+export interface AirPoint extends LngLat {
+  deck?: number;
+}
+
+export interface Runway {
+  /** Like "05/23": the headings of its two ends. */
+  ref?: string;
+  /** Meters. */
+  width?: number;
+  /** The center line, from one end to the other. */
+  path: AirPoint[];
+}
+
+/** An aerodrome's runways, taxiways and aprons, for the planes. */
+export interface Airport {
+  name?: string;
+  runways: Runway[];
+  taxiways: AirPoint[][];
+  /** Outlines of the aprons, where planes park. */
+  aprons: LngLat[][];
+}
+
+/** A ferry's route, port to port; it may reach far past the world. */
+export interface Ferry {
+  name?: string;
+  path: LngLat[];
+}
+
 export interface WorldManifest {
   format: typeof WORLD_FORMAT;
   name: string;
@@ -134,6 +165,8 @@ export interface WorldManifest {
   places: Place[];
   landmarks: Landmark[];
   aerialways: Aerialway[];
+  airports?: Airport[];
+  ferries?: Ferry[];
   attribution: string[];
 }
 

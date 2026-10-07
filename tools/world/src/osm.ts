@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 
 import type {
   Aerialway,
+  Ferry,
   LanduseKind,
   Place,
   PlaceKind,
@@ -26,6 +27,7 @@ interface RawPoint {
 
 interface RawMember {
   type: string;
+  ref?: number;
   role: string;
   geometry?: RawPoint[];
 }
@@ -61,6 +63,14 @@ export interface PointFeature {
   properties: Properties;
 }
 
+/** An aerodrome's runways, taxiways and aprons, as OSM has them. */
+export interface AirportData {
+  name?: string;
+  runways: LineFeature[];
+  taxiways: LineFeature[];
+  aprons: Polygon[];
+}
+
 export interface OsmData {
   land: Polygon[];
   buildings: AreaFeature[];
@@ -72,6 +82,8 @@ export interface OsmData {
   trees: PointFeature[];
   places: Place[];
   aerialways: Aerialway[];
+  airports: AirportData[];
+  ferries: Ferry[];
 }
 
 async function readTheme(cache: string, theme: Theme): Promise<RawElement[]> {
@@ -546,6 +558,129 @@ function aerialways(elements: RawElement[]): Aerialway[] {
   });
 }
 
+function middleOf(line: Vec[]): Vec {
+  return line[Math.floor(line.length / 2)] ?? [0, 0];
+}
+
+const AIRWAYS: Record<string, "runways" | "taxiways"> = {
+  runway: "runways",
+  taxiway: "taxiways",
+};
+
+/** Runways, taxiways and aprons, each with the aerodrome it lies in. */
+function airports(elements: RawElement[]): AirportData[] {
+  const found: (AirportData & { outline: Ring })[] = [];
+  for (const element of elements) {
+    const tags = element.tags ?? {};
+    if (tags.aeroway !== "aerodrome") {
+      continue;
+    }
+    for (const polygon of polygonsOf(element)) {
+      found.push({
+        aprons: [],
+        name: tags.name,
+        outline: polygon.outer,
+        runways: [],
+        taxiways: [],
+      });
+    }
+  }
+  const owner = (point: Vec) =>
+    found.find((airport) => pointInRing(point, airport.outline));
+  for (const element of elements) {
+    const tags = element.tags ?? {};
+    const line = coords(element.geometry);
+    if (tags.aeroway === "apron") {
+      for (const polygon of polygonsOf(element)) {
+        owner(polygon.outer[0] ?? [0, 0])?.aprons.push(polygon);
+      }
+      continue;
+    }
+    const list = AIRWAYS[tags.aeroway ?? ""];
+    if (!list || element.type !== "way" || isClosed(line) || line.length < 2) {
+      continue;
+    }
+    owner(middleOf(line))?.[list].push({
+      id: element.id,
+      line,
+      properties: compact({
+        bridge: tags.bridge && tags.bridge !== "no" ? 1 : undefined,
+        ref: tags.ref,
+        width: numeric(tags.width),
+      }),
+    });
+  }
+  return found
+    .filter((airport) => airport.runways.length > 0)
+    .map(({ outline: _outline, ...airport }) => airport);
+}
+
+/** Joins ways that meet end to end into longer lines. */
+export function joinLines(parts: Vec[][]): Vec[][] {
+  const lines: Vec[][] = [];
+  const open = parts.filter((part) => part.length > 1);
+  while (open.length > 0) {
+    const line = [...(open.pop() ?? [])];
+    let grown = true;
+    while (grown) {
+      grown = false;
+      for (let index = 0; index < open.length; index += 1) {
+        const part = open[index] ?? [];
+        const end = line.at(-1);
+        if (same(end, part[0])) {
+          line.push(...part.slice(1));
+        } else if (same(end, part.at(-1))) {
+          line.push(...part.toReversed().slice(1));
+        } else if (same(line[0], part.at(-1))) {
+          line.unshift(...part.slice(0, -1));
+        } else if (same(line[0], part[0])) {
+          line.unshift(...part.toReversed().slice(0, -1));
+        } else {
+          continue;
+        }
+        open.splice(index, 1);
+        grown = true;
+        break;
+      }
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
+/** Ferry routes: tagged ways, and the ways of route relations. */
+function ferries(elements: RawElement[]): Ferry[] {
+  const result: Ferry[] = [];
+  const tagged = new Set<number>();
+  for (const element of elements) {
+    const tags = element.tags ?? {};
+    if (element.type === "way" && tags.route === "ferry") {
+      tagged.add(element.id);
+      result.push({
+        name: tags.name,
+        path: coords(element.geometry).map(([lng, lat]) => ({ lat, lng })),
+      });
+    }
+  }
+  for (const element of elements) {
+    if (element.type !== "relation") {
+      continue;
+    }
+    const members = (element.members ?? []).filter(
+      (member) => member.type === "way" && !tagged.has(member.ref ?? -1)
+    );
+    for (const line of joinLines(
+      members.map((member) => coords(member.geometry))
+    )) {
+      result.push({
+        name: element.tags?.name,
+        path: line.map(([lng, lat]) => ({ lat, lng })),
+      });
+    }
+  }
+  return result.filter((ferry) => ferry.path.length > 1);
+}
+
 /** Land from the coastline, which runs with the land on its left. */
 function land(elements: RawElement[]): Polygon[] {
   const rings = joinRings(
@@ -560,16 +695,25 @@ function land(elements: RawElement[]): Polygon[] {
 }
 
 export async function readOsm(cache: string): Promise<OsmData> {
-  const [coastline, points, rawAreas, rawRoads, rawBuildings] =
+  const [coastline, points, rawAreas, rawRoads, rawBuildings, rawRoutes] =
     await Promise.all(
-      (["coastline", "points", "areas", "roads", "buildings"] as const).map(
-        (theme) => readTheme(cache, theme)
-      )
+      (
+        [
+          "coastline",
+          "points",
+          "areas",
+          "roads",
+          "buildings",
+          "routes",
+        ] as const
+      ).map((theme) => readTheme(cache, theme))
     );
   const areaFeatures = areas(rawAreas ?? []);
   return {
     aerialways: aerialways(points ?? []),
+    airports: airports(rawAreas ?? []),
     buildings: buildings(rawBuildings ?? []),
+    ferries: ferries(rawRoutes ?? []),
     land: land(coastline ?? []),
     landuse: areaFeatures.landuse,
     piers: areaFeatures.piers,

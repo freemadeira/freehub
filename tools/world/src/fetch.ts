@@ -14,6 +14,7 @@ export const THEMES = [
   "areas",
   "roads",
   "buildings",
+  "routes",
 ] as const;
 
 export type Theme = (typeof THEMES)[number];
@@ -49,6 +50,10 @@ function queryFor(theme: Theme, config: WorldConfig): string {
       `way["aerialway"](${box})`,
     ].join(";"),
     roads: `way["highway"](${box})`,
+    routes: [
+      `way["route"="ferry"](${box})`,
+      `relation["route"="ferry"](${box})`,
+    ].join(";"),
   };
   return `[out:json][timeout:300][maxsize:536870912];(${body[theme]};);out geom;`;
 }

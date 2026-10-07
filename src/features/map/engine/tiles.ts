@@ -7,6 +7,7 @@ import type {
 import {
   Box3,
   BufferAttribute,
+  Sphere,
   BufferGeometry as Geometry,
   Frustum,
   Group,
@@ -25,9 +26,12 @@ import { ancestor, tileAt, tileKey, tileSquare } from "./geo.ts";
 import type { HeightField } from "./heights.ts";
 import type { Kit } from "./kit.ts";
 import type { Materials } from "./materials.ts";
+import { coastTexture } from "./materials.ts";
 import type { MeshData } from "./mesh.ts";
 import type { WorkerPool } from "./pool.ts";
 import type { BuiltTile } from "./protocol.ts";
+import { createTraffic, disposeTraffic } from "./traffic.ts";
+import type { Vehicles } from "./vehicles.ts";
 import type { TreeKind } from "./worker/trees.ts";
 
 const ROOT_ZOOM = 10;
@@ -44,6 +48,8 @@ interface TileNode {
   readonly box: Box3;
   state: State;
   group?: Group;
+  /** Its cars and people, drawn only while the camera is close enough. */
+  traffic?: Mesh[];
   children?: TileNode[];
   /** The frame that last needed it, for the cache. */
   used: number;
@@ -62,7 +68,12 @@ function bytesOf(built: BuiltTile): number {
       (mesh) => (mesh ? Object.values(mesh) : [])
     ),
     ...Object.values(built.terrain),
+    built.coast?.data,
+    built.traffic?.paths,
+    built.traffic?.cars,
+    built.traffic?.people,
     ...built.trees.flatMap((batch) => [batch.matrices, batch.colors]),
+    ...(built.boats ?? []).flatMap((batch) => [batch.matrices, batch.colors]),
   ];
   const meshes = arrays.reduce(
     (sum: number, array: unknown) =>
@@ -112,6 +123,9 @@ export interface TileOptions {
   field: HeightField;
   materials: Materials;
   kit: Kit;
+  vehicles: Vehicles;
+  /** Moored boats' material: shared, it rocks them on the water. */
+  boat: Material;
   pool: WorkerPool;
   /** Side of the closest tiles' ground texture. */
   nearTexture: number;
@@ -285,6 +299,12 @@ export class TileManager {
         node.group.visible = shown.has(node);
       }
     }
+    for (const node of shown) {
+      const distance = node.box.distanceToPoint(camera.position);
+      for (const mesh of node.traffic ?? []) {
+        mesh.visible = distance < (mesh.userData.far as number);
+      }
+    }
 
     const capacity = 6 - this.loading;
     for (const { node } of wanted
@@ -343,7 +363,11 @@ export class TileManager {
     terrain.setAttribute("uv", new BufferAttribute(built.terrain.uvs, 2));
     terrain.setIndex(new BufferAttribute(built.terrain.indices, 1));
     terrain.computeBoundingSphere();
-    const ground = new Mesh(terrain, materials.terrain(texture));
+    const coast = built.coast
+      ? { scale: built.coast.scale, texture: coastTexture(built.coast) }
+      : undefined;
+    const ground = new Mesh(terrain, materials.terrain(texture, coast));
+    ground.userData.coast = coast?.texture;
     ground.receiveShadow = this.options.shadows;
     ground.name = "terrain";
     group.add(ground);
@@ -437,6 +461,32 @@ export class TileManager {
       group.add(poles, bulbs);
     }
 
+    for (const batch of built.boats ?? []) {
+      const boats = new InstancedMesh(
+        this.options.vehicles[batch.kind],
+        this.options.boat,
+        batch.colors.length / 3
+      );
+      boats.instanceMatrix = new InstancedBufferAttribute(batch.matrices, 16);
+      boats.instanceColor = new InstancedBufferAttribute(batch.colors, 3);
+      boats.castShadow = this.options.shadows;
+      boats.receiveShadow = this.options.shadows;
+      boats.name = "boats";
+      group.add(boats);
+    }
+
+    if (built.traffic) {
+      const bounds = node.box.getBoundingSphere(new Sphere());
+      bounds.center.sub(group.position);
+      node.traffic = createTraffic(
+        built.traffic,
+        this.options.vehicles,
+        materials.shared,
+        bounds
+      );
+      group.add(...node.traffic);
+    }
+
     node.group = group;
     node.bytes = bytesOf(built);
     this.root.add(group);
@@ -450,17 +500,21 @@ export class TileManager {
     group.traverse((object: Object3D) => {
       if (object instanceof InstancedMesh) {
         object.dispose();
+      } else if (object instanceof Mesh && object.name.startsWith("traffic-")) {
+        disposeTraffic(object);
       } else if (object instanceof Mesh) {
         object.geometry.dispose();
         if (object.name === "terrain" || object.name === "labels") {
           const material = object.material as Material & { map?: Texture };
           material.map?.dispose();
           material.dispose();
+          (object.userData.coast as Texture | undefined)?.dispose();
         }
       }
     });
     this.root.remove(group);
     node.group = undefined;
+    node.traffic = undefined;
     node.state = "empty";
   }
 

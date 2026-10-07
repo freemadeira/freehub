@@ -4,7 +4,7 @@ import {
   EffectPass,
   RenderPass,
 } from "postprocessing";
-import type { Mesh, Texture } from "three";
+import type { Material, Mesh, Texture } from "three";
 import {
   Color,
   DirectionalLight,
@@ -26,6 +26,7 @@ import {
 import { Aerialways } from "./aerialways.ts";
 import type { View } from "./controls.ts";
 import { MapControls } from "./controls.ts";
+import { Ferries } from "./ferries.ts";
 import type { Camera, LngLat, WorldManifest } from "./format.ts";
 import { WORLD_FORMAT } from "./format.ts";
 import type { Frame } from "./geo.ts";
@@ -39,9 +40,13 @@ import type { Materials } from "./materials.ts";
 import { createMaterials } from "./materials.ts";
 import type { Marker, MarkerOptions } from "./overlay.ts";
 import { Overlay } from "./overlay.ts";
+import { Planes } from "./planes.ts";
 import { WorkerPool } from "./pool.ts";
 import type { Quality } from "./protocol.ts";
+import { createSeaUniforms } from "./sea.ts";
 import { TileManager } from "./tiles.ts";
+import type { Vehicles } from "./vehicles.ts";
+import { createVehicles, vehicleMaterial } from "./vehicles.ts";
 import { createWater } from "./water.ts";
 
 export type Theme = "day" | "night";
@@ -78,17 +83,23 @@ const LOOK = {
 
 const HIGH: Quality & { pixelRatio: number; shadows: boolean; budget: number } =
   {
+    boats: 1,
     budget: 700 * 2 ** 20,
+    cars: 1,
     lamps: true,
     nearTexture: 1024,
+    people: 1,
     pixelRatio: 2,
     shadows: true,
     treeSpacing: 1,
   };
 const LOW: typeof HIGH = {
+  boats: 0.5,
   budget: 260 * 2 ** 20,
+  cars: 0.5,
   lamps: true,
   nearTexture: 512,
+  people: 0.35,
   pixelRatio: 1.5,
   shadows: false,
   treeSpacing: 1.5,
@@ -133,11 +144,16 @@ export class MapEngine {
   private readonly controls: MapControls;
   private readonly materials: Materials;
   private readonly kit: Kit;
+  private readonly vehicles: Vehicles;
   private readonly pool: WorkerPool;
   private readonly tiles: TileManager;
   private readonly overlay: Overlay;
   private readonly landmarks: Landmarks;
   private readonly aerialways: Aerialways;
+  private readonly planes: Planes;
+  private readonly ferries: Ferries;
+  /** Moored boats', shared by every tile. */
+  private readonly boatMaterial: Material;
   private readonly water: Mesh;
   private readonly seaMap: Texture;
   private readonly sun = new DirectionalLight(0xff_f3_e4, LOOK.day.sun);
@@ -156,6 +172,8 @@ export class MapEngine {
   private readonly target = new Vector3();
   private night = 0;
   private nightGoal = 0;
+  /** Seconds of life on the map, from a start that varies by the hour. */
+  private life = (Date.now() / 1000) % 3600;
   private animation = 0;
   private disposed = false;
 
@@ -207,8 +225,11 @@ export class MapEngine {
     this.overlay = new Overlay(this.frame, ground);
     container.append(this.overlay.element);
 
-    this.materials = createMaterials();
+    this.seaMap = sea;
+    this.materials = createMaterials(createSeaUniforms(manifest.sea, sea));
     this.kit = createKit();
+    this.vehicles = createVehicles();
+    this.boatMaterial = vehicleMaterial(this.materials.shared, { bob: true });
     this.fog = new Fog(LOOK.day.sky.clone(), 4000, 60_000);
     this.scene.fog = this.fog;
     this.scene.background = LOOK.day.sky.clone();
@@ -243,8 +264,7 @@ export class MapEngine {
       }
     };
 
-    this.seaMap = sea;
-    this.water = createWater(manifest.sea, sea, this.materials.shared);
+    this.water = createWater(this.materials);
     this.scene.add(this.water);
 
     const clear = manifest.landmarks.map((landmark) => ({
@@ -257,6 +277,7 @@ export class MapEngine {
     );
     this.tiles = new TileManager({
       anisotropy: Math.min(8, this.renderer.capabilities.getMaxAnisotropy()),
+      boat: this.boatMaterial,
       budget: quality.budget,
       field,
       frame: this.frame,
@@ -265,6 +286,7 @@ export class MapEngine {
       nearTexture: quality.nearTexture,
       pool: this.pool,
       shadows: quality.shadows,
+      vehicles: this.vehicles,
     });
     this.scene.add(this.tiles.root);
 
@@ -283,6 +305,26 @@ export class MapEngine {
       this.materials
     );
     this.scene.add(this.aerialways.group);
+
+    this.planes = new Planes(
+      manifest.airports ?? [],
+      this.frame,
+      ground,
+      this.vehicles.plane,
+      this.materials.shared,
+      quality.shadows
+    );
+    this.ferries = new Ferries(
+      manifest.ferries ?? [],
+      this.frame,
+      manifest.bounds,
+      manifest.sea,
+      ground,
+      this.vehicles.ferry,
+      this.materials.shared,
+      quality.shadows
+    );
+    this.scene.add(this.planes.group, this.ferries.group);
 
     addPlaceLabels(this.overlay, manifest.places);
     const badges = addLandmarkBadges(this.overlay, manifest.landmarks, base);
@@ -352,6 +394,12 @@ export class MapEngine {
     const delta = Math.min(0.1, this.timer.getDelta());
     const seconds = this.timer.getElapsed();
     this.materials.shared.uTime.value = seconds;
+    if (!this.options.reducedMotion) {
+      this.life += delta;
+    }
+    this.materials.shared.uLife.value = this.options.reducedMotion
+      ? 0
+      : this.life;
     this.fadeTheme(delta);
     if (this.controls.update(delta)) {
       this.options.onViewChange?.({
@@ -367,6 +415,9 @@ export class MapEngine {
     this.tiles.update(this.camera, this.size.y);
     this.landmarks.update(this.camera.position.x, this.camera.position.z);
     this.aerialways.update(seconds, this.camera.position, this.target);
+    const frozen = this.options.reducedMotion ?? false;
+    this.planes.update(this.life, this.camera.position, frozen);
+    this.ferries.update(this.life, this.camera.position, frozen);
     this.overlay.update(this.camera, this.size.x, this.size.y);
     if (this.night > 0.01) {
       this.bloom.intensity = 2 * this.night;
@@ -552,9 +603,13 @@ export class MapEngine {
     this.tiles.dispose();
     this.landmarks.dispose();
     this.aerialways.dispose();
+    this.planes.dispose();
+    this.ferries.dispose();
+    this.boatMaterial.dispose();
     this.overlay.dispose();
     this.composer.dispose();
     this.kit.dispose();
+    this.vehicles.dispose();
     this.materials.dispose();
     this.water.geometry.dispose();
     for (const material of [this.water.material].flat()) {
