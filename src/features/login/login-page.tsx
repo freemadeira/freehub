@@ -1,4 +1,3 @@
-import { cn } from "cn";
 import { RefreshCwIcon } from "lucide-react";
 import type { Variants } from "motion/react";
 import { AnimatePresence, motion } from "motion/react";
@@ -7,7 +6,7 @@ import { useEffect, useState } from "react";
 
 import { CopyButton } from "@/components/copy";
 import { Logo } from "@/components/logo";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { getConfig } from "@/config";
@@ -130,15 +129,15 @@ function SignerQr({
       </div>
       <ErrorText>{error}</ErrorText>
       {live && (
-        <a
-          className={cn(
-            buttonVariants({ size: "lg" }),
-            "mt-3 hidden w-full pointer-coarse:inline-flex"
-          )}
-          href={`nostrsigner:${uri}`}
+        // The plain nostrconnect:// link: Amber rejects it wrapped in
+        // nostrsigner:, which is NIP-55's scheme and needs a ?type= method.
+        <Button
+          className="mt-3 hidden w-full pointer-coarse:inline-flex"
+          onClick={() => window.open(uri, "_blank")}
+          size="lg"
         >
           Open signer app
-        </a>
+        </Button>
       )}
     </div>
   );

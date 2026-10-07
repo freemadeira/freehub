@@ -118,7 +118,12 @@ export interface NostrConnectSession {
 
 export function createNostrConnect(): NostrConnectSession {
   const options = {
-    connectSecret: crypto.randomUUID(),
+    // getRandomValues, not randomUUID: the latter is missing on plain-http
+    // origins, such as the dev server opened from a phone on the LAN.
+    connectSecret: Array.from(
+      crypto.getRandomValues(new Uint8Array(16)),
+      (byte) => byte.toString(16).padStart(2, "0")
+    ).join(""),
     relays: getConfig().signerRelays,
     signer: new PrivateKeySigner(),
   };
