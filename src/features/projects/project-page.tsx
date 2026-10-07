@@ -30,6 +30,7 @@ import type { Board } from "@/lib/model";
 import { canEdit } from "@/lib/model";
 import { SWATCH_COLORS } from "@/lib/palette";
 import type { Project } from "@/lib/project";
+import { inProject } from "@/lib/project";
 
 function Section({
   title,
@@ -163,9 +164,7 @@ export function ProjectPage({
   const [dialog, setDialog] = useState<"settings" | "board" | "table">();
   const newPage = useNewPage(project, docs);
   const editable = canEdit(project, pubkey);
-  const projectBoards = boards.filter(
-    (board) => board.project === project.address
-  );
+  const projectBoards = boards.filter((board) => inProject(board, project));
   const tables = content?.tables ?? [];
   const dialogProps = (name: "settings" | "board" | "table") => ({
     onOpenChange: (open: boolean) => setDialog(open ? name : undefined),

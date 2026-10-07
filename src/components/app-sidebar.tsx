@@ -47,6 +47,7 @@ import { EMPTY_DOCS } from "@/lib/docs";
 import type { Board } from "@/lib/model";
 import { canEdit } from "@/lib/model";
 import type { Project } from "@/lib/project";
+import { inProject, outsideProjects } from "@/lib/project";
 
 /** Projects shown open until the user folds them. */
 const OPEN_BY_DEFAULT = 3;
@@ -179,10 +180,7 @@ export function AppSidebar({
   const { isMobile } = useSidebar();
   const [folded, setFolded] = useState<Record<string, boolean>>({});
 
-  const known = new Set(projects.map((project) => project.address));
-  const looseBoards = boards.filter(
-    (board) => !(board.project && known.has(board.project))
-  );
+  const looseBoards = outsideProjects(boards, projects);
 
   const isOpen = (project: Project, projectBoards: Board[]): boolean => {
     const choice = folded[project.address];
@@ -250,8 +248,8 @@ export function AppSidebar({
           </SidebarGroupAction>
           <SidebarMenu>
             {projects.map((project) => {
-              const projectBoards = boards.filter(
-                (board) => board.project === project.address
+              const projectBoards = boards.filter((board) =>
+                inProject(board, project)
               );
               return (
                 <ProjectItem

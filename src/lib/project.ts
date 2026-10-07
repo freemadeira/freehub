@@ -1,8 +1,9 @@
 import type { NostrEvent } from "applesauce-core/helpers/event";
 import { getTagValue } from "applesauce-core/helpers/event";
 
-import type { Membership, Template } from "@/lib/model";
+import type { Board, Membership, Template } from "@/lib/model";
 import {
+  canEdit,
   DELETE_KIND,
   membershipTags,
   parseMembership,
@@ -111,6 +112,24 @@ export function projectTemplate(project: ProjectFields): Template {
       ["alt", `Project: ${project.title}`],
     ],
   };
+}
+
+/**
+ * Whether the board sits in the project. Anyone can tag a board with a
+ * project, so it only counts when the board's creator is a member of it.
+ */
+export function inProject(
+  board: Pick<Board, "creator" | "project">,
+  project: Project
+): boolean {
+  return board.project === project.address && canEdit(project, board.creator);
+}
+
+/** Boards that sit in none of the projects. */
+export function outsideProjects(boards: Board[], projects: Project[]): Board[] {
+  return boards.filter(
+    (board) => !projects.some((project) => inProject(board, project))
+  );
 }
 
 export function deleteProjectTemplate(project: Project): Template {

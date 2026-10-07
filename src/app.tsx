@@ -27,6 +27,7 @@ import { useProjects } from "@/hooks/use-projects";
 import type { Board } from "@/lib/model";
 import { accounts } from "@/lib/nostr";
 import type { Project } from "@/lib/project";
+import { inProject } from "@/lib/project";
 import { access$ } from "@/lib/relays";
 import { signerState$ } from "@/lib/signer";
 
@@ -90,9 +91,9 @@ function Workspace({ pubkey }: { pubkey: string }) {
   const board = slug
     ? findBoard(boards, slug.code, search.get("board"))
     : undefined;
-  const boardProject = projects.find(
-    (project) => project.address === board?.project
-  );
+  const boardProject = board
+    ? projects.find((project) => inProject(board, project))
+    : undefined;
   const newProject = () => setCreatingProject(true);
 
   return (

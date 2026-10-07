@@ -221,7 +221,7 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 
 - Card numbers are picked as highest + 1 on each device, so two people adding cards at the same moment can get the same number.
 - Board codes and project links are checked against every board and project on the relay, but two made at the same moment can still match. Links then name the board with `?board=`, and one of the projects gets a `-2` link.
-- Removing someone from a board or project, or making them a viewer, hides the cards, sprints, CRM tables, records and doc pages whose newest version is theirs: each falls back to an older version or disappears, a table with its records. Comments on their versions are hidden too. Adding them back as a member shows it all again.
+- Removing someone from a board or project, or making them a viewer, hides the cards, sprints, CRM tables, records and doc pages whose newest version is theirs: each falls back to an older version or disappears, a table with its records. Comments on their versions are hidden too, and boards they made in a project move out of it. Adding them back as a member shows it all again.
 - Other clients of the kanban NIP, and copies of this app from before viewers, read a viewer as a member.
 - The columns are fixed: To do, In progress, Done.
 - No file attachments yet.

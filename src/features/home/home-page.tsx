@@ -18,6 +18,7 @@ import { BoardDialog } from "@/features/boards/board-dialog";
 import type { CrmTable } from "@/lib/crm";
 import type { Board } from "@/lib/model";
 import type { Project } from "@/lib/project";
+import { inProject, outsideProjects } from "@/lib/project";
 import { plural } from "@/lib/utils";
 
 function ProjectCard({
@@ -100,10 +101,7 @@ export function HomePage({
   onNewProject,
 }: HomePageProps) {
   const [creatingBoard, setCreatingBoard] = useState(false);
-  const known = new Set(projects.map((project) => project.address));
-  const looseBoards = boards.filter(
-    (board) => !(board.project && known.has(board.project))
-  );
+  const looseBoards = outsideProjects(boards, projects);
   const newProject = (
     <Button onClick={onNewProject}>
       <PlusIcon />
@@ -142,8 +140,7 @@ export function HomePage({
               {projects.map((project) => (
                 <ProjectCard
                   boards={
-                    boards.filter((board) => board.project === project.address)
-                      .length
+                    boards.filter((board) => inProject(board, project)).length
                   }
                   key={project.address}
                   project={project}
