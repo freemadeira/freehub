@@ -49,7 +49,9 @@ import {
   STATUS_OPTIONS,
 } from "@/features/card/card-options";
 import { LabelDot, People, Person } from "@/features/card/card-parts";
+import { useLocalDraft } from "@/hooks/use-local-draft";
 import { createCard } from "@/lib/actions";
+import { draftFields, draftKey, draftText } from "@/lib/drafts";
 import type { CardFields, Label } from "@/lib/model";
 import { LABELS, rankBetween } from "@/lib/model";
 
@@ -250,6 +252,23 @@ function DuePill({
   );
 }
 
+interface Draft {
+  title: string;
+  description: string;
+}
+
+function parseDraft(saved: unknown): Draft {
+  const fields = draftFields(saved);
+  return {
+    description: draftText(fields.description),
+    title: draftText(fields.title),
+  };
+}
+
+function isEmptyDraft({ title, description }: Draft): boolean {
+  return title.trim() === "" && description.trim() === "";
+}
+
 function isEnter(event: KeyboardEvent): boolean {
   return event.key === "Enter" && !event.nativeEvent.isComposing;
 }
@@ -263,9 +282,14 @@ function NewCardForm({
   titleField: RefObject<HTMLTextAreaElement | null>;
   onClose: () => void;
 }) {
-  const { board, content } = useBoard();
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const { board, content, pubkey } = useBoard();
+  // Closing the dialog keeps what was typed for next time; properties start
+  // from where the card is added.
+  const [{ title, description }, setDraft] = useLocalDraft(
+    draftKey(pubkey, "new-card", board.id),
+    parseDraft,
+    isEmptyDraft
+  );
   // Counts the cards created here, so each next one starts with a fresh editor.
   const [created, setCreated] = useState(0);
   const [properties, setProperties] = useState<Properties>({
@@ -293,12 +317,12 @@ function NewCardForm({
       title: title.trim(),
     });
     if (!createMore) {
+      setDraft({ description: "", title: "" });
       onClose();
       return;
     }
     // Properties carry over, so a run of similar cards is quick to enter.
-    setTitle("");
-    setDescription("");
+    setDraft({ description: "", title: "" });
     setCreated((count) => count + 1);
     titleField.current?.focus();
     toast.success(`${key} created`);
@@ -328,7 +352,10 @@ function NewCardForm({
         <textarea
           aria-label="Title"
           className="placeholder:text-muted-foreground/70 field-sizing-content resize-none bg-transparent text-lg leading-snug font-semibold outline-none"
-          onChange={(event) => setTitle(event.target.value)}
+          onChange={(event) => {
+            const { value } = event.target;
+            setDraft((draft) => ({ ...draft, title: value }));
+          }}
           // Enter creates; Shift+Enter is left alone.
           onKeyDown={(event) => {
             if (isEnter(event) && !event.shiftKey) {
@@ -346,7 +373,9 @@ function NewCardForm({
           className="max-h-[40dvh] min-h-20 overflow-y-auto text-base leading-relaxed outline-none md:text-sm"
           key={created}
           onSubmit={create}
-          onValueCommitted={setDescription}
+          onValueCommitted={(markdown) =>
+            setDraft((draft) => ({ ...draft, description: markdown }))
+          }
           placeholder="Add a description…"
           value={description}
         />

@@ -2,7 +2,7 @@ import { cn } from "cn";
 import { format, formatDistanceToNowStrict } from "date-fns";
 import { Trash2Icon } from "lucide-react";
 import type { FormEvent } from "react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { IconButton } from "@/components/icon-button";
 import { MentionText } from "@/components/mention-text";
@@ -21,8 +21,10 @@ import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/user-avatar";
 import { useBoard } from "@/features/board/board-context";
 import { useComments } from "@/hooks/use-comments";
+import { useLocalDraft } from "@/hooks/use-local-draft";
 import { useProfile } from "@/hooks/use-profile";
 import { addComment, deleteComment } from "@/lib/actions";
+import { draftFields, draftKey, draftText } from "@/lib/drafts";
 import { inboxStore } from "@/lib/inbox";
 import type { Mention } from "@/lib/mentions";
 import { encodeMentions, mentions } from "@/lib/mentions";
@@ -106,18 +108,49 @@ function CommentItem({ comment, own }: { comment: Comment; own: boolean }) {
   );
 }
 
+interface Draft {
+  text: string;
+  /** Who was picked from the list, so their `@Name` still mentions them. */
+  picked: Mention[];
+}
+
+function isMention(value: unknown): value is Mention {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "name" in value &&
+    typeof value.name === "string" &&
+    "pubkey" in value &&
+    typeof value.pubkey === "string"
+  );
+}
+
+function parseDraft(saved: unknown): Draft {
+  const fields = draftFields(saved);
+  return {
+    picked: Array.isArray(fields.picked) ? fields.picked.filter(isMention) : [],
+    text: draftText(fields.text),
+  };
+}
+
+function isEmptyDraft({ text }: Draft): boolean {
+  return text.trim() === "";
+}
+
 function Composer({ card }: { card: Card }) {
   const { board, pubkey } = useBoard();
-  const [text, setText] = useState("");
-  // Who was picked from the list, read only when sending.
-  const picked = useRef<Mention[]>([]);
+  // Kept when the card closes, until it's sent.
+  const [{ text, picked }, setDraft] = useLocalDraft(
+    draftKey(pubkey, "comment", card.id),
+    parseDraft,
+    isEmptyDraft
+  );
 
   const send = () => {
-    const content = encodeMentions(text.trim(), picked.current);
+    const content = encodeMentions(text.trim(), picked);
     if (content) {
       addComment(card, content);
-      setText("");
-      picked.current = [];
+      setDraft({ picked: [], text: "" });
     }
   };
 
@@ -137,10 +170,15 @@ function Composer({ card }: { card: Card }) {
             send();
           }
         }}
-        onMention={(mention) => {
-          picked.current = [...picked.current, mention];
-        }}
-        onValueChange={setText}
+        onMention={(mention) =>
+          setDraft((draft) => ({
+            ...draft,
+            picked: [...draft.picked, mention],
+          }))
+        }
+        onValueChange={(value) =>
+          setDraft((draft) => ({ ...draft, text: value }))
+        }
         // Anyone who can read the card, viewers too, can be pointed at it.
         people={[...board.members, ...board.viewers].filter(
           (person) => person !== pubkey

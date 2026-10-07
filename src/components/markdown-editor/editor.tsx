@@ -142,6 +142,23 @@ export function MarkdownEditorView({
   });
   useEffect(() => () => onUnmount(), []);
 
+  // So does closing the tab or the app, which never blurs the text. Hidden is
+  // the last moment the page is sure to get, on mobile too.
+  const onHidden = useEffectEvent(() => {
+    if (
+      document.visibilityState === "hidden" &&
+      editor &&
+      !editor.isDestroyed
+    ) {
+      commit(editor.getJSON());
+    }
+  });
+  useEffect(() => {
+    const hidden = () => onHidden();
+    document.addEventListener("visibilitychange", hidden);
+    return () => document.removeEventListener("visibilitychange", hidden);
+  }, []);
+
   return (
     <>
       <EditorContent editor={editor} onKeyDown={onKeyDown} />

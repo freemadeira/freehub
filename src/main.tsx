@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "@/app";
 import { ConfigErrorScreen } from "@/components/status-screens";
 import { ConfigError, loadConfig } from "@/config";
+import { pruneDrafts } from "@/lib/drafts";
 import { initNostr } from "@/lib/nostr";
 import { startOutbox } from "@/lib/publish";
 import { startRelays } from "@/lib/relays";
@@ -33,6 +34,7 @@ async function boot(): Promise<ReactNode> {
   startSignerChecks();
   startRelays();
   startOutbox();
+  pruneDrafts();
   return <App />;
 }
 

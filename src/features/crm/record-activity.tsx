@@ -31,11 +31,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { UserAvatar } from "@/components/user-avatar";
 import { useCrm } from "@/features/crm/crm-context";
+import { useLocalDraft } from "@/hooks/use-local-draft";
 import { useProfile } from "@/hooks/use-profile";
 import { useRecordActivity } from "@/hooks/use-record-activity";
 import type { Activity, ActivityType, CrmRecord, StageMove } from "@/lib/crm";
 import { ACTIVITY_TYPES, findOption, stageField } from "@/lib/crm";
 import { addActivity, deleteActivity } from "@/lib/crm-actions";
+import { draftFields, draftKey, draftText } from "@/lib/drafts";
 import { SWATCH_COLORS } from "@/lib/palette";
 
 const ACTIVITY_ICONS: Record<ActivityType, LucideIcon> = {
@@ -223,10 +225,32 @@ function CreatedEntry({ at, by }: { at: number; by?: string }) {
   );
 }
 
+interface Draft {
+  type: ActivityType;
+  text: string;
+}
+
+function parseDraft(saved: unknown): Draft {
+  const fields = draftFields(saved);
+  return {
+    text: draftText(fields.text),
+    type: ACTIVITY_TYPES.find((item) => item.id === fields.type)?.id ?? "note",
+  };
+}
+
+function isEmptyDraft({ text }: Draft): boolean {
+  return text.trim() === "";
+}
+
 function Composer({ record }: { record: CrmRecord }) {
   const id = useId();
-  const [type, setType] = useState<ActivityType>("note");
-  const [text, setText] = useState("");
+  const { pubkey } = useCrm();
+  // Kept when the record closes, until it's logged.
+  const [{ type, text }, setDraft] = useLocalDraft(
+    draftKey(pubkey, "activity", record.id),
+    parseDraft,
+    isEmptyDraft
+  );
   const label =
     ACTIVITY_TYPES.find((item) => item.id === type)?.label ?? "Note";
 
@@ -234,7 +258,7 @@ function Composer({ record }: { record: CrmRecord }) {
     const content = text.trim();
     if (content) {
       addActivity(record, type, content);
-      setText("");
+      setDraft((draft) => ({ ...draft, text: "" }));
     }
   };
 
@@ -251,7 +275,7 @@ function Composer({ record }: { record: CrmRecord }) {
         onValueChange={(next) => {
           const picked = ACTIVITY_TYPES.find((item) => item.id === next[0]);
           if (picked) {
-            setType(picked.id);
+            setDraft((draft) => ({ ...draft, type: picked.id }));
           }
         }}
         value={[type]}
@@ -280,7 +304,10 @@ function Composer({ record }: { record: CrmRecord }) {
         aria-label={label}
         className="min-h-16"
         id={id}
-        onChange={(event) => setText(event.target.value)}
+        onChange={(event) => {
+          const { value } = event.target;
+          setDraft((draft) => ({ ...draft, text: value }));
+        }}
         onKeyDown={(event) => {
           if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
             event.preventDefault();
