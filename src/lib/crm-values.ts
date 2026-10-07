@@ -6,6 +6,7 @@ import { format, isValid, parse, parseISO } from "date-fns";
 
 import type { CrmRecord, Field } from "@/lib/crm";
 import { findOption } from "@/lib/crm";
+import { locationValue, parseLocation } from "@/lib/location";
 
 const DATE_FORMATS = [
   "dd/MM/yyyy",
@@ -135,6 +136,23 @@ export interface CellContext {
   relation: (field: Field, title: string) => string | undefined;
 }
 
+function present(value: string | null | undefined): string[] {
+  return value ? [value] : [];
+}
+
+/** Fields whose text converts on its own, without the table around it. */
+const PARSERS: Partial<Record<Field["type"], (text: string) => string[]>> = {
+  checkbox: (text) => (TRUE.test(text) ? ["true"] : []),
+  currency: (text) => present(parseNumber(text)),
+  date: (text) => present(parseDate(text)),
+  location: (text) => {
+    const location = parseLocation(text);
+    return location ? [locationValue(location)] : [];
+  },
+  member: (text) => present(normalizeToPubkey(text.replace(/^nostr:/u, ""))),
+  number: (text) => present(parseNumber(text)),
+};
+
 /**
  * Turns typed or imported text into the values stored for a field. Without a
  * context, options and relations can’t be resolved and come back empty.
@@ -148,19 +166,11 @@ export function parseCell(
   if (!text) {
     return [];
   }
+  const convert = PARSERS[field.type];
+  if (convert) {
+    return convert(text);
+  }
   switch (field.type) {
-    case "number":
-    case "currency": {
-      const value = parseNumber(text);
-      return value === undefined ? [] : [value];
-    }
-    case "date": {
-      const value = parseDate(text);
-      return value ? [value] : [];
-    }
-    case "checkbox": {
-      return TRUE.test(text) ? ["true"] : [];
-    }
     case "select":
     case "stage": {
       return context ? [context.option(field, text)] : [];
@@ -170,10 +180,6 @@ export function parseCell(
       return context
         ? [...new Set(labels.map((label) => context.option(field, label)))]
         : [];
-    }
-    case "member": {
-      const pubkey = normalizeToPubkey(text.replace(/^nostr:/u, ""));
-      return pubkey ? [pubkey] : [];
     }
     case "relation": {
       const id = context?.relation(field, text);

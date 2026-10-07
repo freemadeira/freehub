@@ -8,6 +8,7 @@ import {
   LinkIcon,
   ListChecksIcon,
   MailIcon,
+  MapPinIcon,
   PhoneIcon,
   SignpostIcon,
   SquareCheckIcon,
@@ -33,6 +34,11 @@ export const FIELD_TYPE_META: Record<FieldType, FieldTypeMeta> = {
   },
   date: { hint: "A calendar day", icon: CalendarIcon, label: "Date" },
   email: { hint: "An email address", icon: MailIcon, label: "Email" },
+  location: {
+    hint: "A place on the map",
+    icon: MapPinIcon,
+    label: "Location",
+  },
   longtext: {
     hint: "Several lines of text",
     icon: TextAlignStartIcon,
@@ -84,6 +90,7 @@ export const ADDABLE_TYPES: FieldType[] = [
   "email",
   "phone",
   "url",
+  "location",
   "member",
   "relation",
 ];

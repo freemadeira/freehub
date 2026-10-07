@@ -21,12 +21,14 @@ import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { getConfig } from "@/config";
 import { recordPath, useCrm } from "@/features/crm/crm-context";
 import { FieldInput } from "@/features/crm/field-input";
 import { FIELD_TYPE_META } from "@/features/crm/field-meta";
 import { RecordActivity } from "@/features/crm/record-activity";
 import { TableIcon } from "@/features/crm/table-icon";
 import { FieldValue, OptionChip } from "@/features/crm/values";
+import { mapPickHref } from "@/features/map/map-path";
 import type { CrmRecord, Field } from "@/lib/crm";
 import { firstValue, recordStage, recordTitle, stageField } from "@/lib/crm";
 import { deleteRecord, setValues, updateRecord } from "@/lib/crm-actions";
@@ -154,7 +156,8 @@ function Properties({
   fields: Field[];
 }) {
   const id = useId();
-  const { canEdit, table } = useCrm();
+  const { canEdit, project, table } = useCrm();
+  const map = getConfig().map !== undefined;
   return (
     <div className="grid grid-cols-[8.5rem_minmax(0,1fr)] items-start gap-x-2 gap-y-0.5">
       {fields.map((field) => {
@@ -177,6 +180,11 @@ function Properties({
                   id={`${id}-${field.id}`}
                   onChange={(values) =>
                     setValues(table, record, field.id, values)
+                  }
+                  pickHref={
+                    map && field.type === "location"
+                      ? mapPickHref(project, table, record, field)
+                      : undefined
                   }
                   values={record.values[field.id] ?? []}
                 />

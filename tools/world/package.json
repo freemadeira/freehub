@@ -1,0 +1,24 @@
+{
+  "name": "freehub-world",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bakes an OpenStreetMap region into a world pack for Freehub's map.",
+  "type": "module",
+  "scripts": {
+    "bake": "node --experimental-strip-types --disable-warning=ExperimentalWarning src/bake.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "fast-png": "^8.0.0",
+    "geotiff": "^3.0.5",
+    "vt-pbf": "^3.1.3"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "packageManager": "pnpm@12.9.1",
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "^7.0.2"
+  }
+}

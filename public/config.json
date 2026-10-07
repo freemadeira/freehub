@@ -13,5 +13,6 @@
     "wss://purplepag.es",
     "wss://user.kindpag.es",
     "wss://relay.damus.io"
-  ]
+  ],
+  "map": { "world": "/worlds/madeira/world.json" }
 }

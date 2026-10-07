@@ -1,7 +1,8 @@
-node_modules
+**/node_modules
 dist
 .claude
 .vscode
 .DS_Store
 *.log
 assets
+public/worlds

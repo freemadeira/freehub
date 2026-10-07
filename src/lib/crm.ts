@@ -31,6 +31,7 @@ export const FIELD_TYPES = [
   "email",
   "phone",
   "url",
+  "location",
   "member",
   "relation",
 ] as const;

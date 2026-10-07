@@ -79,7 +79,7 @@ export const MERCHANT_PACK: TablePack = {
           type: "select",
         },
         OWNER,
-        { name: "Location", type: "text" },
+        { name: "Location", type: "location" },
         { name: "Contact person", type: "text" },
         { name: "Phone", type: "phone" },
         { name: "Email", type: "email" },

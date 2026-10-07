@@ -1,10 +1,12 @@
 import { cn } from "cn";
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, MapPinIcon } from "lucide-react";
 import type { MouseEvent, ReactNode } from "react";
 import { Link } from "wouter";
 
 import { UserAvatar } from "@/components/user-avatar";
+import { getConfig } from "@/config";
 import { relatedPath, useCrm } from "@/features/crm/crm-context";
+import { mapRecordHref } from "@/features/map/map-path";
 import { useProfile } from "@/hooks/use-profile";
 import type { CrmRecord, Field, FieldOption } from "@/lib/crm";
 import { findOption, recordTitle } from "@/lib/crm";
@@ -15,6 +17,7 @@ import {
   isChecked,
   toNumber,
 } from "@/lib/crm-values";
+import { formatLocation, openStreetMapUrl, readLocation } from "@/lib/location";
 import { CHIP_COLORS, SWATCH_COLORS } from "@/lib/palette";
 
 const CHIP =
@@ -217,11 +220,45 @@ function LinkValue(props: ValueProps) {
   );
 }
 
+/** Opens the map at the record, or OpenStreetMap when the app has no map. */
+function LocationValue(props: ValueProps) {
+  const { project, table } = useCrm();
+  const location = readLocation(valuesOf(props)[0]);
+  if (!location) {
+    return null;
+  }
+  const text = formatLocation(location);
+  if (getConfig().map) {
+    return (
+      <Link
+        className="decoration-foreground/30 hover:decoration-foreground flex min-w-0 items-center gap-1.5 underline underline-offset-4 transition-colors duration-150"
+        href={mapRecordHref(project, table, props.record)}
+        onClick={stop}
+      >
+        <MapPinIcon aria-hidden className="size-3.5 shrink-0" />
+        <span className="truncate tabular-nums">{text}</span>
+      </Link>
+    );
+  }
+  return (
+    <a
+      className={cn(LINK, "tabular-nums")}
+      href={openStreetMapUrl(location)}
+      onClick={stop}
+      rel="noreferrer"
+      target="_blank"
+    >
+      {text}
+    </a>
+  );
+}
+
 const VALUE_VIEWS: Record<Field["type"], (props: ValueProps) => ReactNode> = {
   checkbox: CheckboxValue,
   currency: NumberValue,
   date: DateValue,
   email: LinkValue,
+  location: LocationValue,
   longtext: TextValue,
   member: MemberValue,
   multiselect: ChoicesValue,

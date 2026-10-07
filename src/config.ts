@@ -1,5 +1,10 @@
 import { normalizeURL } from "applesauce-core/helpers/url";
 
+export interface MapConfig {
+  /** URL of a baked world pack's `world.json`. */
+  world: string;
+}
+
 export interface Config {
   name: string;
   logo: string;
@@ -8,6 +13,8 @@ export interface Config {
   relays: string[];
   signerRelays: string[];
   lookupRelays: string[];
+  /** Only organizations that set this get the map. */
+  map?: MapConfig;
 }
 
 export class ConfigError extends Error {
@@ -69,6 +76,24 @@ function relayList(
   return [...urls];
 }
 
+function mapConfig(value: unknown): MapConfig | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const raw: Record<string, unknown> =
+    typeof value === "object" && value !== null ? { ...value } : {};
+  const world = text(raw.world);
+  if (!world) {
+    throw new ConfigError(
+      `"map" needs "world": the address of a world pack’s world.json.`
+    );
+  }
+  if (!URL.canParse(world, window.location.href)) {
+    throw new ConfigError(`"${world}" in "map" is not a valid address.`);
+  }
+  return { world };
+}
+
 export async function loadConfig(): Promise<Config> {
   const response = await fetch(`${import.meta.env.BASE_URL}config.json`, {
     cache: "no-cache",
@@ -97,6 +122,7 @@ export async function loadConfig(): Promise<Config> {
       raw.lookupRelays,
       DEFAULT_LOOKUP_RELAYS
     ),
+    map: mapConfig(raw.map),
     name: text(raw.name) ?? "Kanban",
     relays,
     signerRelays: relayList(

@@ -122,7 +122,7 @@ const ID_BYTES = 8;
 const VIEWER = "viewer";
 export const CODE = /^[A-Z][A-Z0-9]{0,9}$/u;
 /** Codes taken by app pages, which share the top-level path with boards. */
-export const RESERVED_CODES: ReadonlySet<string> = new Set(["INBOX"]);
+export const RESERVED_CODES: ReadonlySet<string> = new Set(["INBOX", "MAP"]);
 
 /**
  * A random `d` tag. Relays built on fiatjaf/eventstore (Haven, most khatru
