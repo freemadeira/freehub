@@ -80,6 +80,9 @@ export const OPENED_FROM_TABLE = { fromTable: true };
 
 const STICKY =
   "sticky z-10 bg-card group-hover/row:bg-[color-mix(in_oklab,var(--card),var(--foreground)_2.5%)] group-data-selected/row:bg-[color-mix(in_oklab,var(--card),var(--primary)_10%)]";
+// A wide table squeezes cells below their width, and the names stick right
+// after the checkboxes, so this column must keep its full width.
+const SELECT_CELL = cn(STICKY, "left-0 w-11 min-w-11 pr-0");
 
 function visibilityKey(table: string): string {
   return `columns:${table}`;
@@ -548,8 +551,7 @@ export function RecordsView({ onCreate, onImport }: RecordsViewProps) {
                   <TableHead
                     aria-sort={ariaSort}
                     className={cn(
-                      header.column.id === "select" &&
-                        cn(STICKY, "left-0 w-11 pr-0"),
+                      header.column.id === "select" && SELECT_CELL,
                       header.column.id === TITLE_FIELD &&
                         cn(STICKY, titleInset, "min-w-48"),
                       "bg-card"
@@ -580,21 +582,28 @@ export function RecordsView({ onCreate, onImport }: RecordsViewProps) {
                 const field = crmTable.fields.find(
                   (item) => item.id === cell.column.id
                 );
+                const numeric =
+                  field?.type === "number" || field?.type === "currency";
                 return (
                   <TableCell
                     className={cn(
-                      "max-w-72",
-                      cell.column.id === "select" &&
-                        cn(STICKY, "left-0 w-11 pr-0"),
+                      cell.column.id === "select" && SELECT_CELL,
                       cell.column.id === TITLE_FIELD &&
-                        cn(STICKY, titleInset, "max-w-80 min-w-48"),
-                      (field?.type === "number" ||
-                        field?.type === "currency") &&
-                        "text-right"
+                        cn(STICKY, titleInset, "min-w-48")
                     )}
                     key={cell.id}
                   >
-                    <FlexRender cell={cell} />
+                    {/* Values truncate only as flex items, and table cells
+                        can't be trusted to hold a max width themselves. */}
+                    <div
+                      className={cn(
+                        "flex max-w-72 items-center",
+                        cell.column.id === TITLE_FIELD && "max-w-80",
+                        numeric && "ml-auto justify-end"
+                      )}
+                    >
+                      <FlexRender cell={cell} />
+                    </div>
                   </TableCell>
                 );
               })}

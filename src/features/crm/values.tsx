@@ -22,6 +22,8 @@ import { CHIP_COLORS, SWATCH_COLORS } from "@/lib/palette";
 
 const CHIP =
   "inline-flex h-6 max-w-full shrink-0 items-center gap-1.5 rounded-full px-2 text-xs font-medium";
+/** Lets chips in a row of values truncate together rather than spill out. */
+const LIST_CHIP = "min-w-0 shrink";
 
 // Links inside a clickable row shouldn't also open the record.
 function stop(event: MouseEvent) {
@@ -93,6 +95,7 @@ function RelationChip({ id }: { id: string }) {
     <Link
       className={cn(
         CHIP,
+        LIST_CHIP,
         "bg-foreground/6 hover:bg-foreground/10 focus-visible:ring-ring/50 transition-colors duration-150 outline-none focus-visible:ring-3"
       )}
       href={href}
@@ -145,7 +148,9 @@ function ChoicesValue(props: ValueProps) {
     <span className="flex min-w-0 items-center gap-1">
       {valuesOf(props).map((value) => {
         const option = findOption(props.field, value);
-        return option ? <OptionChip key={value} option={option} /> : null;
+        return option ? (
+          <OptionChip className={LIST_CHIP} key={value} option={option} />
+        ) : null;
       })}
     </span>
   );
