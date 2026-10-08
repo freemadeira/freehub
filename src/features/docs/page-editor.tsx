@@ -24,6 +24,11 @@ import {
   serializeMarkdown,
 } from "@/components/markdown-editor/content";
 import {
+  MentionCommand,
+  MentionMenu,
+  MentionMenuStore,
+} from "@/components/markdown-editor/mention-menu";
+import {
   SlashCommand,
   SlashMenu,
   SlashMenuStore,
@@ -34,6 +39,8 @@ import {
   SelectionToolbar,
 } from "@/components/markdown-editor/toolbar";
 import { PageSync } from "@/features/docs/page-sync";
+import { useProfileNames } from "@/hooks/use-profile-names";
+import { mentionNames } from "@/lib/mentions";
 
 export interface PageEditorHandle {
   /** Something besides the text changed, like the title: save it with the next save. */
@@ -50,8 +57,17 @@ interface PageEditorProps {
   /** Every member's newest version of the page, to merge as they arrive. */
   versions: NostrEvent[];
   pubkey: string;
-  /** Saves the text as a new version of the page, edited from `prev`. */
-  onPublish: (content: string, prev: NostrEvent) => Promise<boolean>;
+  /** People who can be mentioned. */
+  people: string[];
+  /**
+   * Saves the text as a new version of the page, edited from `prev`.
+   * `picked` are the people picked from the "@" list since the last save.
+   */
+  onPublish: (
+    content: string,
+    prev: NostrEvent,
+    picked: ReadonlySet<string>
+  ) => Promise<boolean>;
   /** More "/" commands, after the built-in blocks. */
   commands?: readonly BlockCommand[];
   ref?: Ref<PageEditorHandle>;
@@ -82,11 +98,15 @@ export function PageEditor({
   opened,
   versions,
   pubkey,
+  people,
   onPublish,
   commands = NO_COMMANDS,
   ref,
 }: PageEditorProps) {
   const slash = useMemo(() => new SlashMenuStore(), []);
+  const mentionMenu = useMemo(() => new MentionMenuStore(), []);
+  const profileNames = useProfileNames(people);
+  const names = mentionNames(people, profileNames);
   const toolbar = useRef<HTMLDivElement>(null);
   const sync = useRef<PageSync | null>(null);
   const publishRef = useRef(onPublish);
@@ -97,9 +117,10 @@ export function PageEditor({
       LinkTarget,
       MoveBlock,
       SlashCommand.configure({ store: slash }),
+      MentionCommand.configure({ store: mentionMenu }),
       Placeholder.configure({ includeChildren: true, placeholder }),
     ],
-    [slash]
+    [slash, mentionMenu]
   );
 
   const editor = useEditor({
@@ -145,7 +166,16 @@ export function PageEditor({
         busy: () => current.view.composing,
         me: pubkey,
         opened,
-        publish: (content, prev) => publishRef.current(content, prev),
+        publish: async (content, prev) => {
+          // People picked from the "@" list since the last save: theirs are new mentions.
+          const picked = mentionMenu.takePicked();
+          const saved = await publishRef.current(content, prev, picked);
+          // Not saved: they're still new mentions on the next try.
+          if (!saved) {
+            mentionMenu.addPicked(picked);
+          }
+          return saved;
+        },
         read: () => serializeMarkdown(current.getJSON()),
         show: (markdown) => replaceMarkdown(current, markdown),
       },
@@ -222,6 +252,7 @@ export function PageEditor({
         <>
           <BlockHandle editor={editor} />
           <SlashMenu editor={editor} store={slash} />
+          <MentionMenu editor={editor} names={names} store={mentionMenu} />
           <SelectionToolbar
             editor={editor}
             onLeave={() => {

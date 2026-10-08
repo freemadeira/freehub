@@ -1,4 +1,4 @@
-import type { JSONContent } from "@tiptap/core";
+import type { JSONContent, MarkdownToken } from "@tiptap/core";
 import { getSchema, InputRule, mergeAttributes } from "@tiptap/core";
 import { Image } from "@tiptap/extension-image";
 import { OrderedList, TaskItem, TaskList } from "@tiptap/extension-list";
@@ -8,6 +8,8 @@ import { MarkdownManager } from "@tiptap/markdown";
 import { StarterKit } from "@tiptap/starter-kit";
 import type { marked, TokenizerExtension } from "marked";
 import { Lexer, Marked } from "marked";
+
+import { Mention } from "@/components/markdown-editor/mention";
 
 const SCHEME = /^(?<scheme>[a-z][a-z\d+.-]*):/iu;
 // Only addresses typed in full link up, so a file name like index.md stays text.
@@ -70,6 +72,20 @@ const MarkdownParagraph = Paragraph.extend({
   },
 });
 
+// A "[ ] " box only makes a task in a bulleted list; in a numbered one it
+// stays text, as written, at the start of the item's first line.
+function keepBox(item: MarkdownToken): MarkdownToken {
+  const [box, first, ...rest] = item.tokens ?? [];
+  if (box?.type !== "checkbox" || !first?.tokens) {
+    return item;
+  }
+  const text = { raw: box.raw, text: box.raw, type: "text" };
+  return {
+    ...item,
+    tokens: [{ ...first, tokens: [text, ...first.tokens] }, ...rest],
+  };
+}
+
 // Tiptap reads ordered lists, typed or pasted, with a list parser of its own
 // that misplaces what's nested in items: code gains a space on every save and
 // blocks under a nested list vanish. Marked's CommonMark lists, and the
@@ -83,6 +99,19 @@ const CommonMarkOrderedList = OrderedList.extend({
     tokenize: () => {
       // Matches nothing, so marked's own list tokenizer reads ordered lists.
     },
+  },
+  // Items are read as a bullet list's are. Tiptap's own reading keeps the
+  // text of an item without blank lines as written, so its formatting and
+  // mentions showed as markdown and were escaped on the next save.
+  parseMarkdown: (token, helpers) => {
+    if (token.type !== "list" || !token.ordered) {
+      return [];
+    }
+    const content = helpers.parseChildren((token.items ?? []).map(keepBox));
+    const start = Number(token.start) || 1;
+    return start === 1
+      ? { content, type: "orderedList" }
+      : { attrs: { start }, content, type: "orderedList" };
   },
 });
 
@@ -139,6 +168,7 @@ export const CONTENT = [
   BulletTaskItem.configure({ nested: true }),
   TableKit.configure({ table: { resizable: false } }),
   WebImage.configure({ inline: true }),
+  Mention,
 ];
 
 // Raw HTML stays text, as written: an HTML block reads as a paragraph and a

@@ -6,8 +6,8 @@ import {
   FileIcon,
   SmilePlusIcon,
 } from "lucide-react";
-import type { ChangeEvent, KeyboardEvent } from "react";
-import { useRef, useState } from "react";
+import type { ChangeEvent, KeyboardEvent, RefObject } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 
 import { IconButton } from "@/components/icon-button";
@@ -25,15 +25,19 @@ import { PageEditor } from "@/features/docs/page-editor";
 import { PageIcon } from "@/features/docs/page-icon";
 import { PageMenu } from "@/features/docs/page-menu";
 import type { DocPage, DocsContent } from "@/lib/docs";
-import { ancestors, pageTemplate, pageTitle } from "@/lib/docs";
+import { ancestors, pageMentions, pageTemplate, pageTitle } from "@/lib/docs";
 import { createPage, isPageDeleted, updatePage } from "@/lib/docs-actions";
+import { inboxStore } from "@/lib/inbox";
 import { canEdit } from "@/lib/model";
+import { pageNotification } from "@/lib/notifications";
 import type { Project } from "@/lib/project";
 import { publish } from "@/lib/publish";
 
 const ICON =
   "-ml-1 flex size-16 items-center justify-center self-start rounded-xl text-5xl leading-none";
 const TITLE = "text-3xl leading-tight font-bold tracking-tight sm:text-4xl";
+/** How long a page opened from the inbox waits for its mention to show. */
+const REVEAL_WAIT = 3000;
 
 interface PageViewProps {
   project: Project;
@@ -125,7 +129,13 @@ function EditablePage({ project, docs, page, pubkey }: PageViewProps) {
     },
   ];
 
-  const onPublish = (content: string, prev: NostrEvent) => {
+  const versions = docs.versions.get(page.id) ?? [];
+
+  const onPublish = (
+    content: string,
+    prev: NostrEvent,
+    picked: ReadonlySet<string>
+  ) => {
     // A page someone deleted stays deleted, even with edits left to save.
     if (isPageDeleted(project, page.id)) {
       return Promise.resolve(false);
@@ -133,7 +143,12 @@ function EditablePage({ project, docs, page, pubkey }: PageViewProps) {
     return publish(
       pageTemplate(
         project,
-        { ...page, content, title: title ?? page.title },
+        {
+          ...page,
+          content,
+          mentions: pageMentions(content, [prev, ...versions], picked, pubkey),
+          title: title ?? page.title,
+        },
         prev
       ),
       page.event
@@ -210,9 +225,13 @@ function EditablePage({ project, docs, page, pubkey }: PageViewProps) {
           key={page.id}
           onPublish={onPublish}
           opened={page.event}
+          // Anyone who can read the page, viewers too, can be pointed at it.
+          people={[...project.members, ...project.viewers].filter(
+            (person) => person !== pubkey
+          )}
           pubkey={pubkey}
           ref={editor}
-          versions={docs.versions.get(page.id) ?? []}
+          versions={versions}
         />
       </div>
       {/* Clicking under the text carries on writing at its end. */}
@@ -250,10 +269,56 @@ function ReadOnlyPage({ page }: { page: DocPage }) {
   );
 }
 
+/**
+ * Opened from the inbox: scrolls to where the page mentions you, once its
+ * text shows, which a lazily loaded editor may take a moment to do.
+ */
+function useRevealMention(
+  article: RefObject<HTMLElement | null>,
+  pubkey: string
+) {
+  useEffect(() => {
+    const root = article.current;
+    if (!(root && history.state?.revealMention)) {
+      return;
+    }
+    const reveal = () => {
+      const mention = root.querySelector(`[data-mention="${pubkey}"]`);
+      mention?.scrollIntoView({ block: "center" });
+      return mention !== null;
+    };
+    if (reveal()) {
+      return;
+    }
+    const observer = new MutationObserver(() => {
+      if (reveal()) {
+        observer.disconnect();
+      }
+    });
+    observer.observe(root, { childList: true, subtree: true });
+    const timer = setTimeout(() => observer.disconnect(), REVEAL_WAIT);
+    return () => {
+      observer.disconnect();
+      clearTimeout(timer);
+    };
+  }, [article, pubkey]);
+}
+
 /** One doc page: its icon, title and text, then the pages inside it. */
 export function PageView({ project, docs, page, pubkey }: PageViewProps) {
   const children = docs.children.get(page.id) ?? [];
   const editable = canEdit(project, pubkey);
+  const article = useRef<HTMLElement>(null);
+  useRevealMention(article, pubkey);
+
+  // Seeing the page counts as reading its mention of you.
+  const mentionId = pageNotification(page.event, pubkey)?.id;
+  useEffect(() => {
+    if (mentionId) {
+      inboxStore(pubkey).setRead([mentionId], true);
+    }
+  }, [mentionId, pubkey]);
+
   return (
     <>
       <TopBar crumbs={crumbsFor(project, docs, page)}>
@@ -270,7 +335,10 @@ export function PageView({ project, docs, page, pubkey }: PageViewProps) {
         />
       </TopBar>
       <main className="flex grow flex-col">
-        <article className="mx-auto flex w-full max-w-3xl grow flex-col px-4 pt-6 pb-10 sm:px-16 sm:pt-14">
+        <article
+          className="mx-auto flex w-full max-w-3xl grow flex-col px-4 pt-6 pb-10 sm:px-16 sm:pt-14"
+          ref={article}
+        >
           {editable ? (
             <EditablePage
               docs={docs}

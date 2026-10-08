@@ -1,6 +1,13 @@
 import type { NostrEvent } from "applesauce-core/helpers/event";
 import { getTagValue } from "applesauce-core/helpers/event";
+import { unixNow } from "applesauce-core/helpers/time";
 
+import {
+  excerptText,
+  mentionedPubkeys,
+  mentionIndex,
+  mentions,
+} from "@/lib/mentions";
 import type { Template } from "@/lib/model";
 import {
   addressOf,
@@ -15,8 +22,21 @@ import type { Project } from "@/lib/project";
 
 const DRAFT = "draft-";
 const EXCERPT_LENGTH = 160;
+/** Words kept before a mention in its excerpt, in characters. */
+const MENTION_LEAD = 40;
 const MARKDOWN_SYNTAX =
   /!?\[(?<text>[^\]]*)\]\([^)]*\)|^\s{0,3}(?:#{1,6}|>|[-+*]|\d{1,9}[.)])\s+|\[[ x]\]\s|[*_~`]+|\\(?=\S)|&nbsp;/gmu;
+
+/**
+ * Someone the page mentions: who mentioned them, and when. It's kept from
+ * version to version, so saving the page again, or a teammate's edit, never
+ * tells them twice; picking them from the list again does.
+ */
+export interface PageMention {
+  pubkey: string;
+  by: string;
+  at: number;
+}
 
 export interface DocPageFields {
   id: string;
@@ -31,6 +51,8 @@ export interface DocPageFields {
   rank: number;
   createdAt: number;
   creator?: string;
+  /** Who the text mentions, as of this version. */
+  mentions: PageMention[];
 }
 
 export type DocPage = DocPageFields & {
@@ -71,15 +93,74 @@ export function isSigned(event: NostrEvent): boolean {
   return !event.id.startsWith(DRAFT);
 }
 
-/** The opening words of a page, without its markdown. */
-export function pageExcerpt(page: Pick<DocPageFields, "content">): string {
-  const text = page.content
+function plainText(markdown: string): string {
+  return markdown
     .replace(MARKDOWN_SYNTAX, (_, link: string | undefined) => link ?? "")
     .replaceAll(/\s+/gu, " ")
     .trim();
-  return text.length > EXCERPT_LENGTH
-    ? `${text.slice(0, EXCERPT_LENGTH).trimEnd()}…`
-    : text;
+}
+
+/** The opening words of a page, without its markdown. Mentions stay references. */
+export function pageExcerpt(page: Pick<DocPageFields, "content">): string {
+  return excerptText(plainText(page.content), 0, EXCERPT_LENGTH);
+}
+
+/** The words around where the page first mentions the person, without its markdown. */
+export function mentionExcerpt(content: string, pubkey: string): string {
+  const line = content.split("\n").find((text) => mentions(text, pubkey));
+  if (!line) {
+    return "";
+  }
+  const text = plainText(line);
+  return excerptText(
+    text,
+    mentionIndex(text, pubkey) - MENTION_LEAD,
+    EXCERPT_LENGTH
+  );
+}
+
+/** Who the version says mentioned each person it mentions, and when. */
+export function parsePageMentions(event: NostrEvent): PageMention[] {
+  return event.tags.flatMap(([name, pubkey, by, at]) => {
+    const time = integer(at);
+    return name === "mention" &&
+      isPubkey(pubkey) &&
+      isPubkey(by) &&
+      time !== undefined
+      ? [{ at: time, by, pubkey }]
+      : [];
+  });
+}
+
+/**
+ * Who mentioned each person the text mentions, and when. Someone just picked
+ * from the list was mentioned by `me`, now; anyone else keeps the newest
+ * record among the versions, so saving again, or merging a teammate's edit,
+ * doesn't tell them a second time.
+ */
+export function pageMentions(
+  content: string,
+  versions: NostrEvent[],
+  picked: ReadonlySet<string>,
+  me: string
+): PageMention[] {
+  const known = new Map<string, PageMention>();
+  for (const mention of versions.flatMap(parsePageMentions)) {
+    const seen = known.get(mention.pubkey);
+    // Every device keeps the same one, whatever order the versions come in.
+    if (
+      !seen ||
+      mention.at > seen.at ||
+      (mention.at === seen.at && mention.by > seen.by)
+    ) {
+      known.set(mention.pubkey, mention);
+    }
+  }
+  const now = unixNow();
+  return mentionedPubkeys(content).map(
+    (pubkey) =>
+      (!picked.has(pubkey) && known.get(pubkey)) || { at: now, by: me, pubkey }
+  );
 }
 
 function parsePage(event: NostrEvent, id: string, project: string): DocPage {
@@ -91,6 +172,7 @@ function parsePage(event: NostrEvent, id: string, project: string): DocPage {
     event,
     icon: getTagValue(event, "icon")?.trim() ?? "",
     id,
+    mentions: parsePageMentions(event),
     parent: getTagValue(event, "parent") || undefined,
     project,
     rank: Number(getTagValue(event, "rank")) || 0,
@@ -206,6 +288,8 @@ export function lastRank(content: DocsContent, parent?: string): number {
 /**
  * A version of the page. `prev` names the version it was edited from, so a
  * teammate's editor can merge it with edits of their own made meanwhile.
+ * Everyone the text mentions gets a `p` tag (NIP-27), so relays route the
+ * page to them, and a `mention` tag saying who mentioned them and when.
  */
 export function pageTemplate(
   project: Project,
@@ -230,6 +314,15 @@ export function pageTemplate(
   }
   if (prev && isSigned(prev)) {
     tags.push(["prev", prev.id]);
+  }
+  const mentioned = mentionedPubkeys(page.content);
+  for (const pubkey of mentioned) {
+    tags.push(["p", pubkey]);
+  }
+  for (const { pubkey, by, at } of page.mentions) {
+    if (mentioned.includes(pubkey)) {
+      tags.push(["mention", pubkey, by, String(at)]);
+    }
   }
   tags.push(["alt", `Doc page: ${pageTitle(page)}`]);
   return { content: page.content, kind: DOC_PAGE_KIND, tags };

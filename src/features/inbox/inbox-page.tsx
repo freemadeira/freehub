@@ -18,8 +18,11 @@ import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/user-avatar";
 import { cardPath, OPENED_FROM_BOARD } from "@/features/board/board-context";
+import { pagePath, REVEAL_MENTION } from "@/features/docs/docs-context";
+import { PageIcon } from "@/features/docs/page-icon";
 import type { Inbox, InboxItem } from "@/hooks/use-inbox";
 import { useProfile } from "@/hooks/use-profile";
+import { pageTitle } from "@/lib/docs";
 import { cardKey } from "@/lib/model";
 
 /** Shares the top-level path with board codes, so INBOX is a reserved code. */
@@ -42,10 +45,28 @@ function shortAgo(seconds: number): string {
   return days < 7 ? `${days}d` : format(new Date(seconds * 1000), "MMM d");
 }
 
+/** Where the item leads. */
+function linkTo(item: InboxItem): { href: string; state: object } {
+  if ("page" in item) {
+    return { href: pagePath(item.project, item.page), state: REVEAL_MENTION };
+  }
+  const { board, card } = item;
+  return {
+    // The inbox knows neither the board's other cards nor other boards with
+    // its code, so it never relies on the number or the code alone.
+    href: cardPath(board, card, {
+      query: new URLSearchParams({ board: board.id }),
+      withId: true,
+    }),
+    state: OPENED_FROM_BOARD,
+  };
+}
+
 function Row({ item, inbox }: { item: InboxItem; inbox: Inbox }) {
-  const { notification, board, card, read } = item;
+  const { notification, read } = item;
   const { name } = useProfile(notification.actor);
   const date = new Date(notification.createdAt * 1000);
+  const { href, state } = linkTo(item);
   return (
     <li className="group/row relative">
       <Link
@@ -53,14 +74,9 @@ function Row({ item, inbox }: { item: InboxItem; inbox: Inbox }) {
           "hover:bg-foreground/5 focus-visible:ring-ring/50 flex items-center gap-3 rounded-xl py-2.5 pr-3 pl-2 transition-colors duration-150 outline-none focus-visible:ring-3",
           read && "text-muted-foreground"
         )}
-        // The inbox knows neither the board's other cards nor other boards with
-        // its code, so it never relies on the number or the code alone.
-        href={cardPath(board, card, {
-          query: new URLSearchParams({ board: board.id }),
-          withId: true,
-        })}
+        href={href}
         onClick={() => inbox.setRead([item], true)}
-        state={OPENED_FROM_BOARD}
+        state={state}
       >
         <span
           aria-hidden
@@ -77,13 +93,22 @@ function Row({ item, inbox }: { item: InboxItem; inbox: Inbox }) {
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex min-w-0 items-baseline gap-2">
-            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-              {cardKey(board, card)}
-            </span>
+            {"page" in item ? (
+              <PageIcon
+                className="text-muted-foreground self-center"
+                page={item.page}
+              />
+            ) : (
+              <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                {cardKey(item.board, item.card)}
+              </span>
+            )}
             <span
               className={cn("truncate", !read && "text-foreground font-medium")}
             >
-              {card.title || "Untitled"}
+              {"page" in item
+                ? pageTitle(item.page)
+                : item.card.title || "Untitled"}
             </span>
           </span>
           <span className="text-muted-foreground truncate text-sm">
@@ -140,7 +165,7 @@ function InboxList({ inbox }: { inbox: Inbox }) {
       <InboxIcon aria-hidden className="text-muted-foreground size-8" />
       <EmptyTitle>You’re all caught up</EmptyTitle>
       <EmptyDescription>
-        When someone mentions you in a comment, it shows up here.
+        When someone mentions you, it shows up here.
       </EmptyDescription>
     </Empty>
   );

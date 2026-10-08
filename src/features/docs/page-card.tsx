@@ -1,6 +1,7 @@
 import { cn } from "cn";
 import { Link } from "wouter";
 
+import { MentionText } from "@/components/mention-text";
 import { CARD_SURFACE } from "@/features/boards/board-card";
 import { pagePath } from "@/features/docs/docs-context";
 import { PageIcon } from "@/features/docs/page-icon";
@@ -32,7 +33,9 @@ export function PageCard({
         </h3>
       </div>
       {excerpt && (
-        <p className="text-muted-foreground line-clamp-2 text-sm">{excerpt}</p>
+        <p className="text-muted-foreground line-clamp-2 text-sm">
+          <MentionText content={excerpt} />
+        </p>
       )}
     </Link>
   );

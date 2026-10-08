@@ -7,6 +7,7 @@ import {
   parseMarkdown,
   serializeMarkdown,
 } from "@/components/markdown-editor/content";
+import { Mention, mentionText } from "@/components/markdown-editor/mention";
 
 const LINE_BREAKS = /(?:\r\n?|\n)+/u;
 
@@ -67,7 +68,10 @@ function textWithin(slice: Slice): Fragment | undefined {
 }
 
 function leafText(node: Node): string {
-  return node.type.name === "hardBreak" ? "\n" : "";
+  if (node.type.name === "hardBreak") {
+    return "\n";
+  }
+  return node.type.name === Mention.name ? mentionText(node) : "";
 }
 
 /** VS Code names the language of the code it copies. */

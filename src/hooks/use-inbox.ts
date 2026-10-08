@@ -2,20 +2,27 @@ import type { NostrEvent } from "applesauce-core/helpers/event";
 import { getTagValue } from "applesauce-core/helpers/event";
 
 import { useObservableValue } from "@/hooks/use-observable-value";
+import type { DocPage, DocsContent } from "@/lib/docs";
 import { inboxStore } from "@/lib/inbox";
 import type { Board, Card } from "@/lib/model";
 import { CARD_KIND, DELETE_KIND, resolveCard } from "@/lib/model";
 import { eventStore } from "@/lib/nostr";
-import type { Notification } from "@/lib/notifications";
-import { deriveNotifications, notificationFilters } from "@/lib/notifications";
+import type {
+  CommentNotification,
+  PageNotification,
+} from "@/lib/notifications";
+import {
+  deriveNotifications,
+  notificationFilters,
+  pageNotification,
+} from "@/lib/notifications";
+import type { Project } from "@/lib/project";
 import { sync } from "@/lib/relays";
 
-export interface InboxItem {
-  notification: Notification;
-  board: Board;
-  card: Card;
-  read: boolean;
-}
+export type InboxItem = (
+  | { notification: CommentNotification; board: Board; card: Card }
+  | { notification: PageNotification; project: Project; page: DocPage }
+) & { read: boolean };
 
 export interface Inbox {
   items: InboxItem[];
@@ -23,6 +30,16 @@ export interface Inbox {
   loaded: boolean;
   setRead: (items: InboxItem[], read: boolean) => void;
   archive: (items: InboxItem[]) => void;
+}
+
+/** Where notifications point: the boards and projects the user is in. */
+export interface InboxScope {
+  boards: Board[];
+  projects: Project[];
+  /** Every project's pages, keyed by project address. */
+  docs: Map<string, DocsContent>;
+  /** Whether they have all loaded. */
+  loaded: boolean;
 }
 
 function byCard(events: NostrEvent[]): Map<string, NostrEvent[]> {
@@ -37,8 +54,8 @@ function byCard(events: NostrEvent[]): Map<string, NostrEvent[]> {
 }
 
 /** The card a notification points at, on a board its author belongs to. */
-function locate(
-  notification: Notification,
+function locateCard(
+  notification: CommentNotification,
   boards: Board[],
   versions: NostrEvent[]
 ): { board: Board; card: Card } | undefined {
@@ -53,10 +70,34 @@ function locate(
   return undefined;
 }
 
+/**
+ * The page a notification points at, if its newest version still mentions
+ * the recipient as the notification says, by a member of its project. The
+ * notification is read again from that version, with the words as they are now.
+ */
+function locatePage(
+  notification: PageNotification,
+  recipient: string,
+  { projects, docs }: InboxScope
+):
+  | { notification: PageNotification; project: Project; page: DocPage }
+  | undefined {
+  const project = projects.find(
+    (item) => item.address === notification.project
+  );
+  const page = docs.get(notification.project)?.byId.get(notification.pageId);
+  const current = page && pageNotification(page.event, recipient);
+  return project?.members.includes(notification.actor) &&
+    page &&
+    current?.id === notification.id
+    ? { notification: current, page, project }
+    : undefined;
+}
+
 const ids = (items: InboxItem[]) => items.map((item) => item.notification.id);
 
-/** Notifications for the user on boards they belong to, newest first. */
-export function useInbox(pubkey: string, boards: Board[]): Inbox {
+/** Notifications for the user on boards and projects they're in, newest first. */
+export function useInbox(pubkey: string, scope: InboxScope): Inbox {
   const filters = notificationFilters(pubkey);
   const loaded = useObservableValue(() => sync(filters), [pubkey]);
   const events = useObservableValue(
@@ -65,9 +106,12 @@ export function useInbox(pubkey: string, boards: Board[]): Inbox {
   );
   const marks = useObservableValue(() => inboxStore(pubkey).marks$, [pubkey]);
   const notifications = deriveNotifications(events ?? [], pubkey);
+  const comments = notifications.filter(
+    (item): item is CommentNotification => item.type === "comment"
+  );
 
   // Deleted comments drop out of the store, and with them their notification.
-  const commentKey = notifications.map((item) => item.id).join(",");
+  const commentKey = comments.map((item) => item.id).join(",");
   useObservableValue(
     () =>
       commentKey
@@ -76,9 +120,7 @@ export function useInbox(pubkey: string, boards: Board[]): Inbox {
     [commentKey]
   );
 
-  const cardKey = [...new Set(notifications.map((item) => item.cardId))].join(
-    ","
-  );
+  const cardKey = [...new Set(comments.map((item) => item.cardId))].join(",");
   const cardFilters = [{ "#d": cardKey.split(","), kinds: [CARD_KIND] }];
   useObservableValue(
     () => (cardKey ? sync(cardFilters) : undefined),
@@ -94,27 +136,24 @@ export function useInbox(pubkey: string, boards: Board[]): Inbox {
     if (marks?.archived.has(notification.id)) {
       return [];
     }
-    const found = locate(
+    const read = marks?.read.has(notification.id) ?? false;
+    if (notification.type === "page") {
+      const found = locatePage(notification, pubkey, scope);
+      return found ? [{ ...found, read }] : [];
+    }
+    const found = locateCard(
       notification,
-      boards,
+      scope.boards,
       versions.get(notification.cardId) ?? []
     );
-    return found
-      ? [
-          {
-            ...found,
-            notification,
-            read: marks?.read.has(notification.id) ?? false,
-          },
-        ]
-      : [];
+    return found ? [{ ...found, notification, read }] : [];
   });
   const store = inboxStore(pubkey);
 
   return {
     archive: (archived) => store.archive(ids(archived)),
     items,
-    loaded: loaded ?? false,
+    loaded: (loaded ?? false) && scope.loaded,
     setRead: (changed, read) => store.setRead(ids(changed), read),
     unread: items.filter((item) => !item.read).length,
   };

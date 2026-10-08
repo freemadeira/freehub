@@ -1,8 +1,7 @@
 import type { Editor, Range } from "@tiptap/core";
 import { Extension } from "@tiptap/core";
 import { PluginKey } from "@tiptap/pm/state";
-import type { SuggestionProps } from "@tiptap/suggestion";
-import { exitSuggestion, Suggestion } from "@tiptap/suggestion";
+import { Suggestion } from "@tiptap/suggestion";
 import { useEffect, useId, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 
@@ -12,32 +11,20 @@ import {
   INSERTS,
   matchCommands,
 } from "@/components/markdown-editor/blocks";
+import {
+  SuggestionMenuStore,
+  useComboboxPopup,
+} from "@/components/markdown-editor/suggestion-menu";
 
 const SLASH = new PluginKey("slashMenu");
 
-interface OpenMenu {
-  items: BlockCommand[];
-  /** Highlighted item, moved with the arrow keys or the pointer. */
-  index: number;
-  /** Where the menu renders, positioned under the "/" by the suggestion plugin. */
-  element: HTMLElement;
-  pick: (command: BlockCommand) => void;
-}
-
 /** The "/" menu's state, shared by the editor plugin and the menu it renders. */
-export class SlashMenuStore {
+export class SlashMenuStore extends SuggestionMenuStore<BlockCommand> {
   #commands: readonly BlockCommand[] = [...BLOCK_TYPES, ...INSERTS];
-  #open: OpenMenu | null = null;
-  readonly #listeners = new Set<() => void>();
 
-  subscribe = (listener: () => void) => {
-    this.#listeners.add(listener);
-    return () => {
-      this.#listeners.delete(listener);
-    };
-  };
-
-  snapshot = () => this.#open;
+  constructor() {
+    super(SLASH);
+  }
 
   /** What the menu offers, filtered by what's typed after the "/". */
   setCommands(commands: readonly BlockCommand[]): void {
@@ -46,62 +33,6 @@ export class SlashMenuStore {
 
   match(query: string): BlockCommand[] {
     return matchCommands(this.#commands, query);
-  }
-
-  set(open: OpenMenu | null): void {
-    this.#open = open;
-    for (const listener of this.#listeners) {
-      listener();
-    }
-  }
-
-  show(
-    props: SuggestionProps<BlockCommand, BlockCommand>,
-    element: HTMLElement
-  ) {
-    this.set({ element, index: 0, items: props.items, pick: props.command });
-  }
-
-  highlight(index: number): void {
-    const open = this.#open;
-    if (open && open.items.length > 0) {
-      const count = open.items.length;
-      this.set({ ...open, index: (index + count) % count });
-    }
-  }
-
-  /** Arrow keys move through the menu and Enter picks; the editor gets the rest. */
-  keyDown(event: KeyboardEvent, view: Editor["view"]): boolean {
-    const open = this.#open;
-    if (!open) {
-      return false;
-    }
-    switch (event.key) {
-      case "ArrowDown": {
-        this.highlight(open.index + 1);
-        return true;
-      }
-      case "ArrowUp": {
-        this.highlight(open.index - 1);
-        return true;
-      }
-      case "Enter":
-      case "Tab": {
-        const command = open.items[open.index];
-        if (command) {
-          open.pick(command);
-          return true;
-        }
-        return false;
-      }
-      case "Escape": {
-        exitSuggestion(view, SLASH);
-        return true;
-      }
-      default: {
-        return false;
-      }
-    }
   }
 }
 
@@ -128,29 +59,7 @@ export const SlashCommand = Extension.create<{ store: SlashMenuStore | null }>({
         items: ({ query }) => store.match(query),
         offset: { mainAxis: 6 },
         pluginKey: SLASH,
-        render: () => {
-          let unmount: (() => void) | undefined;
-          return {
-            onExit: () => {
-              unmount?.();
-              unmount = undefined;
-              store.set(null);
-            },
-            onKeyDown: ({ event, view }) => store.keyDown(event, view),
-            onStart: (props) => {
-              const element = document.createElement("div");
-              element.className = "z-50";
-              unmount = props.mount(element);
-              store.show(props, element);
-            },
-            onUpdate: (props) => {
-              const open = store.snapshot();
-              if (open) {
-                store.show(props, open.element);
-              }
-            },
-          };
-        },
+        render: store.render,
       }),
     ];
   },
@@ -215,27 +124,11 @@ export function SlashMenu({
   const active = open?.items[open.index];
   const activeId = active ? optionId(active) : undefined;
 
-  // The text keeps focus and points at the highlighted option, as a combobox does.
-  useEffect(() => {
-    // Only once open: the view isn't mounted during the first effects.
-    if (!open) {
-      return;
-    }
-    const { dom } = editor.view;
-    dom.setAttribute("aria-controls", id);
-    dom.setAttribute("aria-expanded", "true");
-    if (activeId) {
-      dom.setAttribute("aria-activedescendant", activeId);
-    }
-    return () => {
-      dom.removeAttribute("aria-controls");
-      dom.removeAttribute("aria-expanded");
-      dom.removeAttribute("aria-activedescendant");
-    };
-  }, [editor, id, open, activeId]);
-
   // Nothing matches what's typed: the menu steps aside, as in Notion.
-  if (!open || open.items.length === 0) {
+  const shown = open !== null && open.items.length > 0;
+  useComboboxPopup(editor, id, shown, activeId);
+
+  if (!(open && shown)) {
     return null;
   }
   const { items, index, element, pick } = open;

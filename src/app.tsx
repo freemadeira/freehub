@@ -91,7 +91,12 @@ function Workspace({ pubkey }: { pubkey: string }) {
   const { projects, loaded: projectsLoaded } = useProjects(pubkey);
   const tables = useProjectTables(projects);
   const { docs, loaded: docsLoaded } = useDocs(projects);
-  const inbox = useInbox(pubkey, boards);
+  const inbox = useInbox(pubkey, {
+    boards,
+    docs,
+    loaded: boardsLoaded && projectsLoaded && docsLoaded,
+    projects,
+  });
   const [creatingProject, setCreatingProject] = useState(false);
   const [, params] = useRoute<{ slug: string }>("/:slug");
   const [search] = useSearchParams();

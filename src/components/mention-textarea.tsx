@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { UserAvatar } from "@/components/user-avatar";
 import { useProfileNames } from "@/hooks/use-profile-names";
 import type { Mention } from "@/lib/mentions";
-import { shortNpub } from "@/lib/utils";
+import { mentionNames } from "@/lib/mentions";
 
 const MAX_SUGGESTIONS = 8;
 const MAX_QUERY = 40;
@@ -68,27 +68,6 @@ function findQuery(
     : { query, start };
 }
 
-// People who share a display name also show their npub, so each `@Name` stays theirs.
-function distinctNames(
-  people: string[],
-  names: Map<string, string>
-): Map<string, string> {
-  const uses = new Map<string, number>();
-  for (const pubkey of people) {
-    const name = names.get(pubkey) ?? "";
-    uses.set(name, (uses.get(name) ?? 0) + 1);
-  }
-  return new Map(
-    people.map((pubkey) => {
-      const name = names.get(pubkey) ?? "";
-      return [
-        pubkey,
-        (uses.get(name) ?? 0) > 1 ? `${name} ${shortNpub(pubkey)}` : name,
-      ];
-    })
-  );
-}
-
 // Measures the character with a hidden copy of the textarea that wraps the same way.
 function offsetOf(textarea: HTMLTextAreaElement, index: number) {
   const style = getComputedStyle(textarea);
@@ -143,7 +122,7 @@ export function MentionTextarea({
   const id = useId();
   const textarea = useRef<HTMLTextAreaElement>(null);
   const profileNames = useProfileNames(people);
-  const names = distinctNames(people, profileNames);
+  const names = mentionNames(people, profileNames);
   const [trigger, setTrigger] = useState<Trigger>();
   const [active, setActive] = useState(0);
   // Escape hides the list for this `@` only; typing a new one shows it again.

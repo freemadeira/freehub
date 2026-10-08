@@ -6,34 +6,54 @@
  * the relay later. No browser APIs here, so they run anywhere.
  *
  * A rule only reads the event. Whoever delivers a notification still checks
- * that its author belongs to the board, as the inbox does.
+ * that its author belongs to the board or project, as the inbox does.
  */
 import type { NostrEvent } from "applesauce-core/helpers/event";
 import { getTagValue } from "applesauce-core/helpers/event";
 import type { Filter } from "applesauce-core/helpers/filter";
 import { parseReplaceableAddress } from "applesauce-core/helpers/pointers";
 
+import { mentionExcerpt, parsePageMentions } from "@/lib/docs";
 import { mentions } from "@/lib/mentions";
-import { CARD_KIND, COMMENT_KIND } from "@/lib/model";
+import {
+  addressOf,
+  CARD_KIND,
+  COMMENT_KIND,
+  DOC_PAGE_KIND,
+  isDeleted,
+  PROJECT_KIND,
+} from "@/lib/model";
 
 /** Newest events each rule asks the relays for. */
 const LIMIT = 200;
 
-/** Someone mentioned the recipient in a comment on a card. */
-export interface MentionNotification {
-  type: "mention";
-  /** The comment's id, which also keys whether it was read. */
+interface MentionFields {
+  /** Keys whether it was read, and stays the same until they're mentioned anew. */
   id: string;
   actor: string;
   createdAt: number;
-  /** The card's `d` tag; its board comes from the card itself. */
-  cardId: string;
-  /** The comment, with mentions as `nostr:` references. */
+  /** The words that mention the recipient, with mentions as `nostr:` references. */
   content: string;
 }
 
+/** Someone mentioned the recipient in a comment on a card. */
+export interface CommentNotification extends MentionFields {
+  type: "comment";
+  /** The card's `d` tag; its board comes from the card itself. */
+  cardId: string;
+}
+
+/** Someone mentioned the recipient in a doc page. */
+export interface PageNotification extends MentionFields {
+  type: "page";
+  /** Address of the page's project. */
+  project: string;
+  /** The page's `d` tag. */
+  pageId: string;
+}
+
 /** Everything that can reach someone. A new rule adds its own member. */
-export type Notification = MentionNotification;
+export type Notification = CommentNotification | PageNotification;
 
 export interface NotificationRule {
   /** Relay filters for the events that may notify the recipient. */
@@ -62,7 +82,7 @@ const cardMention: NotificationRule = {
       content: event.content,
       createdAt: event.created_at,
       id: event.id,
-      type: "mention",
+      type: "comment",
     };
   },
   // Mentions carry a `p` tag per person, so the relay can do the routing.
@@ -76,7 +96,53 @@ const cardMention: NotificationRule = {
   ],
 };
 
-export const NOTIFICATION_RULES: readonly NotificationRule[] = [cardMention];
+/**
+ * The mention of the recipient in this version of a page. Every member saves
+ * versions of their own, over and over, but each carries who mentioned whom
+ * and when, so all of them name the same notification until someone picks
+ * the recipient again. Check it against the page's newest version: an older
+ * one may still mention someone since taken out.
+ */
+export function pageNotification(
+  event: NostrEvent,
+  recipient: string
+): PageNotification | undefined {
+  const pageId = getTagValue(event, "d");
+  const project = addressOf(event, PROJECT_KIND);
+  const mention = parsePageMentions(event).find(
+    (item) => item.pubkey === recipient
+  );
+  if (
+    event.kind !== DOC_PAGE_KIND ||
+    !(pageId && project && mention) ||
+    mention.by === recipient ||
+    isDeleted(event) ||
+    !mentions(event.content, recipient)
+  ) {
+    return;
+  }
+  return {
+    actor: mention.by,
+    content: mentionExcerpt(event.content, recipient),
+    createdAt: mention.at,
+    id: `${pageId}:${mention.at}`,
+    pageId,
+    project,
+    type: "page",
+  };
+}
+
+const docMention: NotificationRule = {
+  derive: pageNotification,
+  filters: (recipient) => [
+    { "#p": [recipient], kinds: [DOC_PAGE_KIND], limit: LIMIT },
+  ],
+};
+
+export const NOTIFICATION_RULES: readonly NotificationRule[] = [
+  cardMention,
+  docMention,
+];
 
 export function notificationFilters(recipient: string): Filter[] {
   return NOTIFICATION_RULES.flatMap((rule) => rule.filters(recipient));

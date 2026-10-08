@@ -7,6 +7,9 @@ export const DOCS_SEGMENT = "docs";
 
 const PAGE_ID = /(?:^|-)(?<id>[0-9a-f]{16})$/u;
 
+/** History state of a page opened from the inbox: it scrolls to the mention. */
+export const REVEAL_MENTION = { revealMention: true };
+
 export function docsPath(project: Pick<Project, "slug">): string {
   return `/p/${project.slug}/${DOCS_SEGMENT}`;
 }

@@ -35,6 +35,7 @@ export function createPage(
       creator: accounts.active?.pubkey,
       icon: page.icon ?? "",
       id,
+      mentions: [],
       parent: page.parent,
       rank: lastRank(content, page.parent),
       title: page.title ?? "",
