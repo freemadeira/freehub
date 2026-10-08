@@ -1,9 +1,10 @@
 import { createContext, use } from "react";
 
+import type { BoardLayout } from "@/features/board/layout-switch";
 import type { Board, BoardContent, Card, CardFields } from "@/lib/model";
 import { cardKey } from "@/lib/model";
 
-/** History state that lets the card dialog close with a plain back navigation. */
+/** History state that lets leaving a card's page be a plain back navigation. */
 export const OPENED_FROM_BOARD = { fromBoard: true };
 
 /** Where a new card starts, from the column or list it was added in. */
@@ -13,6 +14,8 @@ export interface BoardScope {
   board: Board;
   content: BoardContent;
   cards: Card[];
+  /** Whether the sprint's cards show as a column per status or a list. */
+  layout: BoardLayout;
   pubkey: string;
   /** Whether the user is a member, not just a viewer, of the board. */
   canEdit: boolean;

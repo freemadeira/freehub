@@ -15,8 +15,10 @@ import {
   commentTemplate,
   deleteBoardTemplate,
   deleteCommentTemplate,
+  isClosed,
   newId,
   sprintTemplate,
+  statusKind,
   tombstoneTemplate,
   upcomingSprint,
 } from "@/lib/model";
@@ -151,14 +153,17 @@ export function startSprint(
   return updateSprint(board, sprint, dates);
 }
 
-// Unfinished cards roll over to the next future sprint; done cards stay with the ended one.
+/**
+ * Open cards roll over to the next future sprint, those under way back to todo;
+ * closed cards stay with the ended one.
+ */
 export function endSprint(
   board: Board,
   sprint: Sprint,
   content: BoardContent
 ): Promise<boolean[]> {
   const unfinished = content.cards.filter(
-    (card) => card.sprint === sprint.id && card.status !== "done"
+    (card) => card.sprint === sprint.id && !isClosed(card.status)
   );
   const changes: Promise<boolean>[] = [];
   let next = upcomingSprint(content)?.id;
@@ -168,7 +173,12 @@ export function endSprint(
     changes.push(publish(sprintTemplate(board, created)));
   }
   for (const card of unfinished) {
-    changes.push(updateCard(board, card, { sprint: next, status: "todo" }));
+    changes.push(
+      updateCard(board, card, {
+        sprint: next,
+        ...(statusKind(card.status) === "started" ? { status: "todo" } : {}),
+      })
+    );
   }
   changes.push(updateSprint(board, sprint, { status: "ended" }));
   return Promise.all(changes);

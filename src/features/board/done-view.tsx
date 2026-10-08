@@ -2,14 +2,14 @@ import { Empty, EmptyTitle } from "@/components/ui/empty";
 import { useBoard } from "@/features/board/board-context";
 import { Bucket } from "@/features/board/bucket";
 import { CardRow } from "@/features/board/card-tile";
-import { activeSprint } from "@/lib/model";
+import { activeSprint, isClosed } from "@/lib/model";
 
 export function DoneView() {
   const { content, cards } = useBoard();
   const active = activeSprint(content);
   const done = cards
     .filter(
-      (card) => card.status === "done" && !(active && card.sprint === active.id)
+      (card) => isClosed(card.status) && !(active && card.sprint === active.id)
     )
     .toSorted((a, b) => b.event.created_at - a.event.created_at);
 

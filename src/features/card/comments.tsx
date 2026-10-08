@@ -229,14 +229,14 @@ export function Comments({
       aria-labelledby={id}
       className={cn("flex flex-col gap-4", className)}
     >
-      <h3 className="flex items-center gap-2 font-medium" id={id}>
+      <h2 className="flex items-center gap-2 font-medium" id={id}>
         Comments
         {comments.length > 0 && (
           <span className="text-muted-foreground tabular-nums">
             {comments.length}
           </span>
         )}
-      </h3>
+      </h2>
       {comments.length > 0 && (
         <ol className="flex flex-col gap-4">
           {comments.map((comment) => (

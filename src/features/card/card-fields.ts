@@ -1,13 +1,21 @@
 import type { LucideIcon } from "lucide-react";
-import {
-  ChevronDownIcon,
-  ChevronsUpIcon,
-  ChevronUpIcon,
-  CircleCheckIcon,
-  CircleDashedIcon,
-  CircleDotIcon,
-} from "lucide-react";
 
+import {
+  PriorityHighIcon,
+  PriorityLowIcon,
+  PriorityMediumIcon,
+  PriorityUrgentIcon,
+} from "@/features/card/priority-icons";
+import {
+  StatusBacklogIcon,
+  StatusCanceledIcon,
+  StatusDoneIcon,
+  StatusDuplicateIcon,
+  StatusProgressIcon,
+  StatusReviewIcon,
+  StatusTodoIcon,
+  StatusTriageIcon,
+} from "@/features/card/status-icons";
 import type { Board, Label, Priority, Sprint, Status } from "@/lib/model";
 
 interface IconStyle {
@@ -15,16 +23,25 @@ interface IconStyle {
   className: string;
 }
 
+const CLOSED_GRAY = "text-neutral-400 dark:text-neutral-500";
+
+/** Linear's colors. */
 export const STATUS_STYLES: Record<Status, IconStyle> = {
-  done: { className: "text-emerald-500", icon: CircleCheckIcon },
-  progress: { className: "text-amber-500", icon: CircleDotIcon },
-  todo: { className: "text-muted-foreground", icon: CircleDashedIcon },
+  backlog: { className: "text-muted-foreground", icon: StatusBacklogIcon },
+  canceled: { className: CLOSED_GRAY, icon: StatusCanceledIcon },
+  done: { className: "text-blue-500", icon: StatusDoneIcon },
+  duplicate: { className: CLOSED_GRAY, icon: StatusDuplicateIcon },
+  progress: { className: "text-yellow-500", icon: StatusProgressIcon },
+  review: { className: "text-green-500", icon: StatusReviewIcon },
+  todo: { className: "text-foreground/75", icon: StatusTodoIcon },
+  triage: { className: "text-orange-500", icon: StatusTriageIcon },
 };
 
 export const PRIORITY_STYLES: Record<Priority, IconStyle> = {
-  high: { className: "text-red-500", icon: ChevronsUpIcon },
-  low: { className: "text-sky-500", icon: ChevronDownIcon },
-  medium: { className: "text-amber-500", icon: ChevronUpIcon },
+  high: { className: "text-muted-foreground", icon: PriorityHighIcon },
+  low: { className: "text-muted-foreground", icon: PriorityLowIcon },
+  medium: { className: "text-muted-foreground", icon: PriorityMediumIcon },
+  urgent: { className: "text-foreground", icon: PriorityUrgentIcon },
 };
 
 export const LABEL_COLORS: Record<Label, string> = {

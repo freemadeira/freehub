@@ -1,13 +1,10 @@
-import { SquareKanbanIcon } from "lucide-react";
 import { MotionConfig } from "motion/react";
 import { lazy, Suspense, useState } from "react";
 import type { DefaultParams } from "wouter";
 import { Redirect, Route, Switch, useRoute, useSearchParams } from "wouter";
 
 import { AppSidebar } from "@/components/app-sidebar";
-import { ProjectAvatar } from "@/components/project-avatar";
 import { AccessDenied, SignerRevoked } from "@/components/status-screens";
-import type { Crumb } from "@/components/top-bar";
 import { TopBar } from "@/components/top-bar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,9 +23,7 @@ import { useInbox } from "@/hooks/use-inbox";
 import { useObservableValue } from "@/hooks/use-observable-value";
 import { useProjectTables } from "@/hooks/use-project-content";
 import { useProjects } from "@/hooks/use-projects";
-import type { Board } from "@/lib/model";
 import { accounts } from "@/lib/nostr";
-import type { Project } from "@/lib/project";
 import { inProject } from "@/lib/project";
 import { access$ } from "@/lib/relays";
 import { signerState$ } from "@/lib/signer";
@@ -38,25 +33,6 @@ interface ProjectParams extends DefaultParams {
   readonly project: string;
   readonly table?: string;
   readonly record?: string;
-}
-
-function boardCrumbs(code: string, board?: Board, project?: Project): Crumb[] {
-  const crumb: Crumb = {
-    icon: (
-      <SquareKanbanIcon className="text-muted-foreground size-4 shrink-0" />
-    ),
-    label: board?.title ?? code,
-  };
-  return project
-    ? [
-        {
-          href: `/p/${project.slug}`,
-          icon: <ProjectAvatar project={project} />,
-          label: project.title,
-        },
-        crumb,
-      ]
-    : [crumb];
 }
 
 // Projects carry the CRM and its table library, which board-only visits never need.
@@ -161,12 +137,13 @@ function Workspace({ pubkey }: { pubkey: string }) {
           )}
           {slug && (
             <Route path="/:slug">
-              <TopBar crumbs={boardCrumbs(slug.code, board, boardProject)} />
               <BoardRoute
                 board={board}
                 boards={boards}
                 cardNumber={slug.number}
+                code={slug.code}
                 loaded={boardsLoaded}
+                project={boardProject}
                 projects={projects}
                 pubkey={pubkey}
               />

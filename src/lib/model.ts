@@ -14,13 +14,24 @@ export const DOC_PAGE_KIND = 30_307;
 export const COMMENT_KIND = 1111;
 export const DELETE_KIND = 5;
 
+/**
+ * Statuses in the order work moves through them, after Linear's. Their kind
+ * says how far along that is: completed and canceled ones close the card.
+ * Cards carry the label in their `s` tag, so a label is how other clients see it.
+ */
 export const STATUSES = [
-  { id: "todo", label: "To do" },
-  { id: "progress", label: "In progress" },
-  { id: "done", label: "Done" },
+  { id: "triage", kind: "triage", label: "Triage" },
+  { id: "backlog", kind: "backlog", label: "Backlog" },
+  { id: "todo", kind: "unstarted", label: "Todo" },
+  { id: "progress", kind: "started", label: "In progress" },
+  { id: "review", kind: "started", label: "In review" },
+  { id: "done", kind: "completed", label: "Done" },
+  { id: "canceled", kind: "canceled", label: "Canceled" },
+  { id: "duplicate", kind: "canceled", label: "Duplicate" },
 ] as const;
 
 export const PRIORITIES = [
+  { id: "urgent", label: "Urgent" },
   { id: "high", label: "High" },
   { id: "medium", label: "Medium" },
   { id: "low", label: "Low" },
@@ -42,6 +53,7 @@ export const LABELS = [
 ] as const;
 
 export type Status = (typeof STATUSES)[number]["id"];
+export type StatusKind = (typeof STATUSES)[number]["kind"];
 export type Priority = (typeof PRIORITIES)[number]["id"];
 export type Label = (typeof LABELS)[number];
 export type SprintStatus = (typeof SPRINT_STATUSES)[number]["id"];
@@ -225,10 +237,33 @@ export function statusLabel(status: Status): string {
   return STATUSES.find(({ id }) => id === status)?.label ?? status;
 }
 
+const STATUS_KINDS = Object.fromEntries(
+  STATUSES.map(({ id, kind }) => [id, kind])
+) as Record<Status, StatusKind>;
+
+export function statusKind(status: Status): StatusKind {
+  return STATUS_KINDS[status];
+}
+
+/** Whether the card is finished with: done, or dropped as canceled or a duplicate. */
+export function isClosed(status: Status): boolean {
+  const kind = statusKind(status);
+  return kind === "completed" || kind === "canceled";
+}
+
+export function priorityLabel(priority: Priority): string {
+  return PRIORITIES.find(({ id }) => id === priority)?.label ?? priority;
+}
+
+/** Lowercase without spaces, so "To do", as cards used to say, reads as todo. */
+function statusWord(value: string): string {
+  return value.toLowerCase().replaceAll(/\s+/gu, "");
+}
+
 function parseStatus(value: string | undefined): Status {
-  const needle = value?.trim().toLowerCase();
+  const needle = value === undefined ? "" : statusWord(value);
   const match = STATUSES.find(
-    ({ id, label }) => id === needle || label.toLowerCase() === needle
+    ({ id, label }) => id === needle || statusWord(label) === needle
   );
   return match?.id ?? "todo";
 }

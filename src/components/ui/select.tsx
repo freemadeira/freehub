@@ -77,12 +77,17 @@ function SelectContent({
 function SelectItem({
   className,
   children,
+  shortcut,
   ...props
-}: SelectPrimitive.Item.Props) {
+}: SelectPrimitive.Item.Props & {
+  /** The key that picks the item, shown at its end. Left out where there's no keyboard. */
+  shortcut?: string;
+}) {
   return (
     <SelectPrimitive.Item
       className={cn(
         "data-highlighted:bg-accent data-highlighted:text-accent-foreground relative flex w-full cursor-default items-center gap-2 rounded-lg py-1.5 pr-8 pl-2 text-sm outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        shortcut && "pr-14 pointer-coarse:pr-8",
         className
       )}
       data-slot="select-item"
@@ -91,9 +96,19 @@ function SelectItem({
       <SelectPrimitive.ItemText className="flex min-w-0 flex-1 items-center gap-2 truncate">
         {children}
       </SelectPrimitive.ItemText>
-      <SelectPrimitive.ItemIndicator className="absolute right-2 flex items-center">
+      <SelectPrimitive.ItemIndicator
+        className={cn(
+          "absolute right-2 flex items-center",
+          shortcut && "right-8 pointer-coarse:right-2"
+        )}
+      >
         <CheckIcon />
       </SelectPrimitive.ItemIndicator>
+      {shortcut && (
+        <kbd className="text-muted-foreground absolute right-2.5 font-mono text-xs pointer-coarse:hidden">
+          {shortcut}
+        </kbd>
+      )}
     </SelectPrimitive.Item>
   );
 }

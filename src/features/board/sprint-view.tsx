@@ -1,5 +1,3 @@
-import { CollisionPriority } from "@dnd-kit/abstract";
-import { DragDropProvider, useDroppable } from "@dnd-kit/react";
 import { differenceInCalendarDays, format, parseISO } from "date-fns";
 import { PencilIcon } from "lucide-react";
 import { useState } from "react";
@@ -19,13 +17,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyTitle } from "@/components/ui/empty";
 import { useBoard } from "@/features/board/board-context";
-import { CardTile } from "@/features/board/card-tile";
-import { AddButton } from "@/features/board/quick-add";
+import { Kanban } from "@/features/board/kanban";
+import { CardList } from "@/features/board/list-view";
 import { SprintDialog } from "@/features/board/sprint-dialog";
-import { useCardDrag } from "@/features/board/use-card-drag";
-import { endSprint, startSprint, updateCard } from "@/lib/actions";
-import type { BoardContent, Card, Sprint, Status } from "@/lib/model";
-import { activeSprint, STATUSES, upcomingSprint } from "@/lib/model";
+import { endSprint, startSprint } from "@/lib/actions";
+import type { BoardContent, Sprint } from "@/lib/model";
+import { activeSprint, isClosed, upcomingSprint } from "@/lib/model";
 import { plural } from "@/lib/utils";
 
 function upcomingTitle(content: BoardContent): string {
@@ -50,7 +47,7 @@ function sprintDates(sprint: Sprint): string | undefined {
 function EndSprint({ sprint }: { sprint: Sprint }) {
   const { board, content } = useBoard();
   const unfinished = content.cards.filter(
-    (card) => card.sprint === sprint.id && card.status !== "done"
+    (card) => card.sprint === sprint.id && !isClosed(card.status)
   ).length;
   return (
     <AlertDialog>
@@ -64,7 +61,7 @@ function EndSprint({ sprint }: { sprint: Sprint }) {
           <AlertDialogTitle>End {sprint.title}?</AlertDialogTitle>
           <AlertDialogDescription>
             {unfinished === 0
-              ? "All cards are done."
+              ? "No cards left open."
               : `${plural(unfinished, "unfinished card")} ${unfinished === 1 ? "moves" : "move"} to ${upcomingTitle(content)}.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -112,74 +109,6 @@ function SprintHeader({ sprint }: { sprint: Sprint }) {
   );
 }
 
-interface ColumnProps {
-  status: Status;
-  label: string;
-  cards: Card[];
-  onAdd?: () => void;
-}
-
-function Column({ status, label, cards, onAdd }: ColumnProps) {
-  const { ref } = useDroppable({
-    accept: "card",
-    collisionPriority: CollisionPriority.Low,
-    id: status,
-    type: "column",
-  });
-  return (
-    <section
-      className="bg-muted/60 flex flex-col gap-2 rounded-2xl p-2"
-      ref={ref}
-    >
-      <h3 className="flex h-8 items-center gap-2 px-1.5 text-sm font-medium">
-        {label}
-        <span className="text-muted-foreground tabular-nums">
-          {cards.length}
-        </span>
-      </h3>
-      {cards.map((card, index) => (
-        <CardTile card={card} group={status} index={index} key={card.id} />
-      ))}
-      {onAdd && <AddButton label="Add card" onClick={onAdd} />}
-    </section>
-  );
-}
-
-function Kanban({ sprint }: { sprint: Sprint }) {
-  const { board, canEdit, cards, newCard } = useBoard();
-  const columns: Record<Status, Card[]> = { done: [], progress: [], todo: [] };
-  for (const card of cards) {
-    if (card.sprint === sprint.id) {
-      columns[card.status].push(card);
-    }
-  }
-  const drag = useCardDrag(columns, (moves) => {
-    for (const { card, group, rank } of moves) {
-      updateCard(board, card, { rank, status: group });
-    }
-  });
-
-  return (
-    <DragDropProvider {...drag.props}>
-      <div className="-mx-4 grid grow auto-cols-[minmax(17rem,1fr)] grid-flow-col gap-3 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6">
-        {STATUSES.map(({ id, label }) => (
-          <Column
-            cards={drag.groups[id]}
-            key={id}
-            label={label}
-            onAdd={
-              canEdit && id !== "done"
-                ? () => newCard({ sprint: sprint.id, status: id })
-                : undefined
-            }
-            status={id}
-          />
-        ))}
-      </div>
-    </DragDropProvider>
-  );
-}
-
 function NoActiveSprint() {
   const { board, canEdit, content } = useBoard();
   return (
@@ -197,15 +126,20 @@ function NoActiveSprint() {
 }
 
 export function SprintView() {
-  const { content } = useBoard();
+  const { cards, content, layout } = useBoard();
   const sprint = activeSprint(content);
   if (!sprint) {
     return <NoActiveSprint />;
   }
+  const sprintCards = cards.filter((card) => card.sprint === sprint.id);
   return (
-    <div className="flex grow flex-col gap-4">
+    <div className="flex min-h-0 grow flex-col gap-4">
       <SprintHeader sprint={sprint} />
-      <Kanban sprint={sprint} />
+      {layout === "list" ? (
+        <CardList cards={sprintCards} sprint={sprint} />
+      ) : (
+        <Kanban cards={sprintCards} sprint={sprint} />
+      )}
     </div>
   );
 }

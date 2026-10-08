@@ -7,28 +7,19 @@ import { Link } from "wouter";
 
 import { OPENED_FROM_BOARD, useBoard } from "@/features/board/board-context";
 import { CARD_SURFACE } from "@/features/board/card-surface";
-import { LABEL_COLORS, PRIORITY_STYLES } from "@/features/card/card-fields";
-import { AvatarStack } from "@/features/card/card-parts";
-import type { Card, Label, Priority } from "@/lib/model";
-import { cardKey, PRIORITIES } from "@/lib/model";
+import {
+  CardAssignees,
+  CardPriority,
+  CardStatus,
+  isControlClick,
+} from "@/features/board/inline-pickers";
+import { LABEL_COLORS } from "@/features/card/card-fields";
+import type { Card, Label } from "@/lib/model";
+import { cardKey, isClosed } from "@/lib/model";
 
-function priorityLabel(priority: Priority): string {
-  return PRIORITIES.find(({ id }) => id === priority)?.label ?? priority;
-}
-
-function PriorityIcon({ priority }: { priority: Priority }) {
-  const { icon: Icon, className } = PRIORITY_STYLES[priority];
-  return (
-    <>
-      <Icon aria-hidden className={cn("size-4 shrink-0", className)} />
-      <span className="sr-only">{priorityLabel(priority)} priority</span>
-    </>
-  );
-}
-
-function DueDate({ due, done }: { due: string; done: boolean }) {
+function DueDate({ due, closed }: { due: string; closed: boolean }) {
   const date = parseISO(due);
-  const overdue = !done && isBefore(date, startOfToday());
+  const overdue = !closed && isBefore(date, startOfToday());
   return (
     <span
       className={cn(
@@ -64,12 +55,10 @@ function LabelDots({ labels }: { labels: Label[] }) {
 function CardMeta({ card }: { card: Card }) {
   return (
     <>
-      {card.priority && <PriorityIcon priority={card.priority} />}
-      {card.due && <DueDate done={card.status === "done"} due={card.due} />}
+      <CardPriority card={card} />
+      {card.due && <DueDate closed={isClosed(card.status)} due={card.due} />}
       {card.labels.length > 0 && <LabelDots labels={card.labels} />}
-      {card.assignees.length > 0 && (
-        <AvatarStack className="ml-auto" pubkeys={card.assignees} />
-      )}
+      <CardAssignees card={card} className="ml-auto" />
     </>
   );
 }
@@ -123,6 +112,11 @@ function CardLink({
       className={cn(CARD_SURFACE, "select-none", className)}
       draggable={false}
       href={cardHref(card)}
+      onClick={(event) => {
+        if (isControlClick(event)) {
+          event.preventDefault();
+        }
+      }}
       ref={ref}
       // dnd-kit turns draggables without a role into buttons; these navigate.
       // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
@@ -148,6 +142,7 @@ export function CardTile(props: SortableCardProps) {
         <span className="text-muted-foreground text-xs tabular-nums">
           {cardKey(board, card)}
         </span>
+        <CardStatus card={card} />
         <CardMeta card={card} />
       </span>
     </CardLink>
@@ -171,6 +166,7 @@ export function CardRow({
       <span className="text-muted-foreground min-w-14 shrink-0 text-xs tabular-nums">
         {cardKey(board, card)}
       </span>
+      <CardStatus card={card} />
       <CardTitle className="min-w-0 flex-1 truncate" title={card.title} />
       <span className="flex shrink-0 items-center gap-2">
         <CardMeta card={card} />

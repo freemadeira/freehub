@@ -282,7 +282,7 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 - Board codes and project links are checked against every board and project on the relay, but two made at the same moment can still match. Links then name the board with `?board=`, and one of the projects gets a `-2` link.
 - Removing someone from a board or project, or making them a viewer, hides the cards, sprints, CRM tables, records and doc pages whose newest version is theirs: each falls back to an older version or disappears, a table with its records. Comments on their versions are hidden too, and boards they made in a project move out of it. Adding them back as a member shows it all again.
 - Other clients of the kanban NIP, and copies of this app from before viewers, read a viewer as a member.
-- The columns are fixed: To do, In progress, Done.
+- The statuses are fixed, after Linear's: Triage, Backlog, Todo, In progress, In review, Done, Canceled and Duplicate. A board lists them in its `col` tags only once it's saved, so other clients of the kanban NIP keep showing an older board's three columns until then. Copies of this app from before these statuses read the new ones as Todo.
 - No file attachments yet.
 - A linked image in a description, such as a `[![badge](…)](…)` badge, loses its link once the description is edited.
 - A CRM record is saved as a whole, so two people changing different fields of the same record at the same moment can undo one another's change.
