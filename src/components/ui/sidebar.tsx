@@ -446,7 +446,7 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button group/menu-button hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-ring/50 data-active:bg-card data-active:text-foreground data-active:shadow-surface [&>svg]:text-muted-foreground data-active:[&>svg]:text-foreground flex w-full items-center gap-2 overflow-hidden rounded-lg px-2 text-left transition-[background-color,color,box-shadow] duration-150 outline-none group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! focus-visible:ring-3 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-active:font-medium [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
+  "peer/menu-button group/menu-button not-data-active:hover:bg-sidebar-accent not-data-active:hover:text-sidebar-accent-foreground focus-visible:ring-ring/50 data-active:bg-card data-active:text-foreground data-active:shadow-surface [&>svg]:text-muted-foreground data-active:[&>svg]:text-foreground flex w-full items-center gap-2 overflow-hidden rounded-lg px-2 text-left transition-[background-color,color,box-shadow] duration-150 outline-none group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! focus-visible:ring-3 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-active:font-medium [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
   {
     defaultVariants: {
       size: "default",
@@ -597,7 +597,7 @@ function SidebarMenuSubButton({
     props: mergeProps<"a">(
       {
         className: cn(
-          "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-ring/50 data-active:bg-card data-active:text-foreground data-active:shadow-surface [&>svg]:text-muted-foreground data-active:[&>svg]:text-foreground flex h-8 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-lg px-2 text-sm transition-[background-color,color,box-shadow] duration-150 outline-none group-data-[collapsible=icon]:hidden focus-visible:ring-3 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-active:font-medium [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
+          "text-sidebar-foreground not-data-active:hover:bg-sidebar-accent not-data-active:hover:text-sidebar-accent-foreground focus-visible:ring-ring/50 data-active:bg-card data-active:text-foreground data-active:shadow-surface [&>svg]:text-muted-foreground data-active:[&>svg]:text-foreground flex h-8 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-lg px-2 text-sm transition-[background-color,color,box-shadow] duration-150 outline-none group-data-[collapsible=icon]:hidden focus-visible:ring-3 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-active:font-medium [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
           className
         ),
       },
