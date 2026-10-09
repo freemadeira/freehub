@@ -58,6 +58,14 @@ export type Priority = (typeof PRIORITIES)[number]["id"];
 export type Label = (typeof LABELS)[number];
 export type SprintStatus = (typeof SPRINT_STATUSES)[number]["id"];
 
+/** The statuses a new board uses until its creator picks others. */
+export const DEFAULT_STATUSES: readonly Status[] = [
+  "backlog",
+  "todo",
+  "progress",
+  "done",
+];
+
 export interface Template {
   kind: number;
   content: string;
@@ -78,6 +86,11 @@ export interface Board extends Membership {
   code: string;
   title: string;
   description: string;
+  /**
+   * The statuses the board uses, in order. The others stay out of its columns
+   * and pickers, unless a card is in one.
+   */
+  statuses: Status[];
   /** Address of the project the board belongs to, if any. */
   project?: string;
   event: NostrEvent;
@@ -260,12 +273,55 @@ function statusWord(value: string): string {
   return value.toLowerCase().replaceAll(/\s+/gu, "");
 }
 
-function parseStatus(value: string | undefined): Status {
+function findStatus(value: string | undefined): Status | undefined {
   const needle = value === undefined ? "" : statusWord(value);
-  const match = STATUSES.find(
+  return STATUSES.find(
     ({ id, label }) => id === needle || statusWord(label) === needle
+  )?.id;
+}
+
+function parseStatus(value: string | undefined): Status {
+  return findStatus(value) ?? "todo";
+}
+
+/** The statuses given, in the order work moves through them. */
+export function inStatusOrder(statuses: Iterable<Status>): Status[] {
+  const picked = new Set(statuses);
+  return STATUSES.flatMap(({ id }) => (picked.has(id) ? [id] : []));
+}
+
+/**
+ * The statuses a board's `col` tags name, by id or by label. Columns this app
+ * has no status for are left out; a board naming none uses the defaults.
+ */
+function parseStatuses(event: NostrEvent): Status[] {
+  const named = event.tags.flatMap(([name, id, label]) => {
+    const status =
+      name === "col" ? (findStatus(id) ?? findStatus(label)) : undefined;
+    return status ? [status] : [];
+  });
+  return named.length > 0 ? inStatusOrder(named) : [...DEFAULT_STATUSES];
+}
+
+/**
+ * Whether a board could work with these statuses: an open one for new cards to
+ * start in, and a closed one for them to finish in.
+ */
+export function workableStatuses(statuses: readonly Status[]): boolean {
+  return (
+    statuses.some((status) => !isClosed(status)) && statuses.some(isClosed)
   );
-  return match?.id ?? "todo";
+}
+
+/** Where a new card starts: todo, else backlog, else the first open status. */
+export function startingStatus(statuses: readonly Status[]): Status {
+  const open = statuses.filter((status) => !isClosed(status));
+  return (
+    open.find((status) => statusKind(status) === "unstarted") ??
+    open.find((status) => statusKind(status) === "backlog") ??
+    open[0] ??
+    "todo"
+  );
 }
 
 export function cardKey(board: Board, card: Card): string {
@@ -320,6 +376,7 @@ export function parseBoard(event: NostrEvent): Board | undefined {
     event,
     id,
     project: addressOf(event, PROJECT_KIND),
+    statuses: parseStatuses(event),
     title: getTagValue(event, "title") ?? code,
   };
 }
@@ -471,6 +528,7 @@ export function boardTemplate(
     | "viewers"
     | "creator"
     | "project"
+    | "statuses"
   >
 ): Template {
   return {
@@ -481,10 +539,11 @@ export function boardTemplate(
       ["title", board.title],
       ["description", board.description],
       ["code", board.code],
-      ...STATUSES.map(({ id, label }, index) => [
+      // A column per status the board uses, as the kanban NIP has them.
+      ...inStatusOrder(board.statuses).map((status, index) => [
         "col",
-        id,
-        label,
+        status,
+        statusLabel(status),
         String(index),
       ]),
       ...membershipTags(board.creator, board),

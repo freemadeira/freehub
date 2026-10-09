@@ -241,7 +241,7 @@ Boards and cards follow the draft kanban NIP used by [kanbanstr](https://github.
 
 | Kind | Event | Tags |
 | --- | --- | --- |
-| 30301 | Board | `d`, `title`, `description`, `code`, `col`, `p` (members, and viewers as `["p", pubkey, "", "viewer"]`), `a` (project, optional) |
+| 30301 | Board | `d`, `title`, `description`, `code`, `col` (status id, label, order), `p` (members, and viewers as `["p", pubkey, "", "viewer"]`), `a` (project, optional) |
 | 30302 | Card | `d`, `a` (board), `title`, `description`, `s` (status), `rank`, `number`, `p` (assignees), `priority`, `due`, `sprint`, `label` |
 | 30303 | Sprint | `d`, `a` (board), `title`, `number`, `status`, `start`, `end` |
 | 30304 | Project | `d`, `title`, `description`, `slug`, `color`, `p` (members and viewers, as on a board) |
@@ -252,6 +252,8 @@ Boards and cards follow the draft kanban NIP used by [kanbanstr](https://github.
 | 5 | Deleted board, project or comment ([NIP-09](https://github.com/nostr-protocol/nips/blob/master/09.md)) | `a` or `e`, `k` |
 
 `d` tags are 16 random hex characters, so every address (`kind:pubkey:d`) stays under the 100 characters that relays built on [eventstore](https://github.com/fiatjaf/eventstore), Haven among them, index for `#a` queries. Boards and projects made before that used longer `d` tags, so their cards, sprints, tables, records and comments are fetched by author instead and matched by address in the browser.
+
+A board's `col` tags are the statuses it uses, one per column, and a card's `s` tag holds its status's label, as the kanban NIP has them. A status the board doesn't use still gets a column while a card is in it, so no card drops out of sight.
 
 Each member publishes their own version of a card, sprint, CRM table, record or doc page under the same `d` tag, and the newest version from any member wins. Deleting one publishes a new version tagged `deleted`. A record keeps one `val` tag per value, so a multi-select holds several, and field values are stored as plain text: numbers as decimals, dates as `YYYY-MM-DD`, places as `lat,lng` in degrees, members as hex pubkeys and links to other records by their `d` tag.
 
@@ -282,7 +284,7 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 - Board codes and project links are checked against every board and project on the relay, but two made at the same moment can still match. Links then name the board with `?board=`, and one of the projects gets a `-2` link.
 - Removing someone from a board or project, or making them a viewer, hides the cards, sprints, CRM tables, records and doc pages whose newest version is theirs: each falls back to an older version or disappears, a table with its records. Comments on their versions are hidden too, and boards they made in a project move out of it. Adding them back as a member shows it all again.
 - Other clients of the kanban NIP, and copies of this app from before viewers, read a viewer as a member.
-- The statuses are fixed, after Linear's: Triage, Backlog, Todo, In progress, In review, Done, Canceled and Duplicate. A board lists them in its `col` tags only once it's saved, so other clients of the kanban NIP keep showing an older board's three columns until then. Copies of this app from before these statuses read the new ones as Todo.
+- The statuses are fixed, after Linear's: Triage, Backlog, Todo, In progress, In review, Done, Canceled and Duplicate. Each board picks which of them it uses, but can't rename or reorder them. Boards made before these statuses use To do, In progress and Done until their creator turns more on. Copies of this app from before these statuses read the new ones as Todo.
 - No file attachments yet.
 - A linked image in a description, such as a `[![badge](…)](…)` badge, loses its link once the description is edited.
 - A CRM record is saved as a whole, so two people changing different fields of the same record at the same moment can undo one another's change.

@@ -46,7 +46,7 @@ import {
   LABEL_OPTIONS,
   PRIORITY_OPTIONS,
   sprintOptions,
-  STATUS_OPTIONS,
+  statusOptions,
   useOptionShortcuts,
 } from "@/features/card/card-options";
 import { LabelDot, People, Person } from "@/features/card/card-parts";
@@ -395,7 +395,7 @@ function NewCardForm({
               set({ status });
             }
           }}
-          options={STATUS_OPTIONS}
+          options={statusOptions(board.statuses, properties.status)}
           value={properties.status}
         />
         <PillSelect

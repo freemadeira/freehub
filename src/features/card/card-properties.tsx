@@ -32,7 +32,7 @@ import type { Option } from "@/features/card/card-options";
 import {
   PRIORITY_OPTIONS,
   sprintOptions,
-  STATUS_OPTIONS,
+  statusOptions,
   useOptionShortcuts,
 } from "@/features/card/card-options";
 import { LabelDot, Muted, People, Person } from "@/features/card/card-parts";
@@ -209,11 +209,12 @@ function Property({ label, children }: { label: string; children: ReactNode }) {
 
 /** The properties as text, for viewers of the board. */
 function PropertyList({ card, className }: { card: Card; className?: string }) {
-  const { content } = useBoard();
+  const { board, content } = useBoard();
   const sprints = sprintOptions(sprintChoices(content.sprints, card.sprint));
+  const statuses = statusOptions(board.statuses, card.status);
   return (
     <dl className={cn(GRID, className)}>
-      <Property label="Status">{labelOf(STATUS_OPTIONS, card.status)}</Property>
+      <Property label="Status">{labelOf(statuses, card.status)}</Property>
       <Property label="Assignees">
         <People pubkeys={card.assignees} />
       </Property>
@@ -277,7 +278,7 @@ export function CardProperties({
             save({ status });
           }
         }}
-        options={STATUS_OPTIONS}
+        options={statusOptions(board.statuses, card.status)}
         value={card.status}
       />
       <Assignees

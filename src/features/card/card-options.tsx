@@ -9,7 +9,7 @@ import {
 import { LabelDot, Muted } from "@/features/card/card-parts";
 import { PriorityNoneIcon } from "@/features/card/priority-icons";
 import type { Label, Priority, Sprint, Status } from "@/lib/model";
-import { LABELS, PRIORITIES, STATUSES } from "@/lib/model";
+import { inStatusOrder, LABELS, PRIORITIES, statusLabel } from "@/lib/model";
 
 /** One choice in a card property picker. */
 export interface Option<T> {
@@ -19,26 +19,43 @@ export interface Option<T> {
   shortcut?: string;
 }
 
-/** Keyed like Linear's: triage 0, the rest 1 onwards in order. */
-const statusOptions: Option<Status>[] = STATUSES.map(({ id, label }, index) => {
-  const { icon: Icon, className } = STATUS_STYLES[id];
+function statusOption(status: Status, shortcut?: string): Option<Status> {
+  const { icon: Icon, className } = STATUS_STYLES[status];
   return {
     label: (
       <>
         <Icon className={className} />
-        {label}
+        {statusLabel(status)}
       </>
     ),
-    shortcut: String(index),
-    value: id,
+    shortcut,
+    value: status,
   };
-});
+}
 
-/** In key order, so triage comes last, as 0 does on the keyboard. */
-export const STATUS_OPTIONS: Option<Status>[] = [
-  ...statusOptions.slice(1),
-  ...statusOptions.slice(0, 1),
-];
+/**
+ * The statuses a board uses, keyed like Linear's: triage 0, the rest 1 onwards
+ * in order. A card in a status the board doesn't use keeps it on offer, with
+ * no key. In key order, so triage comes last, as 0 does on the keyboard.
+ */
+export function statusOptions(
+  statuses: readonly Status[],
+  current?: Status
+): Option<Status>[] {
+  const shortcuts = new Map<Status, string>(
+    inStatusOrder(statuses)
+      .filter((status) => status !== "triage")
+      .map((status, index) => [status, String(index + 1)])
+  );
+  if (statuses.includes("triage")) {
+    shortcuts.set("triage", "0");
+  }
+  const offered = inStatusOrder(current ? [...statuses, current] : statuses);
+  return [
+    ...offered.filter((status) => status !== "triage"),
+    ...offered.filter((status) => status === "triage"),
+  ].map((status) => statusOption(status, shortcuts.get(status)));
+}
 
 /**
  * Lets a picker's options be picked by their shortcut keys while it's open.

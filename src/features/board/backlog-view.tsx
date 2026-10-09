@@ -34,7 +34,7 @@ import {
   updateCard,
 } from "@/lib/actions";
 import type { Card, Sprint } from "@/lib/model";
-import { activeSprint, isClosed } from "@/lib/model";
+import { activeSprint, isClosed, startingStatus } from "@/lib/model";
 import { plural } from "@/lib/utils";
 
 const BACKLOG = "backlog";
@@ -51,7 +51,7 @@ interface DropBucketProps {
 }
 
 function DropBucket({ id, title, cards, actions }: DropBucketProps) {
-  const { canEdit, newCard } = useBoard();
+  const { board, canEdit, newCard } = useBoard();
   const { ref } = useDroppable({
     accept: "card",
     collisionPriority: CollisionPriority.Low,
@@ -66,7 +66,12 @@ function DropBucket({ id, title, cards, actions }: DropBucketProps) {
       {canEdit && (
         <AddButton
           label="Add card"
-          onClick={() => newCard({ sprint: sprintOf(id), status: "todo" })}
+          onClick={() =>
+            newCard({
+              sprint: sprintOf(id),
+              status: startingStatus(board.statuses),
+            })
+          }
         />
       )}
     </Bucket>

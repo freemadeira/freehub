@@ -35,10 +35,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { STATUS_STYLES } from "@/features/card/card-fields";
 import { useEveryBoard } from "@/hooks/use-boards";
 import { createBoard, deleteBoard, updateBoard } from "@/lib/actions";
-import type { Board } from "@/lib/model";
-import { canEdit, CODE, RESERVED_CODES } from "@/lib/model";
+import type { Board, Status } from "@/lib/model";
+import {
+  canEdit,
+  CODE,
+  DEFAULT_STATUSES,
+  isClosed,
+  RESERVED_CODES,
+  STATUSES,
+  workableStatuses,
+} from "@/lib/model";
 import type { Project } from "@/lib/project";
 
 const DIACRITICS = /\p{Diacritic}/gu;
@@ -171,6 +181,66 @@ function ProjectField({
   );
 }
 
+/**
+ * The statuses the board uses, as chips to switch on and off. The last open
+ * status and the last closed one stay on: cards need somewhere to start and
+ * somewhere to finish.
+ */
+function StatusesField({
+  value,
+  onChange,
+}: {
+  value: Status[];
+  onChange: (statuses: Status[]) => void;
+}) {
+  const id = useId();
+  const open = value.filter((status) => !isClosed(status)).length;
+  const closed = value.length - open;
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-sm font-medium select-none" id={id}>
+        Statuses
+      </span>
+      <ToggleGroup
+        aria-labelledby={id}
+        className="flex-wrap gap-1.5"
+        multiple
+        onValueChange={(next) =>
+          onChange(
+            STATUSES.flatMap(({ id: status }) =>
+              next.includes(status) ? [status] : []
+            )
+          )
+        }
+        value={value}
+      >
+        {STATUSES.map(({ id: status, label }) => {
+          const { icon: Icon, className } = STATUS_STYLES[status];
+          const on = value.includes(status);
+          const last = on && (isClosed(status) ? closed : open) === 1;
+          return (
+            <ToggleGroupItem
+              className="text-muted-foreground not-data-disabled:hover:text-foreground data-pressed:bg-card data-pressed:text-foreground data-pressed:shadow-surface not-data-pressed:not-data-disabled:hover:bg-foreground/5 border-foreground/15 flex h-7 items-center gap-1.5 rounded-full border border-dashed pr-2.5 pl-2 text-xs font-medium transition-[background-color,border-color,color,box-shadow,scale] duration-150 ease-out not-data-disabled:active:scale-[0.96] data-disabled:cursor-not-allowed data-pressed:border-transparent"
+              disabled={last}
+              key={status}
+              value={status}
+            >
+              <Icon
+                aria-hidden
+                className={cn(
+                  "size-3.5 shrink-0 transition-colors duration-150",
+                  on ? className : "text-muted-foreground/70"
+                )}
+              />
+              {label}
+            </ToggleGroupItem>
+          );
+        })}
+      </ToggleGroup>
+    </div>
+  );
+}
+
 function DeleteBoard({
   board,
   onDeleted,
@@ -237,6 +307,7 @@ function initialDraft(
     description: "",
     members: project?.members ?? [pubkey],
     project: project?.address,
+    statuses: [...DEFAULT_STATUSES],
     title: "",
     viewers: project?.viewers ?? [],
   };
@@ -258,6 +329,7 @@ function BoardForm({
   const [code, setCode] = useState(initial.code);
   const [codeEdited, setCodeEdited] = useState(board !== undefined);
   const [description, setDescription] = useState(initial.description);
+  const [statuses, setStatuses] = useState(initial.statuses);
   const [roster, setRoster] = useState(() => toRoster(initial));
   const [projectAddress, setProjectAddress] = useState(initial.project);
   // Viewers of a project can't put boards in it; a board already there stays.
@@ -269,7 +341,11 @@ function BoardForm({
   const everyBoard = useEveryBoard();
 
   const codeError = validateCode(code, [...boards, ...everyBoard], board);
-  const valid = title.trim() !== "" && code !== "" && !codeError;
+  const valid =
+    title.trim() !== "" &&
+    code !== "" &&
+    !codeError &&
+    workableStatuses(statuses);
 
   const changeTitle = (value: string) => {
     setTitle(value);
@@ -288,6 +364,7 @@ function BoardForm({
       code,
       description: description.trim(),
       project: projectAddress,
+      statuses,
       title: title.trim(),
     };
     if (board) {
@@ -344,6 +421,8 @@ function BoardForm({
           value={projectAddress}
         />
       )}
+
+      <StatusesField onChange={setStatuses} value={statuses} />
 
       <MembersField
         creator={board?.creator ?? pubkey}

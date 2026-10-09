@@ -17,7 +17,7 @@ import { SortableCardRow } from "@/features/board/card-tile";
 import { useStatusDrag } from "@/features/board/kanban";
 import { STATUS_STYLES } from "@/features/card/card-fields";
 import type { Board, Card, Sprint, Status } from "@/lib/model";
-import { isClosed, STATUSES } from "@/lib/model";
+import { isClosed, STATUSES, startingStatus } from "@/lib/model";
 import { readStorage, writeStorage } from "@/lib/utils";
 
 function foldedKey(board: Pick<Board, "address">): string {
@@ -141,7 +141,12 @@ export function CardList({ cards, sprint }: CardListProps) {
         <EmptyTitle>No cards</EmptyTitle>
         {canEdit && (
           <Button
-            onClick={() => newCard({ sprint: sprint.id, status: "todo" })}
+            onClick={() =>
+              newCard({
+                sprint: sprint.id,
+                status: startingStatus(board.statuses),
+              })
+            }
           >
             <PlusIcon />
             Add card
@@ -160,7 +165,7 @@ export function CardList({ cards, sprint }: CardListProps) {
             key={id}
             label={label}
             onAdd={
-              canEdit && !isClosed(id)
+              canEdit && board.statuses.includes(id) && !isClosed(id)
                 ? () => newCard({ sprint: sprint.id, status: id })
                 : undefined
             }

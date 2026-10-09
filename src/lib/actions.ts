@@ -18,6 +18,7 @@ import {
   isClosed,
   newId,
   sprintTemplate,
+  startingStatus,
   statusKind,
   tombstoneTemplate,
   upcomingSprint,
@@ -30,7 +31,13 @@ const SPRINT_DAYS = 15;
 
 export type BoardDraft = Pick<
   Board,
-  "code" | "title" | "description" | "members" | "viewers" | "project"
+  | "code"
+  | "title"
+  | "description"
+  | "members"
+  | "viewers"
+  | "project"
+  | "statuses"
 >;
 export type ProjectDraft = Omit<ProjectFields, "id" | "creator">;
 export type NewCard = Pick<CardFields, "title" | "status" | "rank"> &
@@ -154,8 +161,8 @@ export function startSprint(
 }
 
 /**
- * Open cards roll over to the next future sprint, those under way back to todo;
- * closed cards stay with the ended one.
+ * Open cards roll over to the next future sprint, those under way back to
+ * where new cards start; closed cards stay with the ended one.
  */
 export function endSprint(
   board: Board,
@@ -176,7 +183,9 @@ export function endSprint(
     changes.push(
       updateCard(board, card, {
         sprint: next,
-        ...(statusKind(card.status) === "started" ? { status: "todo" } : {}),
+        ...(statusKind(card.status) === "started"
+          ? { status: startingStatus(board.statuses) }
+          : {}),
       })
     );
   }

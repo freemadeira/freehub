@@ -75,21 +75,29 @@ interface KanbanProps {
   sprint: Sprint;
 }
 
-/** Cards in a column per status. */
+/**
+ * Cards in a column per status the board uses. Any other status shows only
+ * while cards are in it, so none of them go missing.
+ */
 export function Kanban({ cards, sprint }: KanbanProps) {
-  const { canEdit, newCard } = useBoard();
+  const { board, canEdit, newCard } = useBoard();
   const drag = useStatusDrag(cards);
+  // Which columns show goes by the cards before the drag, so a column emptied
+  // by it stays put until the drop.
+  const shown = STATUSES.filter(
+    ({ id }) => board.statuses.includes(id) || drag.columns[id].length > 0
+  );
 
   return (
     <DragDropProvider {...drag.props}>
       <div className="-mx-4 grid min-h-0 grow auto-cols-[minmax(17rem,1fr)] grid-flow-col grid-rows-1 gap-3 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6">
-        {STATUSES.map(({ id, label }) => (
+        {shown.map(({ id, label }) => (
           <Column
             cards={drag.groups[id]}
             key={id}
             label={label}
             onAdd={
-              canEdit && !isClosed(id)
+              canEdit && board.statuses.includes(id) && !isClosed(id)
                 ? () => newCard({ sprint: sprint.id, status: id })
                 : undefined
             }
