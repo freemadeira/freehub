@@ -1,5 +1,5 @@
 import { MotionConfig } from "motion/react";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import type { DefaultParams } from "wouter";
 import { Redirect, Route, Switch, useRoute, useSearchParams } from "wouter";
 
@@ -14,7 +14,12 @@ import { getConfig } from "@/config";
 import { BoardRoute, findBoard, parseSlug } from "@/features/board/board-route";
 import { UploadTray } from "@/features/drive/upload-tray";
 import { HomePage } from "@/features/home/home-page";
+import { InboxContext } from "@/features/inbox/inbox-context";
 import { INBOX_PATH, InboxPage } from "@/features/inbox/inbox-page";
+import {
+  useAppBadge,
+  useSystemNotifications,
+} from "@/features/inbox/use-system-notifications";
 import { LoginPage } from "@/features/login/login-page";
 import { MAP_PATH } from "@/features/map/map-path";
 import { ProjectDialog } from "@/features/projects/project-dialog";
@@ -26,10 +31,14 @@ import { useObservableValue } from "@/hooks/use-observable-value";
 import { useProjectTables } from "@/hooks/use-project-content";
 import { useProjects } from "@/hooks/use-projects";
 import { hasBlossom } from "@/lib/blossom";
+import type { Board } from "@/lib/model";
 import { accounts } from "@/lib/nostr";
+import { startNotifications } from "@/lib/notify";
+import type { Project } from "@/lib/project";
 import { inProject } from "@/lib/project";
-import { access$ } from "@/lib/relays";
+import { access$, sync } from "@/lib/relays";
 import { signerState$ } from "@/lib/signer";
+import { subscriptionFilters } from "@/lib/subscribe";
 
 // regexparam's types misread several optional segments in a row.
 interface ProjectParams extends DefaultParams {
@@ -65,6 +74,25 @@ function RouteFallback() {
   );
 }
 
+/**
+ * Everyone on the user's boards and projects keeps a list of what they
+ * subscribe to; changing a card tells whoever's list names it.
+ */
+function useTeamSubscriptions(boards: Board[], projects: Project[]): void {
+  const people = [
+    ...new Set(
+      [...boards, ...projects].flatMap(({ members, viewers }) => [
+        ...members,
+        ...viewers,
+      ])
+    ),
+  ].toSorted();
+  useObservableValue(
+    () => sync(subscriptionFilters(people)),
+    [people.join(",")]
+  );
+}
+
 function Workspace({ pubkey }: { pubkey: string }) {
   const { boards, loaded: boardsLoaded } = useBoards(pubkey);
   const { projects, loaded: projectsLoaded } = useProjects(pubkey);
@@ -78,7 +106,12 @@ function Workspace({ pubkey }: { pubkey: string }) {
     docs,
     loaded: boardsLoaded && projectsLoaded && docsLoaded,
     projects,
+    tables,
   });
+  useTeamSubscriptions(boards, projects);
+  useSystemNotifications(inbox, pubkey);
+  useAppBadge(inbox.unread);
+  useEffect(() => startNotifications(pubkey), [pubkey]);
   const [creatingProject, setCreatingProject] = useState(false);
   const [, params] = useRoute<{ slug: string }>("/:slug");
   const [search] = useSearchParams();
@@ -92,83 +125,85 @@ function Workspace({ pubkey }: { pubkey: string }) {
   const newProject = () => setCreatingProject(true);
 
   return (
-    <SidebarProvider>
-      <AppSidebar
-        boards={boards}
-        docs={docs}
-        drive={drive ? trees : undefined}
-        onNewProject={newProject}
-        projects={projects}
-        pubkey={pubkey}
-        tables={tables}
-        unread={inbox.unread}
-      />
-      <SidebarInset>
-        <Switch>
-          <Route path="/">
-            <HomePage
-              boards={boards}
-              loaded={boardsLoaded && projectsLoaded}
-              onNewProject={newProject}
-              projects={projects}
-              pubkey={pubkey}
-              tables={tables}
-            />
-          </Route>
-          <Route<ProjectParams> path="/p/:project/:table?/:record?">
-            {(route) => (
-              <Suspense fallback={<RouteFallback />}>
-                <ProjectRoute
-                  boards={boards}
-                  docs={docs}
-                  docsLoaded={projectsLoaded && docsLoaded}
-                  loaded={projectsLoaded}
-                  projects={projects}
-                  pubkey={pubkey}
-                  recordId={route.record}
-                  slug={route.project}
-                  tableSlug={route.table}
-                />
-              </Suspense>
-            )}
-          </Route>
-          <Route path={INBOX_PATH}>
-            <InboxPage inbox={inbox} />
-          </Route>
-          {getConfig().map && (
-            <Route path={MAP_PATH}>
-              <Suspense fallback={<RouteFallback />}>
-                <MapRoute projects={projects} pubkey={pubkey} />
-              </Suspense>
-            </Route>
-          )}
-          {slug && (
-            <Route path="/:slug">
-              <BoardRoute
-                board={board}
+    <InboxContext value={inbox}>
+      <SidebarProvider>
+        <AppSidebar
+          boards={boards}
+          docs={docs}
+          drive={drive ? trees : undefined}
+          onNewProject={newProject}
+          projects={projects}
+          pubkey={pubkey}
+          tables={tables}
+          unread={inbox.unread}
+        />
+        <SidebarInset>
+          <Switch>
+            <Route path="/">
+              <HomePage
                 boards={boards}
-                cardNumber={slug.number}
-                code={slug.code}
-                loaded={boardsLoaded}
-                project={boardProject}
+                loaded={boardsLoaded && projectsLoaded}
+                onNewProject={newProject}
                 projects={projects}
                 pubkey={pubkey}
+                tables={tables}
               />
             </Route>
-          )}
-          <Route>
-            <Redirect replace to="/" />
-          </Route>
-        </Switch>
-      </SidebarInset>
-      <ProjectDialog
-        onOpenChange={setCreatingProject}
-        open={creatingProject}
-        projects={projects}
-        pubkey={pubkey}
-      />
-      {drive && <UploadTray trees={trees} />}
-    </SidebarProvider>
+            <Route<ProjectParams> path="/p/:project/:table?/:record?">
+              {(route) => (
+                <Suspense fallback={<RouteFallback />}>
+                  <ProjectRoute
+                    boards={boards}
+                    docs={docs}
+                    docsLoaded={projectsLoaded && docsLoaded}
+                    loaded={projectsLoaded}
+                    projects={projects}
+                    pubkey={pubkey}
+                    recordId={route.record}
+                    slug={route.project}
+                    tableSlug={route.table}
+                  />
+                </Suspense>
+              )}
+            </Route>
+            <Route path={INBOX_PATH}>
+              <InboxPage inbox={inbox} pubkey={pubkey} />
+            </Route>
+            {getConfig().map && (
+              <Route path={MAP_PATH}>
+                <Suspense fallback={<RouteFallback />}>
+                  <MapRoute projects={projects} pubkey={pubkey} />
+                </Suspense>
+              </Route>
+            )}
+            {slug && (
+              <Route path="/:slug">
+                <BoardRoute
+                  board={board}
+                  boards={boards}
+                  cardNumber={slug.number}
+                  code={slug.code}
+                  loaded={boardsLoaded}
+                  project={boardProject}
+                  projects={projects}
+                  pubkey={pubkey}
+                />
+              </Route>
+            )}
+            <Route>
+              <Redirect replace to="/" />
+            </Route>
+          </Switch>
+        </SidebarInset>
+        <ProjectDialog
+          onOpenChange={setCreatingProject}
+          open={creatingProject}
+          projects={projects}
+          pubkey={pubkey}
+        />
+        {drive && <UploadTray trees={trees} />}
+      </SidebarProvider>
+    </InboxContext>
   );
 }
 

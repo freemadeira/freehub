@@ -40,6 +40,7 @@ import {
 } from "@/components/markdown-editor/toolbar";
 import { PageSync } from "@/features/docs/page-sync";
 import { useProfileNames } from "@/hooks/use-profile-names";
+import { onLeave } from "@/lib/leaving";
 import { mentionNames } from "@/lib/mentions";
 
 export interface PageEditorHandle {
@@ -203,9 +204,11 @@ export function PageEditor({
     };
     addEventListener("beforeunload", keep);
     document.addEventListener("visibilitychange", hidden);
+    const stop = onLeave(() => created.save());
     return () => {
       removeEventListener("beforeunload", keep);
       document.removeEventListener("visibilitychange", hidden);
+      stop();
       created.save();
       created.dispose();
       sync.current = null;

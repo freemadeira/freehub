@@ -17,8 +17,13 @@ const MarkdownViewer = lazy(async () => {
 export interface MarkdownEditorProps {
   /** Markdown to show. A new value replaces the text unless it's being edited. */
   value: string;
-  /** The edited markdown, once the editor loses focus or closes, or on submit. */
-  onValueCommitted: (markdown: string) => void;
+  /**
+   * The edited markdown, once the editor loses focus or closes, or on submit,
+   * with the people picked from the "@" list since the last commit.
+   */
+  onValueCommitted: (markdown: string, picked: ReadonlySet<string>) => void;
+  /** People who can be mentioned with "@". Without them, "@" is just text. */
+  people?: string[];
   /** Mod+Enter, with the markdown as it stands. */
   onSubmit?: (markdown: string) => void;
   onKeyDown?: KeyboardEventHandler<HTMLDivElement>;

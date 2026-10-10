@@ -3,6 +3,7 @@ import {
   ChevronsUpDownIcon,
   CopyIcon,
   LogOutIcon,
+  MonitorDownIcon,
   MonitorIcon,
   MoonIcon,
   SunIcon,
@@ -38,6 +39,7 @@ import { useObservableValue } from "@/hooks/use-observable-value";
 import { useProfile } from "@/hooks/use-profile";
 import { logout } from "@/lib/login";
 import { unsynced$ } from "@/lib/publish";
+import { useInstall } from "@/lib/pwa";
 import type { Theme } from "@/lib/theme";
 import { setTheme, theme$ } from "@/lib/theme";
 import { plural, shortNpub } from "@/lib/utils";
@@ -88,6 +90,8 @@ export function UserMenu({ pubkey }: { pubkey: string }) {
   const theme = useObservableValue(theme$);
   const pending = useObservableValue(unsynced$) ?? 0;
   const [confirming, setConfirming] = useState(false);
+  // Only Chrome and Edge offer to install; elsewhere the browser's menu does.
+  const install = useInstall();
 
   const copyNpub = async () => {
     if (await copyText(npubEncode(pubkey))) {
@@ -125,6 +129,12 @@ export function UserMenu({ pubkey }: { pubkey: string }) {
             <CopyIcon />
             Copy npub
           </DropdownMenuItem>
+          {install && (
+            <DropdownMenuItem onClick={install}>
+              <MonitorDownIcon />
+              Install app
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
             <DropdownMenuLabel>Theme</DropdownMenuLabel>

@@ -15,6 +15,8 @@ export const DOC_PAGE_KIND = 30_307;
 export const SOURCE_KIND = 30_308;
 export const DRIVE_FOLDER_KIND = 30_309;
 export const DRIVE_FILE_KIND = 30_310;
+/** NIP-78 app data: each person's own inbox marks, follows and devices. */
+export const APP_DATA_KIND = 30_078;
 export const COMMENT_KIND = 1111;
 export const DELETE_KIND = 5;
 
@@ -112,9 +114,15 @@ export interface CardFields {
   due?: string;
   labels: Label[];
   sprint?: string;
+  /** Who made the card, and when. Cards made before these were kept have neither. */
+  creator?: string;
+  createdAt?: number;
 }
 
 export type Card = CardFields & { author: string; event: NostrEvent };
+
+/** What telling people about a card needs of it: where it is and whose it is. */
+export type CardRef = Pick<Card, "id" | "author" | "creator" | "assignees">;
 
 export interface SprintFields {
   id: string;
@@ -149,6 +157,11 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/u;
 const ID_BYTES = 8;
 /** The role on a `p` tag of someone who can only read the board or project. */
 const VIEWER = "viewer";
+/**
+ * The role on a comment's `p` tag of someone told because they subscribe to
+ * what it's on, rather than because it mentions them or answers them.
+ */
+const SUBSCRIBER = "subscriber";
 export const CODE = /^[A-Z][A-Z0-9]{0,9}$/u;
 /** Codes taken by app pages, which share the top-level path with boards. */
 export const RESERVED_CODES: ReadonlySet<string> = new Set(["INBOX", "MAP"]);
@@ -284,7 +297,8 @@ function findStatus(value: string | undefined): Status | undefined {
   )?.id;
 }
 
-function parseStatus(value: string | undefined): Status {
+/** A card's status from its `s` tag, which holds the label. */
+export function parseStatus(value: string | undefined): Status {
   return findStatus(value) ?? "todo";
 }
 
@@ -395,6 +409,8 @@ function parseCard(event: NostrEvent, id: string): Card {
       ),
     ],
     author: event.pubkey,
+    createdAt: integer(getTagValue(event, "created")),
+    creator: [getTagValue(event, "creator")].find(isPubkey),
     description: getTagValue(event, "description") ?? event.content,
     due: date(getTagValue(event, "due")),
     event,
@@ -584,6 +600,12 @@ export function cardTemplate(board: Board, card: CardFields): Template {
   for (const label of card.labels) {
     tags.push(["label", label]);
   }
+  if (card.creator) {
+    tags.push(["creator", card.creator]);
+  }
+  if (card.createdAt !== undefined) {
+    tags.push(["created", String(card.createdAt)]);
+  }
   tags.push(["alt", `Kanban card: ${card.title}`]);
   return { content: "", kind: CARD_KIND, tags };
 }
@@ -614,12 +636,39 @@ export function tombstoneTemplate(board: Board, item: Card | Sprint): Template {
   return { content: "", kind: item.event.kind, tags };
 }
 
-/** A NIP-22 comment on a card, with a `p` tag for everyone it mentions. */
-export function commentTemplate(card: Card, content: string): Template {
-  const address = `${CARD_KIND}:${card.author}:${card.id}`;
-  const mentioned = mentionedPubkeys(content).filter(
-    (pubkey) => pubkey !== card.author
+/**
+ * A `p` tag per person, once each: the author of what's commented on, as
+ * NIP-22 has it, everyone mentioned, and each subscriber, whose tag says so.
+ */
+export function commentPeopleTags(
+  author: string,
+  mentioned: string[],
+  subscribers: string[]
+): string[][] {
+  const subscribed = new Set(subscribers);
+  return [...new Set([author, ...mentioned, ...subscribers])].map((pubkey) =>
+    subscribed.has(pubkey) ? ["p", pubkey, "", SUBSCRIBER] : ["p", pubkey]
   );
+}
+
+/** Whether the event is addressed to the person as a subscriber. */
+export function toSubscriber(event: NostrEvent, pubkey: string): boolean {
+  return event.tags.some(
+    ([name, value, , role]) =>
+      name === "p" && value === pubkey && role === SUBSCRIBER
+  );
+}
+
+/**
+ * A NIP-22 comment on a card, with a `p` tag for everyone it mentions and
+ * every subscriber, so the relay routes it to them.
+ */
+export function commentTemplate(
+  card: Card,
+  content: string,
+  subscribers: string[]
+): Template {
+  const address = `${CARD_KIND}:${card.author}:${card.id}`;
   return {
     content,
     kind: COMMENT_KIND,
@@ -629,8 +678,7 @@ export function commentTemplate(card: Card, content: string): Template {
       ["P", card.author],
       ["a", address],
       ["k", String(CARD_KIND)],
-      ["p", card.author],
-      ...mentioned.map((pubkey) => ["p", pubkey]),
+      ...commentPeopleTags(card.author, mentionedPubkeys(content), subscribers),
     ],
   };
 }

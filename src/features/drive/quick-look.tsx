@@ -20,7 +20,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useDrive } from "@/features/drive/drive-state";
 import { FileIcon } from "@/features/drive/file-icon";
 import { FilePanel } from "@/features/drive/file-panel";
-import { useFileComments } from "@/hooks/use-drive";
+import { useReadSubject } from "@/features/inbox/inbox-context";
 import { parseCsv } from "@/lib/csv";
 import type { DriveFile } from "@/lib/drive";
 import {
@@ -32,8 +32,8 @@ import {
 import { downloadFile, markOpened, setStarred } from "@/lib/drive-actions";
 import type { Opened } from "@/lib/drive-files";
 import { fileSource, preload, thumbSource, useOpened } from "@/lib/drive-files";
-import { inboxStore } from "@/lib/inbox";
-import { mentions } from "@/lib/mentions";
+import { DRIVE_FILE_KIND } from "@/lib/model";
+import { subjectOf } from "@/lib/notifications";
 import { formatBytes, readStorage, writeStorage } from "@/lib/utils";
 
 const PANEL_KEY = "drive:panel";
@@ -362,24 +362,6 @@ function usePreload(files: DriveFile[]) {
   }, [files]);
 }
 
-/** The person's mentions in the file's comments count as read once they look at it. */
-function useReadMentions(file: DriveFile) {
-  const { project, pubkey } = useDrive();
-  const comments = useFileComments(project, file);
-  const mentionKey = comments
-    .filter(
-      (comment) =>
-        comment.author !== pubkey && mentions(comment.content, pubkey)
-    )
-    .map((comment) => comment.id)
-    .join(",");
-  useEffect(() => {
-    if (mentionKey) {
-      inboxStore(pubkey).setRead(mentionKey.split(","), true);
-    }
-  }, [mentionKey, pubkey]);
-}
-
 function Viewer({
   file,
   files,
@@ -398,7 +380,7 @@ function Viewer({
   const starred = drive.starred(file.id);
   const opened = useOpened(fileSource(file));
   usePreload([previous, next].filter((item) => item !== undefined));
-  useReadMentions(file);
+  useReadSubject(subjectOf(DRIVE_FILE_KIND, file.id));
 
   const { pubkey } = drive;
   const project = drive.project.address;

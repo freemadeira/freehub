@@ -18,7 +18,6 @@ import {
   MemberAvatars,
 } from "@/features/boards/board-card";
 import { BoardDialog } from "@/features/boards/board-dialog";
-import { tablePath } from "@/features/crm/crm-context";
 import { NewTableDialog } from "@/features/crm/new-table-dialog";
 import { TableIcon } from "@/features/crm/table-icon";
 import { PageGrid, useNewPage } from "@/features/docs/docs-page";
@@ -35,6 +34,7 @@ import { uploadFiles } from "@/lib/drive-upload";
 import type { Board } from "@/lib/model";
 import { canEdit } from "@/lib/model";
 import { SWATCH_COLORS } from "@/lib/palette";
+import { tablePath } from "@/lib/paths";
 import type { Project } from "@/lib/project";
 import { inProject } from "@/lib/project";
 

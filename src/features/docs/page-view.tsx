@@ -24,12 +24,12 @@ import type { PageEditorHandle } from "@/features/docs/page-editor";
 import { PageEditor } from "@/features/docs/page-editor";
 import { PageIcon } from "@/features/docs/page-icon";
 import { PageMenu } from "@/features/docs/page-menu";
+import { useReadSubject } from "@/features/inbox/inbox-context";
 import type { DocPage, DocsContent } from "@/lib/docs";
 import { ancestors, pageMentions, pageTemplate, pageTitle } from "@/lib/docs";
 import { createPage, isPageDeleted, updatePage } from "@/lib/docs-actions";
-import { inboxStore } from "@/lib/inbox";
-import { canEdit } from "@/lib/model";
-import { pageNotification } from "@/lib/notifications";
+import { canEdit, DOC_PAGE_KIND } from "@/lib/model";
+import { subjectOf } from "@/lib/notifications";
 import type { Project } from "@/lib/project";
 import { publish } from "@/lib/publish";
 
@@ -311,13 +311,7 @@ export function PageView({ project, docs, page, pubkey }: PageViewProps) {
   const article = useRef<HTMLElement>(null);
   useRevealMention(article, pubkey);
 
-  // Seeing the page counts as reading its mention of you.
-  const mentionId = pageNotification(page.event, pubkey)?.id;
-  useEffect(() => {
-    if (mentionId) {
-      inboxStore(pubkey).setRead([mentionId], true);
-    }
-  }, [mentionId, pubkey]);
+  useReadSubject(subjectOf(DOC_PAGE_KIND, page.id));
 
   return (
     <>

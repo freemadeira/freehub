@@ -10,6 +10,7 @@ import type {
 } from "@/lib/crm";
 import {
   activityTemplate,
+  assignmentTemplate,
   recordTemplate,
   recordTombstoneTemplate,
   stageField,
@@ -70,35 +71,74 @@ function withMove(
   };
 }
 
-export function createRecord(
+/**
+ * Tells people just put in one of the record's member fields, unless they put
+ * themselves there.
+ */
+function tellAssigned(
   table: CrmTable,
-  record: NewRecord
-): Promise<boolean> {
-  return publish(
-    recordTemplate(
-      table,
-      withMove(table, undefined, {
-        createdAt: unixNow(),
-        creator: accounts.active?.pubkey,
-        id: newId(),
-        moves: [],
-        rank: record.rank ?? 0,
-        title: record.title,
-        values: record.values ?? {},
+  record: Pick<CrmRecord, "author" | "id">,
+  before: CrmRecordFields["values"],
+  after: CrmRecordFields["values"]
+): Promise<boolean[]> {
+  const me = accounts.active?.pubkey;
+  return Promise.all(
+    table.fields
+      .filter((field) => field.type === "member")
+      .flatMap((field) => {
+        const had = new Set(before[field.id]);
+        const added = (after[field.id] ?? []).filter(
+          (pubkey) => !had.has(pubkey) && pubkey !== me
+        );
+        return added.length > 0
+          ? [publish(assignmentTemplate(record, field, added))]
+          : [];
       })
-    )
   );
 }
 
-export function updateRecord(
+/** Saves a new record, telling no one: imports would flood people. */
+async function saveNewRecord(
+  table: CrmTable,
+  record: NewRecord
+): Promise<CrmRecordFields | undefined> {
+  const fields = withMove(table, undefined, {
+    createdAt: unixNow(),
+    creator: accounts.active?.pubkey,
+    id: newId(),
+    moves: [],
+    rank: record.rank ?? 0,
+    title: record.title,
+    values: record.values ?? {},
+  });
+  return (await publish(recordTemplate(table, fields))) ? fields : undefined;
+}
+
+/** A new record. Anyone put in its member fields hears about it. */
+export async function createRecord(
+  table: CrmTable,
+  record: NewRecord
+): Promise<boolean> {
+  const fields = await saveNewRecord(table, record);
+  const author = accounts.active?.pubkey;
+  if (!(fields && author)) {
+    return false;
+  }
+  await tellAssigned(table, { author, id: fields.id }, {}, fields.values);
+  return true;
+}
+
+export async function updateRecord(
   table: CrmTable,
   record: CrmRecord,
   changes: Partial<CrmRecordFields>
 ): Promise<boolean> {
-  return publish(
-    recordTemplate(table, withMove(table, record, { ...record, ...changes })),
-    record.event
-  );
+  const next = withMove(table, record, { ...record, ...changes });
+  if (!(await publish(recordTemplate(table, next), record.event))) {
+    return false;
+  }
+  await tellAssigned(table, record, record.values, next.values);
+  return true;
 }
 
 export function setValues(
@@ -146,7 +186,7 @@ export async function importRecords(
     if (!next) {
       return;
     }
-    if (await createRecord(table, next)) {
+    if (await saveNewRecord(table, next)) {
       saved += 1;
     }
     done += 1;

@@ -1,6 +1,7 @@
 import { createContext, use } from "react";
 
 import type { CrmRecord, CrmTable, ProjectContent } from "@/lib/crm";
+import { recordPath } from "@/lib/paths";
 import type { Project } from "@/lib/project";
 
 export interface CrmScope {
@@ -24,20 +25,6 @@ export function useCrm(): CrmScope {
     throw new Error("useCrm needs a CrmContext provider.");
   }
   return scope;
-}
-
-export function tablePath(project: Project, table: CrmTable): string {
-  return `/p/${project.slug}/${table.slug}`;
-}
-
-export function recordPath(
-  project: Project,
-  table: CrmTable,
-  record: Pick<CrmRecord, "id">,
-  query?: URLSearchParams
-): string {
-  const search = query?.toString();
-  return `${tablePath(project, table)}/${record.id}${search ? `?${search}` : ""}`;
 }
 
 /** Where a linked record lives, which may be another table of the project. */

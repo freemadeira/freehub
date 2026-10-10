@@ -382,6 +382,10 @@ function NewCardForm({
           onValueCommitted={(markdown) =>
             setDraft((draft) => ({ ...draft, description: markdown }))
           }
+          // Anyone who can read the card, viewers too, can be pointed at it.
+          people={[...board.members, ...board.viewers].filter(
+            (person) => person !== pubkey
+          )}
           placeholder="Add a description…"
           value={description}
         />

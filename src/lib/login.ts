@@ -11,11 +11,13 @@ import {
 
 import { getConfig } from "@/config";
 import {
+  APP_DATA_KIND,
   BOARD_KIND,
   CARD_KIND,
   COMMENT_KIND,
   CRM_RECORD_KIND,
   CRM_TABLE_KIND,
+  DOC_PAGE_KIND,
   DRIVE_FILE_KIND,
   DRIVE_FOLDER_KIND,
   PROJECT_KIND,
@@ -24,21 +26,28 @@ import {
 import { accounts } from "@/lib/nostr";
 import { sleep, TimeoutError, withTimeout } from "@/lib/utils";
 
-const PERMISSIONS = NostrConnectSigner.buildSigningPermissions([
-  22_242,
-  BOARD_KIND,
-  CARD_KIND,
-  SPRINT_KIND,
-  PROJECT_KIND,
-  CRM_TABLE_KIND,
-  CRM_RECORD_KIND,
-  DRIVE_FOLDER_KIND,
-  DRIVE_FILE_KIND,
-  COMMENT_KIND,
-  5,
-  // Blossom's authorization for uploading and deleting files.
-  24_242,
-]);
+const PERMISSIONS = [
+  ...NostrConnectSigner.buildSigningPermissions([
+    22_242,
+    BOARD_KIND,
+    CARD_KIND,
+    SPRINT_KIND,
+    PROJECT_KIND,
+    CRM_TABLE_KIND,
+    CRM_RECORD_KIND,
+    DOC_PAGE_KIND,
+    DRIVE_FOLDER_KIND,
+    DRIVE_FILE_KIND,
+    APP_DATA_KIND,
+    COMMENT_KIND,
+    5,
+    // Blossom's authorization for uploading and deleting files.
+    24_242,
+  ]),
+  // Inbox marks and devices to push to are encrypted to the notifier.
+  "nip44_encrypt",
+  "nip44_decrypt",
+];
 
 const EXTENSION_TIMEOUT = 60_000;
 const CONNECT_TIMEOUT = 30_000;

@@ -7,6 +7,15 @@
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#fbf7f0" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!--
+      No apple-mobile-web-app-status-bar-style: its translucent bar runs the
+      page under iOS 26's status bar blur. The default bar follows theme-color.
+    -->
     <title>Kanban</title>
     <script>
       try {
@@ -17,6 +26,9 @@
             matchMedia("(prefers-color-scheme: dark)").matches);
         document.documentElement.classList.toggle("dark", dark);
         document.documentElement.style.colorScheme = dark ? "dark" : "light";
+        document.querySelector('meta[name="theme-color"]').content = dark
+          ? "#090506"
+          : "#fbf7f0";
       } catch {}
     </script>
   </head>

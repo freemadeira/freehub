@@ -1,10 +1,15 @@
+import { unixNow } from "applesauce-core/helpers/time";
 import { addDays, format } from "date-fns";
 
+import { descriptionMentionTemplate } from "@/lib/card-activity";
+import { noteCardChange, tellChanges } from "@/lib/card-changes";
+import { mentionedPubkeys } from "@/lib/mentions";
 import type {
   Board,
   BoardContent,
   Card,
   CardFields,
+  CardRef,
   Comment,
   Sprint,
   SprintFields,
@@ -23,9 +28,12 @@ import {
   tombstoneTemplate,
   upcomingSprint,
 } from "@/lib/model";
+import { accounts } from "@/lib/nostr";
 import type { Project, ProjectFields } from "@/lib/project";
 import { deleteProjectTemplate, projectTemplate } from "@/lib/project";
 import { publish } from "@/lib/publish";
+import { setSubscribed, subscriptionsOf } from "@/lib/subscribe";
+import { cardSubscribers, isSubscribed } from "@/lib/subscriptions";
 
 const SPRINT_DAYS = 15;
 
@@ -83,29 +91,99 @@ export function deleteProject(project: Project): Promise<boolean> {
   return publish(deleteProjectTemplate(project));
 }
 
-export function createCard(
+/** People just picked from the "@" list who the text still mentions, but not oneself. */
+function newlyMentioned(text: string, picked: ReadonlySet<string>): string[] {
+  const me = accounts.active?.pubkey;
+  return mentionedPubkeys(text).filter(
+    (pubkey) => picked.has(pubkey) && pubkey !== me
+  );
+}
+
+/** Tells people picked into the description that it mentions them. */
+function tellMentioned(
+  card: CardRef,
+  description: string,
+  picked: ReadonlySet<string>
+): Promise<boolean> {
+  const mentioned = newlyMentioned(description, picked);
+  return mentioned.length > 0
+    ? publish(descriptionMentionTemplate(card, mentioned))
+    : Promise.resolve(true);
+}
+
+/**
+ * A new card, made by the person signed in. Whoever it's assigned to hears
+ * about it, and so does anyone its description mentions.
+ */
+export async function createCard(
   board: Board,
   content: BoardContent,
   card: NewCard
 ): Promise<boolean> {
-  return publish(
-    cardTemplate(board, {
-      assignees: [],
-      description: "",
-      labels: [],
-      ...card,
-      id: newId(),
-      number: content.nextNumber,
-    })
-  );
+  const creator = accounts.active?.pubkey;
+  if (!creator) {
+    return false;
+  }
+  const fields: CardFields = {
+    assignees: [],
+    description: "",
+    labels: [],
+    ...card,
+    createdAt: unixNow(),
+    creator,
+    id: newId(),
+    number: content.nextNumber,
+  };
+  if (!(await publish(cardTemplate(board, fields)))) {
+    return false;
+  }
+  const created = { ...fields, author: creator };
+  const assigned = fields.assignees.filter((pubkey) => pubkey !== creator);
+  await Promise.all([
+    tellChanges(
+      board,
+      created,
+      assigned.length > 0
+        ? [{ added: assigned, field: "assignees", removed: [] }]
+        : []
+    ),
+    // Every mention in a new card is new.
+    tellMentioned(
+      created,
+      fields.description,
+      new Set(mentionedPubkeys(fields.description))
+    ),
+  ]);
+  return true;
 }
 
-export function updateCard(
+/** Saves the card as is, telling no one: for changes made in bulk, like ending a sprint. */
+function saveCard(
   board: Board,
   card: Card,
   changes: Partial<CardFields>
 ): Promise<boolean> {
   return publish(cardTemplate(board, { ...card, ...changes }), card.event);
+}
+
+/**
+ * Saves a change to the card. Its subscribers hear about it once a run of
+ * changes settles, and people picked into the description right away.
+ */
+export async function updateCard(
+  board: Board,
+  card: Card,
+  changes: Partial<CardFields>,
+  picked: ReadonlySet<string> = new Set()
+): Promise<boolean> {
+  if (!(await saveCard(board, card, changes))) {
+    return false;
+  }
+  noteCardChange(board, card, changes);
+  if (changes.description !== undefined) {
+    await tellMentioned(card, changes.description, picked);
+  }
+  return true;
 }
 
 export function deleteCard(board: Board, card: Card): Promise<boolean> {
@@ -181,7 +259,7 @@ export function endSprint(
   }
   for (const card of unfinished) {
     changes.push(
-      updateCard(board, card, {
+      saveCard(board, card, {
         sprint: next,
         ...(statusKind(card.status) === "started"
           ? { status: startingStatus(board.statuses) }
@@ -200,13 +278,32 @@ export function deleteSprint(
 ): Promise<boolean[]> {
   const cards = content.cards.filter((card) => card.sprint === sprint.id);
   return Promise.all([
-    ...cards.map((card) => updateCard(board, card, { sprint: undefined })),
+    ...cards.map((card) => saveCard(board, card, { sprint: undefined })),
     publish(tombstoneTemplate(board, sprint), sprint.event),
   ]);
 }
 
-export function addComment(card: Card, content: string): Promise<boolean> {
-  return publish(commentTemplate(card, content));
+/**
+ * A comment, told to everyone it mentions and every subscriber. Commenting
+ * subscribes the commenter, so they hear the replies.
+ */
+export async function addComment(
+  board: Board,
+  card: Card,
+  content: string
+): Promise<boolean> {
+  const me = accounts.active?.pubkey;
+  if (!me) {
+    return false;
+  }
+  const subscribers = cardSubscribers(board, card, subscriptionsOf, me);
+  if (!(await publish(commentTemplate(card, content, subscribers)))) {
+    return false;
+  }
+  if (!isSubscribed(card, me, subscriptionsOf(me))) {
+    await setSubscribed(card, me, true);
+  }
+  return true;
 }
 
 export function deleteComment(comment: Comment): Promise<boolean> {

@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { CrmScope } from "@/features/crm/crm-context";
-import { CrmContext, recordPath, tablePath } from "@/features/crm/crm-context";
+import { CrmContext } from "@/features/crm/crm-context";
 import { ImportDialog } from "@/features/crm/import-dialog";
 import { InsightsView } from "@/features/crm/insights-view";
 import { NewRecordDialog } from "@/features/crm/new-record-dialog";
@@ -28,6 +28,7 @@ import { TableSettingsDialog } from "@/features/crm/table-settings-dialog";
 import type { CrmRecord, CrmTable, ProjectContent } from "@/lib/crm";
 import { stageField } from "@/lib/crm";
 import { canEdit } from "@/lib/model";
+import { recordPath, tablePath } from "@/lib/paths";
 import type { Project } from "@/lib/project";
 
 const VIEWS = ["table", "pipeline", "insights"] as const;

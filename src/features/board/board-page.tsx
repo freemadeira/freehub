@@ -20,11 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AssigneeFilter } from "@/features/board/assignee-filter";
 import { BacklogView } from "@/features/board/backlog-view";
 import type { BoardScope } from "@/features/board/board-context";
-import {
-  BoardContext,
-  boardQuery,
-  cardPath,
-} from "@/features/board/board-context";
+import { BoardContext, boardQuery } from "@/features/board/board-context";
 import { DoneView } from "@/features/board/done-view";
 import { LayoutSwitch, useBoardLayout } from "@/features/board/layout-switch";
 import { SprintView } from "@/features/board/sprint-view";
@@ -35,6 +31,7 @@ import { NewCardDialog } from "@/features/card/new-card-dialog";
 import { useBoardContent } from "@/hooks/use-board-content";
 import type { Board } from "@/lib/model";
 import { canEdit, needsCardId } from "@/lib/model";
+import { cardPath } from "@/lib/paths";
 import type { Project } from "@/lib/project";
 
 const TABS = ["backlog", "sprint", "done"] as const;

@@ -1,6 +1,8 @@
 import { map } from "rxjs";
 
 import { useObservableValue } from "@/hooks/use-observable-value";
+import type { CardActivity } from "@/lib/card-activity";
+import { isCardActivity, parseCardActivity } from "@/lib/card-activity";
 import type { Board, Card, Comment } from "@/lib/model";
 import {
   CARD_KIND,
@@ -12,7 +14,15 @@ import {
 import { eventStore } from "@/lib/nostr";
 import { addressFilters, sync } from "@/lib/relays";
 
-export function useComments(board: Board, card: Card): Comment[] {
+export interface CardThread {
+  /** Oldest first. */
+  comments: Comment[];
+  /** What happened to the card, oldest first. */
+  activity: CardActivity[];
+}
+
+/** The card's comments and activity, which share its NIP-22 thread. */
+export function useCardThread(board: Board, card: Card): CardThread {
   const addresses = cardCommentAddresses(board, card);
   const filters = [{ "#A": addresses, kinds: [COMMENT_KIND] }];
   const key = `${board.event.id}:${card.id}`;
@@ -28,25 +38,31 @@ export function useComments(board: Board, card: Card): Comment[] {
       ),
     [key]
   );
-  const comments = useObservableValue(
+  const thread = useObservableValue(
     () =>
       eventStore.timeline(filters).pipe(
-        map((events) =>
-          events
+        map((events): CardThread => {
+          const own = events
             .filter((event) => board.members.includes(event.pubkey))
-            .map(parseComment)
-            .toReversed()
-        )
+            .toReversed();
+          return {
+            activity: own.flatMap((event) => parseCardActivity(event) ?? []),
+            comments: own
+              .filter((event) => !isCardActivity(event))
+              .map(parseComment),
+          };
+        })
       ),
     [key]
   );
   const ids =
-    comments?.flatMap((comment) => (comment.event.sig ? [comment.id] : [])) ??
-    [];
+    thread?.comments.flatMap((comment) =>
+      comment.event.sig ? [comment.id] : []
+    ) ?? [];
   useObservableValue(
     () =>
       ids.length > 0 ? sync([{ "#e": ids, kinds: [DELETE_KIND] }]) : undefined,
     [ids.join(",")]
   );
-  return comments ?? [];
+  return thread ?? { activity: [], comments: [] };
 }

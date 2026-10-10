@@ -76,6 +76,7 @@ Running Freehub for your team, and how it works inside, are in the [guide](GUIDE
 - [Drive](GUIDE.md#drive) — the Blossom server for project files
 - [Deploy](GUIDE.md#deploy) — Coolify, Docker Compose or a static host
 - [Connectors](GUIDE.md#connectors) — feeding a store's orders into CRM tables
+- [Notifications](GUIDE.md#notifications) — installing the app, and pushes through the notifier
 - [How it works](GUIDE.md#how-it-works) — projects, boards, CRM, docs, saving and loading
 - [Events](GUIDE.md#events) — the Nostr kinds and tags
 - [Project layout](GUIDE.md#project-layout) — where things live in the code

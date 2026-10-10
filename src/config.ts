@@ -6,6 +6,13 @@ export interface MapConfig {
   world: string;
 }
 
+export interface NotifierConfig {
+  /** The notifier's key: inbox marks and devices are encrypted to it. */
+  pubkey: string;
+  /** Its VAPID public key, which browsers check web pushes against. */
+  vapidKey: string;
+}
+
 export interface Config {
   name: string;
   logo: string;
@@ -23,6 +30,8 @@ export interface Config {
    * are read from whichever has them. Only organizations that set this get the Drive.
    */
   blossom: string[];
+  /** The organization's push notifier. Only organizations that run one get pushes. */
+  notifier?: NotifierConfig;
 }
 
 export class ConfigError extends Error {
@@ -150,6 +159,27 @@ function pubkeyList(field: string, value: unknown): string[] {
   ];
 }
 
+const VAPID_KEY = /^[A-Za-z0-9_-]{80,100}$/u;
+
+function notifierConfig(value: unknown): NotifierConfig | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const raw: Record<string, unknown> =
+    typeof value === "object" && value !== null ? { ...value } : {};
+  const pubkey = normalizeToPubkey(String(raw.pubkey ?? ""));
+  if (!pubkey) {
+    throw new ConfigError(`"notifier" needs "pubkey": the notifier’s npub.`);
+  }
+  const vapidKey = text(raw.vapidKey);
+  if (!(vapidKey && VAPID_KEY.test(vapidKey))) {
+    throw new ConfigError(
+      `"notifier" needs "vapidKey": the VAPID public key the notifier prints.`
+    );
+  }
+  return { pubkey, vapidKey };
+}
+
 export async function loadConfig(): Promise<Config> {
   const response = await fetch(`${import.meta.env.BASE_URL}config.json`, {
     cache: "no-cache",
@@ -182,6 +212,7 @@ export async function loadConfig(): Promise<Config> {
     ),
     map: mapConfig(raw.map),
     name: text(raw.name) ?? "Kanban",
+    notifier: notifierConfig(raw.notifier),
     relays,
     signerRelays: relayList(
       "signerRelays",

@@ -7,7 +7,7 @@ import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { getConfig } from "@/config";
 import type { CrmScope } from "@/features/crm/crm-context";
-import { CrmContext, recordPath } from "@/features/crm/crm-context";
+import { CrmContext } from "@/features/crm/crm-context";
 import { RecordSheet } from "@/features/crm/record-sheet";
 import { TableIcon } from "@/features/crm/table-icon";
 import type { MapEngine } from "@/features/map/engine";
@@ -29,6 +29,7 @@ import { setValues } from "@/lib/crm-actions";
 import type { Location } from "@/lib/location";
 import { locationValue, readLocation } from "@/lib/location";
 import { canEdit } from "@/lib/model";
+import { recordPath } from "@/lib/paths";
 import type { Project } from "@/lib/project";
 
 /** Past this camera distance pins shrink to dots, so the island stays readable. */
