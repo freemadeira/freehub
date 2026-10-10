@@ -1,5 +1,6 @@
 import { map, of } from "rxjs";
 
+import { getConfig } from "@/config";
 import { useObservableValue } from "@/hooks/use-observable-value";
 import type { CrmTable, ProjectContent } from "@/lib/crm";
 import { resolveProject, resolveTables } from "@/lib/crm";
@@ -15,8 +16,10 @@ export function useProjectContent(project: Project): {
 } {
   const kinds = [CRM_TABLE_KIND, CRM_RECORD_KIND];
   const filters = [{ "#a": [project.address], kinds }];
+  // Records connectors wrote are asked for by author too, for long addresses.
+  const authors = [...project.members, ...getConfig().connectors];
   const feed = () =>
-    sync(addressFilters("#a", [project.address], { kinds }, project.members));
+    sync(addressFilters("#a", [project.address], { kinds }, authors));
   const loaded = useObservableValue(feed, [
     project.address,
     project.members.join(","),

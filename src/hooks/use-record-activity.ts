@@ -1,7 +1,7 @@
 import { map } from "rxjs";
 
 import { useObservableValue } from "@/hooks/use-observable-value";
-import type { Activity, CrmRecord } from "@/lib/crm";
+import type { Activity, CrmRecord, CrmTable } from "@/lib/crm";
 import { parseActivity, recordActivityAddresses } from "@/lib/crm";
 import { COMMENT_KIND, CRM_RECORD_KIND, DELETE_KIND } from "@/lib/model";
 import { eventStore } from "@/lib/nostr";
@@ -11,11 +11,12 @@ import { addressFilters, sync } from "@/lib/relays";
 /** Notes, calls and visits logged on a record, newest first. */
 export function useRecordActivity(
   project: Project,
+  table: CrmTable,
   record: CrmRecord
 ): Activity[] {
-  const addresses = recordActivityAddresses(project, record);
+  const addresses = recordActivityAddresses(project, table, record);
   const filters = [{ "#A": addresses, kinds: [COMMENT_KIND] }];
-  const key = `${project.event.id}:${record.id}`;
+  const key = `${project.event.id}:${table.event.id}:${record.id}`;
   useObservableValue(
     () =>
       sync(

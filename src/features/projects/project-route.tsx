@@ -16,6 +16,7 @@ import { DocsPage } from "@/features/docs/docs-page";
 import { PageView } from "@/features/docs/page-view";
 import { ProjectPage } from "@/features/projects/project-page";
 import { useProjectContent } from "@/hooks/use-project-content";
+import { useSources } from "@/hooks/use-sources";
 import type { DocsContent } from "@/lib/docs";
 import { EMPTY_DOCS } from "@/lib/docs";
 import type { Board } from "@/lib/model";
@@ -67,6 +68,8 @@ function ProjectView({
   ...props
 }: ProjectViewProps) {
   const { content, loaded } = useProjectContent(project);
+  // Connectors' profiles, for the names on records they wrote.
+  useSources(content);
   if (!tableSlug) {
     return (
       <ProjectPage

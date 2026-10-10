@@ -79,32 +79,34 @@ pnpm fix
 
 ### Project layout
 
-| Path                       | Holds                                           |
-| -------------------------- | ----------------------------------------------- |
-| `src/config.ts`            | Loading and checking `config.json`              |
-| `src/lib/model.ts`         | Event kinds, boards, cards and sprints          |
-| `src/lib/project.ts`       | Projects                                        |
-| `src/lib/crm.ts`           | CRM tables, fields, records and activity        |
-| `src/lib/crm-templates.ts` | The table templates offered in "New table"      |
-| `src/lib/docs.ts`          | Doc pages and how they nest                     |
-| `src/lib/merge.ts`         | Merging two edits of the same page              |
-| `src/lib/mentions.ts`      | Mentions in comments and docs (NIP-27)          |
-| `src/lib/notifications.ts` | The rules that turn events into notifications   |
-| `src/lib/inbox.ts`         | What each person read or archived in the inbox  |
-| `src/lib/relays.ts`        | Team relay connections, AUTH and access         |
-| `src/lib/publish.ts`       | Optimistic edits, signing and the outbox        |
-| `src/lib/location.ts`      | Reading places typed or pasted into the CRM     |
-| `src/components/ui/`       | shadcn/ui components, including the sidebar     |
-| `src/features/`            | Screens                                         |
-| `src/features/map/engine/` | The 3D map: three.js, no React or app code      |
-| `tools/world/`             | Bakes an OpenStreetMap region into a world pack |
+| Path | Holds |
+| --- | --- |
+| `src/config.ts` | Loading and checking `config.json` |
+| `src/lib/model.ts` | Event kinds, boards, cards and sprints |
+| `src/lib/project.ts` | Projects |
+| `src/lib/crm.ts` | CRM tables, fields, records and activity |
+| `src/lib/crm-templates.ts` | The table templates offered in "New table" |
+| `src/lib/sources.ts` | Connector sources and how they map onto tables |
+| `src/lib/docs.ts` | Doc pages and how they nest |
+| `src/lib/merge.ts` | Merging two edits of the same page |
+| `src/lib/mentions.ts` | Mentions in comments and docs (NIP-27) |
+| `src/lib/notifications.ts` | The rules that turn events into notifications |
+| `src/lib/inbox.ts` | What each person read or archived in the inbox |
+| `src/lib/relays.ts` | Team relay connections, AUTH and access |
+| `src/lib/publish.ts` | Optimistic edits, signing and the outbox |
+| `src/lib/location.ts` | Reading places typed or pasted into the CRM |
+| `src/components/ui/` | shadcn/ui components, including the sidebar |
+| `src/features/` | Screens |
+| `src/features/map/engine/` | The 3D map: three.js, no React or app code |
+| `tools/world/` | Bakes an OpenStreetMap region into a world pack |
+| `connector/` | The optional service that feeds sources, like a store, into tables |
 
 ## Make it yours
 
 You need a private Nostr relay for the team. It must:
 
 - require NIP-42 AUTH for reads and writes, and only let whitelisted pubkeys in;
-- store kinds 30301–30307, 1111 and 5;
+- store kinds 0, 30301–30308, 1111 and 5;
 - keep its database on persistent storage, since the relay holds the only copy of the team's data;
 - be reachable over `wss://`.
 
@@ -132,6 +134,7 @@ All settings live in `public/config.json`:
 | `signerRelays` | nos.lol, relay.primal.net, relay.damus.io | Relays the app and a signer app talk through when logging in by QR code. |
 | `lookupRelays` | purplepag.es, user.kindpag.es, relay.damus.io | Public relays used to look up members' names and avatars. |
 | `map` | none | `{ "world": "/worlds/<name>/world.json" }`, the address of a world pack. Without it there's no Map tab, and the map's code is never downloaded. See [Map](#map). |
+| `connectors` | none | npubs of the connectors your organization runs. Their sources show up in each table's settings, under **Connections**. See [Connectors](#connectors). |
 
 Relay URLs must start with `wss://`. `ws://` is accepted only for localhost.
 
@@ -215,6 +218,29 @@ Caddy serves the app and gets a TLS certificate on its own. `public/` is mounted
 
 Behind an existing reverse proxy, leave `DOMAIN` unset so Caddy serves plain HTTP on port 80, and change the port mapping in `compose.yaml`.
 
+### Connectors
+
+A connector runs next to the app as its own container, built from this repository with `connector/Dockerfile`. It gets webhooks from its sources, fetches what tables map from the source's API, and publishes records to the team relay; every hour it also catches up on what changed in the last 26 hours, in case a webhook went missing. Shopify is the only kind of source so far: new kinds go in `connector/sources/`.
+
+1. Make a Nostr key for the connector and whitelist its npub on the team relay.
+2. Write a sources file from `connector/sources.example.json`. Settings written as `${NAME}` are read from the environment, so secrets stay out of the file.
+3. Run the image with these environment variables, and the sources file at `/app/sources.json`:
+
+   | Variable | Notes |
+   | --- | --- |
+   | `CONNECTOR_KEY` | The connector's nsec or hex key. |
+   | `RELAY_URL` | The team relay. |
+   | `PUBLIC_URL` | Where the connector is reachable, such as `https://connect.example.com`. Webhooks go to `<PUBLIC_URL>/sources/<source id>`. |
+   | `CONNECTOR_NAME` | The name records show as written by. Defaults to the source's name when there's one source. |
+   | `SOURCES_FILE` | Defaults to `/app/sources.json`. |
+   | `PORT` | Defaults to `3000`. `GET /` answers `ok`, for health checks. |
+
+4. Add its npub to `connectors` in `config.json`, then switch its source on in a table's settings.
+
+To bring in older items, run `node connector.js backfill <source id> <YYYY-MM-DD>` inside the container. It writes about 40 records a minute, to stay under the relay's limits.
+
+For Shopify, create an app for your store in the Shopify Dev Dashboard with the `read_orders` scope (and `read_all_orders` for orders older than 60 days), request protected customer data access for name and email, install it on the store, and put its client ID and secret in the sources file with the store's `<handle>.myshopify.com` domain. The connector gets its own access token and sets up the order webhooks itself. A legacy custom app's static token works too, as `accessToken`.
+
 ### Static host
 
 Run `pnpm build` and serve `dist/` from the root of a domain. Send unknown paths to `index.html`, and don't let browsers cache `index.html` or `config.json`. Files under `/assets/` are safe to cache forever.
@@ -228,6 +254,7 @@ There is no backend and no database. The app is a static site: every change is a
 - **Cards.** A card can have several assignees. Its description is rich text saved as Markdown: Markdown typed into it formats as you go (`### ` makes a heading, `[] ` or `- [ ] ` a checklist), pasted Markdown and web content keep their formatting, and text copied out across several blocks reads as Markdown. Raw HTML in a description stays plain text, and links only go to web and mail addresses.
 - **Inbox.** Typing `@` in a comment or a doc page suggests the people who can read it, viewers included. A mention is saved as a `nostr:npub…` reference in the text with a `p` tag for that person (NIP-27), so the relay routes it and other Nostr clients show it too. Mentions land in the person's inbox; opening the card or page marks them read, and a page opened from the inbox scrolls to the mention. A page is saved again and again as people type, so it also keeps who mentioned each person and when: they hear about it once, and again only when someone picks them from the list anew. Taking the mention out of the page takes it out of their inbox. Notifications are read from the comments and pages themselves through the rules in `src/lib/notifications.ts`, so another way of delivering them, such as an email bridge subscribed to the relay, can reuse the same rules.
 - **CRM.** Each project can hold several tables, such as merchants, companies, people or deals. Every table has its own fields (text, numbers, money, dates, selects, members, links to other tables and more) and can have a stage field that turns it into a pipeline with won and lost endings. Any project member can add tables, change their fields and edit records. Records show up as a table (sorting, search, filters, column picker, bulk changes, CSV import and export), as a pipeline board and as insights. Every stage change is kept on the record, so its journey and the time spent in each stage can be read back. Notes, calls, emails, meetings and visits are logged on a record as comments.
+- **Connectors.** A connector is an optional service with its own Nostr key that feeds a source, such as an online store, into CRM tables: each order becomes a record. It describes each source in a manifest, and a table only gets records once a member switches the source on in **Table settings → Connections** and picks which field each piece of data goes to. Records keep a stable id per item, so an order changing later updates its record. When the source changes a value, the record takes it; when it doesn't, a teammate's edit to that field stays. A record a member deleted is never brought back.
 - **Map.** With a world pack set up, the Map tab shows the region in 3D: terrain, buildings with their windows and roofs, trees, roads, the sea and its surf, place names and landmarks. It follows the app's theme, with lit windows and streets at night. Records of every table with a Location field show as pins in the color of their stage, and in a list in the corner that filters by table and folds away; clicking either opens the record. A Location field takes coordinates or a pasted Google Maps, Apple Maps or OpenStreetMap link, or a click on the map through the pin button next to the field. Drag to move, right-drag or two fingers to turn and tilt, scroll or pinch to zoom; arrow keys pan and `+`/`-` zoom.
 - **Docs.** Each project has docs: pages that can hold pages of their own, shown as a tree under the project in the sidebar. Any project member can write, move or delete any page. Pages are edited in place, as in Notion. Typing `/` opens a menu of blocks, and `@` mentions someone in the project. Hovering a block shows `+`, which adds a block below it, and a handle that drags it somewhere else or opens its menu. List items move on their own, and `Mod+Shift+↑`/`↓` moves the block the cursor is in. Pages in the sidebar can be dragged before, after or into each other. The text is saved as Markdown a second after typing pauses.
 - **Editing a page together.** When two people edit a page at once, each one's saved edits show up in the other's page as they arrive, without moving their cursor. The two versions are merged line by line, so edits to different lines, even neighbouring list items, are all kept. When both change the same line, the person still typing keeps theirs; between two saved versions, every device picks the same one.
@@ -245,9 +272,10 @@ Boards and cards follow the draft kanban NIP used by [kanbanstr](https://github.
 | 30302 | Card | `d`, `a` (board), `title`, `description`, `s` (status), `rank`, `number`, `p` (assignees), `priority`, `due`, `sprint`, `label` |
 | 30303 | Sprint | `d`, `a` (board), `title`, `number`, `status`, `start`, `end` |
 | 30304 | Project | `d`, `title`, `description`, `slug`, `color`, `p` (members and viewers, as on a board) |
-| 30305 | CRM table | `d`, `a` (project), `title`, `singular`, `slug`, `icon`, `description`, `creator`, `created`, `field` (id, type, name, config), `option` (field, id, label, color, stage outcome) |
-| 30306 | CRM record | `d`, `a` (table), `a` (project), `title`, `rank`, `created`, `creator`, `val` (field, value), `moved` (stage, time, member) |
+| 30305 | CRM table | `d`, `a` (project), `title`, `singular`, `slug`, `icon`, `description`, `creator`, `created`, `field` (id, type, name, config), `option` (field, id, label, color, stage outcome), `p` (connectors that may write its records), `source` (connector, source), `map` (connector, source, attribute, field), `map-option` (connector, source, attribute, value, option) |
+| 30306 | CRM record | `d`, `a` (table), `a` (project), `title`, `rank`, `created`, `creator`, `val` (field, value), `moved` (stage, time, member or connector) |
 | 30307 | Doc page | `d`, `a` (project), `title`, `icon`, `parent`, `rank`, `created`, `creator`, `prev` (the version it was edited from), `p` (one per person mentioned), `mention` (person, who mentioned them, when) |
+| 30308 | Connector source | `d`, `name`, `type`, `attr` (id, type, name, config), `value` (attribute, id, label, color, stage outcome) |
 | 1111 | Comment on a card, or activity on a record ([NIP-22](https://github.com/nostr-protocol/nips/blob/master/22.md)) | `A`, `K`, `P`, `a`, `k`, `p` (plus one per person mentioned), `activity` (records only) |
 | 5 | Deleted board, project or comment ([NIP-09](https://github.com/nostr-protocol/nips/blob/master/09.md)) | `a` or `e`, `k` |
 
@@ -256,6 +284,8 @@ Boards and cards follow the draft kanban NIP used by [kanbanstr](https://github.
 A board's `col` tags are the statuses it uses, one per column, and a card's `s` tag holds its status's label, as the kanban NIP has them. A status the board doesn't use still gets a column while a card is in it, so no card drops out of sight.
 
 Each member publishes their own version of a card, sprint, CRM table, record or doc page under the same `d` tag, and the newest version from any member wins. Deleting one publishes a new version tagged `deleted`. A record keeps one `val` tag per value, so a multi-select holds several, and field values are stored as plain text: numbers as decimals, dates as `YYYY-MM-DD`, places as `lat,lng` in degrees, members as hex pubkeys and links to other records by their `d` tag.
+
+A connector publishes a source manifest per source, and a kind 0 profile with its name on the team relays. A table switches a source on with a `source` tag and maps its attributes with `map` and `map-option` tags; its `p` tags name the connectors allowed to write its records, so a connector finds its tables with a `#p` query. Besides members, a record's versions count from those connectors only, and only in that table. A connector's record has `creator` set to the connector and a `d` tag made from the table, the source and the item's id, so the same order always lands on the same record.
 
 A doc page's text is the event's content, as Markdown. Its `parent` is the `d` tag of the page it sits under, and pages at the top have none. `prev` is the id of the version the editor started from, so a teammate's editor knows what each side changed when it merges two versions saved at once. Deleting a page deletes the pages under it too. Everyone the text mentions gets a `p` tag, and a `mention` tag with who mentioned them and when, in seconds; each version carries these on from the one it was edited from, so every member's version names the same notification, and the newest time wins when they differ.
 
@@ -290,6 +320,8 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 - A CRM record is saved as a whole, so two people changing different fields of the same record at the same moment can undo one another's change.
 - Importing a CSV signs one event per row; a signer app may ask to approve each one. At most 500 rows go in per import.
 - A record remembers its last 100 stage changes.
+- A connector writes a mapped field only when the source changes it, so a teammate's edit stays until then, and is then replaced.
+- A connector stays allowed to write a table's records after its source is switched off, so the records it wrote stay.
 - A doc page is saved whole, as one event, so a long page costs a little more with each save. Edits merge line by line: a paragraph is one line, so two people rewriting the same paragraph at once keep only one version of it.
 - A deleted page can't be brought back. Deleting a page while someone else has it open drops whatever they hadn't saved yet.
 - Pages have no links to other pages yet, other than the ones under them; a link to a page's address works as any web link.

@@ -338,8 +338,8 @@ export function RecordActivity({
   className?: string;
 }) {
   const id = useId();
-  const { canEdit, project } = useCrm();
-  const activity = useRecordActivity(project, record);
+  const { canEdit, project, table } = useCrm();
+  const activity = useRecordActivity(project, table, record);
   const created: Entry = {
     at: record.createdAt,
     by: record.creator,

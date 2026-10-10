@@ -297,6 +297,8 @@ export function buildPack(
       })),
     ];
     return {
+      connections: [],
+      connectors: [],
       createdAt: now + index,
       creator,
       description: spec.description,

@@ -102,6 +102,18 @@ export interface Field {
   config: string;
 }
 
+/** A connector's source feeding records into a table, and where its data goes. */
+export interface Connection {
+  /** The connector's pubkey. */
+  connector: string;
+  /** The `d` tag of the connector's source manifest. */
+  source: string;
+  /** Attribute id to field id. */
+  fields: Record<string, string>;
+  /** Attribute id to value id to option id. */
+  options: Record<string, Record<string, string>>;
+}
+
 export interface CrmTableFields {
   id: string;
   creator: string;
@@ -111,6 +123,13 @@ export interface CrmTableFields {
   icon: TableIcon;
   description: string;
   fields: Field[];
+  /**
+   * Connectors allowed to write the table's records. One stays after its
+   * connection is switched off, so the records it wrote don't disappear.
+   */
+  connectors: string[];
+  /** Sources switched on for the table. */
+  connections: Connection[];
   createdAt: number;
 }
 
@@ -287,6 +306,177 @@ export function mergeFields(
   });
 }
 
+function connectionKey({ connector, source }: Connection): string {
+  return `${connector}:${source}`;
+}
+
+// What this user changed in a map follows them, the rest follows the latest version.
+function mergeRecord<T>(
+  base: Readonly<Record<string, T>>,
+  mine: Readonly<Record<string, T>>,
+  latest: Readonly<Record<string, T>>,
+  mergeValue: (base: T, mine: T, latest: T) => T = (_, value) => value
+): Record<string, T> {
+  const merged: Record<string, T> = {};
+  for (const key of new Set([
+    ...Object.keys(base),
+    ...Object.keys(mine),
+    ...Object.keys(latest),
+  ])) {
+    const [before, edited, current] = [base[key], mine[key], latest[key]];
+    let value: T | undefined;
+    if (same(before, edited)) {
+      value = current;
+    } else if (
+      before === undefined ||
+      edited === undefined ||
+      current === undefined
+    ) {
+      value = edited;
+    } else {
+      value = mergeValue(before, edited, current);
+    }
+    if (value !== undefined) {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+/** Connectors as edited in the table settings, over the latest version. */
+export function mergeConnectors(
+  base: readonly string[],
+  mine: readonly string[],
+  latest: readonly string[]
+): string[] {
+  const removed = new Set(base.filter((key) => !mine.includes(key)));
+  return [...new Set([...latest.filter((key) => !removed.has(key)), ...mine])];
+}
+
+/** Connections as edited in the table settings, merged like the fields. */
+export function mergeConnections(
+  base: readonly Connection[],
+  mine: readonly Connection[],
+  latest: readonly Connection[]
+): Connection[] {
+  const keyed = (connections: readonly Connection[]) =>
+    connections.map((connection) => ({
+      ...connection,
+      id: connectionKey(connection),
+    }));
+  return mergeById(
+    keyed(base),
+    keyed(mine),
+    keyed(latest),
+    (before, edited, current) => ({
+      ...current,
+      fields: mergeRecord(before.fields, edited.fields, current.fields),
+      options: mergeRecord(
+        before.options,
+        edited.options,
+        current.options,
+        mergeRecord
+      ),
+    })
+  ).map(({ connector, source, fields, options }) => ({
+    connector,
+    fields,
+    options,
+    source,
+  }));
+}
+
+/** Drops mappings to fields and options the table no longer has. */
+export function pruneConnections(
+  connections: readonly Connection[],
+  fields: readonly Field[]
+): Connection[] {
+  const byId = new Map(fields.map((field) => [field.id, field]));
+  return connections.map((connection) => {
+    const mapped = Object.entries(connection.fields).filter(([, field]) =>
+      byId.has(field)
+    );
+    const options: Record<string, Record<string, string>> = {};
+    for (const [attribute, field] of mapped) {
+      const kept = Object.entries(connection.options[attribute] ?? {}).filter(
+        ([, option]) => byId.get(field)?.options.some(({ id }) => id === option)
+      );
+      if (kept.length > 0) {
+        options[attribute] = Object.fromEntries(kept);
+      }
+    }
+    return { ...connection, fields: Object.fromEntries(mapped), options };
+  });
+}
+
+export function findConnection(
+  table: Pick<CrmTableFields, "connections">,
+  connector: string,
+  source: string
+): Connection | undefined {
+  return table.connections.find(
+    (connection) =>
+      connection.connector === connector && connection.source === source
+  );
+}
+
+function parseConnections(event: NostrEvent): {
+  connectors: string[];
+  connections: Connection[];
+} {
+  const connectors = new Set<string>();
+  const connections: Connection[] = [];
+  const find = (connector?: string, source?: string) =>
+    connections.find(
+      (item) => item.connector === connector && item.source === source
+    );
+  for (const [name, connector, source] of event.tags) {
+    if (name === "p" && isPubkey(connector)) {
+      connectors.add(connector);
+    } else if (
+      name === "source" &&
+      isPubkey(connector) &&
+      source &&
+      !find(connector, source)
+    ) {
+      connectors.add(connector);
+      connections.push({ connector, fields: {}, options: {}, source });
+    }
+  }
+  for (const [name, connector, source, attribute, a, b] of event.tags) {
+    const connection = find(connector, source);
+    if (!(connection && attribute && a)) {
+      continue;
+    }
+    if (name === "map") {
+      connection.fields[attribute] = a;
+    } else if (name === "map-option" && b) {
+      connection.options[attribute] ??= {};
+      connection.options[attribute][a] = b;
+    }
+  }
+  return { connections, connectors: [...connectors] };
+}
+
+function connectionTags(table: CrmTableFields): string[][] {
+  const tags = table.connectors.map((connector) => ["p", connector]);
+  for (const { connector, source, fields, options } of table.connections) {
+    if (!table.connectors.includes(connector)) {
+      tags.push(["p", connector]);
+    }
+    tags.push(["source", connector, source]);
+    for (const [attribute, field] of Object.entries(fields)) {
+      tags.push(["map", connector, source, attribute, field]);
+    }
+    for (const [attribute, values] of Object.entries(options)) {
+      for (const [value, option] of Object.entries(values)) {
+        tags.push(["map-option", connector, source, attribute, value, option]);
+      }
+    }
+  }
+  return tags;
+}
+
 // A second title or stage field can't be honored: drop the title, demote the stage.
 function fieldType(
   raw: string | undefined,
@@ -353,6 +543,7 @@ function parseTable(event: NostrEvent, id: string, project: Project): CrmTable {
   const creator =
     [getTagValue(event, "creator")].find(isPubkey) ?? event.pubkey;
   return {
+    ...parseConnections(event),
     address: tableAddress(creator, id),
     createdAt: integer(getTagValue(event, "created")) ?? event.created_at,
     creator,
@@ -368,7 +559,11 @@ function parseTable(event: NostrEvent, id: string, project: Project): CrmTable {
   };
 }
 
-function parseRecord(event: NostrEvent, id: string, table: string): CrmRecord {
+export function parseRecord(
+  event: NostrEvent,
+  id: string,
+  table: string
+): CrmRecord {
   const values: Record<string, string[]> = {};
   const moves: StageMove[] = [];
   for (const [name, first, second, third] of event.tags) {
@@ -434,8 +629,23 @@ export function resolveProject(
   const byTable = new Map(
     tables.map((table): [string, CrmRecord[]] => [table.id, []])
   );
-  const authors = new Set(project.members);
-  const records = [...latestVersions(events, CRM_RECORD_KIND, authors)]
+  const members = new Set(project.members);
+  const connectors = new Map(
+    tables.map((table) => [table.id, new Set(table.connectors)])
+  );
+  // A connector's version only counts in a table that lets it write there.
+  const versions = events.filter(
+    (event) =>
+      members.has(event.pubkey) ||
+      connectors
+        .get(addressedId(event, CRM_TABLE_KIND) ?? "")
+        ?.has(event.pubkey) === true
+  );
+  const authors = new Set([
+    ...members,
+    ...tables.flatMap((table) => table.connectors),
+  ]);
+  const records = [...latestVersions(versions, CRM_RECORD_KIND, authors)]
     .filter(([, event]) => !isDeleted(event))
     .flatMap(([id, event]) => {
       const table = addressedId(event, CRM_TABLE_KIND);
@@ -470,6 +680,7 @@ export function tableTemplate(
   if (table.description) {
     tags.push(["description", table.description]);
   }
+  tags.push(...connectionTags(table));
   for (const field of table.fields) {
     const tag = ["field", field.id, field.type, field.name];
     if (field.config) {
@@ -589,12 +800,18 @@ export function parseActivity(event: NostrEvent): Activity {
   };
 }
 
-/** Each member's copy of a record has its own address, so comments may point at any of them. */
+/** Everyone who may write the record: the members and the table's connectors. */
+export function recordAuthors(project: Project, table: CrmTable): string[] {
+  return [...new Set([...project.members, ...table.connectors])];
+}
+
+/** Each author's copy of a record has its own address, so comments may point at any of them. */
 export function recordActivityAddresses(
   project: Project,
+  table: CrmTable,
   record: CrmRecord
 ): string[] {
-  return project.members.map(
-    (member) => `${CRM_RECORD_KIND}:${member}:${record.id}`
+  return recordAuthors(project, table).map(
+    (author) => `${CRM_RECORD_KIND}:${author}:${record.id}`
   );
 }

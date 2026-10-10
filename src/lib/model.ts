@@ -11,6 +11,8 @@ export const PROJECT_KIND = 30_304;
 export const CRM_TABLE_KIND = 30_305;
 export const CRM_RECORD_KIND = 30_306;
 export const DOC_PAGE_KIND = 30_307;
+/** A connector's description of a source it feeds into tables, like a store. */
+export const SOURCE_KIND = 30_308;
 export const COMMENT_KIND = 1111;
 export const DELETE_KIND = 5;
 
