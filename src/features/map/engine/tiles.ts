@@ -30,7 +30,7 @@ import { coastTexture } from "./materials.ts";
 import type { MeshData } from "./mesh.ts";
 import type { WorkerPool } from "./pool.ts";
 import type { BuiltTile } from "./protocol.ts";
-import { createTraffic, disposeTraffic } from "./traffic.ts";
+import { carSpots, createTraffic, disposeTraffic } from "./traffic.ts";
 import type { Vehicles } from "./vehicles.ts";
 import type { TreeKind } from "./worker/trees.ts";
 
@@ -50,6 +50,8 @@ interface TileNode {
   group?: Group;
   /** Its cars and people, drawn only while the camera is close enough. */
   traffic?: Mesh[];
+  /** Where its cars are, in the tile, for how busy it sounds. */
+  cars?: Float32Array;
   children?: TileNode[];
   /** The frame that last needed it, for the cache. */
   used: number;
@@ -485,6 +487,7 @@ export class TileManager {
         bounds
       );
       group.add(...node.traffic);
+      node.cars = carSpots(built.traffic);
     }
 
     node.group = group;
@@ -515,6 +518,7 @@ export class TileManager {
     this.root.remove(group);
     node.group = undefined;
     node.traffic = undefined;
+    node.cars = undefined;
     node.state = "empty";
   }
 
@@ -535,6 +539,38 @@ export class TileManager {
       total -= node.bytes;
       this.release(node);
     }
+  }
+
+  /**
+   * The cars drawn around a point: each within `radius` counts, 1 right at
+   * the point down to 0 at the edge.
+   */
+  carsNear(x: number, z: number, radius: number): number {
+    const reach = radius * radius;
+    let sum = 0;
+    for (const node of this.nodes.values()) {
+      const cars = node.traffic?.find((mesh) => mesh.name === "traffic-cars");
+      const { square } = node;
+      const dx = Math.max(square.x - x, 0, x - square.x - square.size);
+      const dz = Math.max(square.z - z, 0, z - square.z - square.size);
+      if (
+        !node.cars ||
+        !node.group?.visible ||
+        !cars?.visible ||
+        dx * dx + dz * dz > reach
+      ) {
+        continue;
+      }
+      for (let index = 0; index < node.cars.length; index += 2) {
+        const ex = (node.cars[index] ?? 0) + square.x - x;
+        const ez = (node.cars[index + 1] ?? 0) + square.z - z;
+        const d2 = ex * ex + ez * ez;
+        if (d2 < reach) {
+          sum += 1 - d2 / reach;
+        }
+      }
+    }
+    return sum;
   }
 
   /** Tiles still being built. */

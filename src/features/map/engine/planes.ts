@@ -15,6 +15,8 @@ import type { Frame } from "./geo.ts";
 import { toLocal } from "./geo.ts";
 import type { SharedUniforms } from "./materials.ts";
 import { hash } from "./random.ts";
+import type { Voice } from "./voice.ts";
+import { createVoices } from "./voice.ts";
 
 /** Meters a second. */
 const APPROACH_SPEED = 70;
@@ -503,6 +505,8 @@ interface Pose {
   shown: number;
   /** Off the ground: approaching or climbing out. */
   flying: boolean;
+  /** 0 to 1: how hard its engines run. */
+  thrust: number;
 }
 
 /** The direction in use: it changes now and then, as the wind would. */
@@ -531,6 +535,7 @@ function arrivalPose(
     pose.pitch = 3 * RADIANS;
     pose.shown = Math.min(1, t / FADE);
     pose.flying = true;
+    pose.thrust = 0.6;
     return true;
   }
   const rolling = t - plan.approachTime;
@@ -541,12 +546,15 @@ function arrivalPose(
     trackAt(way.runway, s, pose.position);
     pose.heading = trackHeading(way.runway, s);
     pose.pitch = Math.max(0, 1 - rolling / 4) * 4 * RADIANS;
+    // Reverse thrust as the wheels touch, easing off as it slows.
+    pose.thrust = 0.35 + 0.55 * (1 - rolling / roll);
     return true;
   }
   const s = (rolling - roll) * TAXI_SPEED;
   trackAt(taxi, s, pose.position);
   pose.heading =
     s >= taxi.length ? (plan.standHeadings[stand] ?? 0) : trackHeading(taxi, s);
+  pose.thrust = s >= taxi.length ? 0 : 0.25;
   return true;
 }
 
@@ -581,6 +589,7 @@ function departurePose(
       s >= taxi.length
         ? trackHeading(way.runway, departure.entry)
         : trackHeading(taxi, s);
+    pose.thrust = 0.25;
     return true;
   }
   const rolling = t - takeoff;
@@ -590,6 +599,7 @@ function departurePose(
     trackAt(way.runway, s, pose.position);
     pose.heading = trackHeading(way.runway, s);
     pose.pitch = Math.max(0, (rolling - TAKEOFF_TIME + 3) / 3) * 8 * RADIANS;
+    pose.thrust = 1;
     return true;
   }
   const climbing = (rolling - TAKEOFF_TIME) * CLIMB_SPEED;
@@ -600,6 +610,7 @@ function departurePose(
   pose.heading = trackHeading(departure.climb, climbing);
   pose.pitch = 9 * RADIANS;
   pose.flying = true;
+  pose.thrust = 1;
   pose.shown = Math.min(
     1,
     (departure.climb.length - climbing) / (CLIMB_SPEED * FADE)
@@ -612,6 +623,7 @@ function poseOf(plan: Plan, cycle: number, t: number, pose: Pose): boolean {
   pose.pitch = 0;
   pose.flying = false;
   pose.shown = 1;
+  pose.thrust = 0;
   return t < scheduleOf(plan, cycle).taxiStart
     ? arrivalPose(plan, cycle, t, pose)
     : departurePose(plan, cycle, t, pose);
@@ -624,6 +636,8 @@ function poseOf(plan: Plan, cycle: number, t: number, pose: Pose): boolean {
  */
 export class Planes {
   readonly group = new Group();
+  /** Each plane's engines, where it is. */
+  readonly voices: Voice[];
   private readonly plans: Plan[];
   private readonly fleet: Fleet;
   private readonly pose: Pose = {
@@ -632,6 +646,7 @@ export class Planes {
     pitch: 0,
     position: new Vector3(),
     shown: 1,
+    thrust: 0,
   };
   private readonly matrix = new Matrix4();
   private readonly rotation = new Quaternion();
@@ -652,6 +667,7 @@ export class Planes {
       return plan ? [plan] : [];
     });
     this.fleet = new Fleet(shape, shared, this.plans.length * 3, shadows);
+    this.voices = createVoices(this.plans.length * 3);
     this.group.add(this.fleet.mesh);
   }
 
@@ -666,6 +682,7 @@ export class Planes {
         // Standing still, a plane in the air would look stuck there.
         if (frozen && this.pose.flying) {
           this.fleet.hide(slot);
+          (this.voices[slot] as Voice).level = 0;
         }
         slot += 1;
       }
@@ -680,10 +697,14 @@ export class Planes {
     camera: Vector3
   ) {
     const { pose } = this;
+    const voice = this.voices[slot] as Voice;
     if (t < 0 || !poseOf(plan, cycle, t, pose)) {
       this.fleet.hide(slot);
+      voice.level = 0;
       return;
     }
+    voice.position.copy(pose.position);
+    voice.level = pose.thrust * pose.shown;
     // Bigger from far off, so a plane never shrinks to nothing.
     const grow =
       Math.min(6, Math.max(1, pose.position.distanceTo(camera) / 1800)) *

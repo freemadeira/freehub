@@ -1,5 +1,10 @@
 import { cn } from "cn";
-import { InfoIcon, NavigationIcon } from "lucide-react";
+import {
+  InfoIcon,
+  NavigationIcon,
+  Volume2Icon,
+  VolumeOffIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import {
   useEffect,
@@ -10,6 +15,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty";
@@ -84,6 +90,34 @@ function Compass({ engine, heading }: { engine: MapEngine; heading: number }) {
         style={{ transform: `rotate(${-heading}deg)` }}
       />
     </Button>
+  );
+}
+
+/** What the view sounds like: off on every visit until turned on. */
+function SoundToggle({ engine }: { engine: MapEngine }) {
+  const [on, setOn] = useState(false);
+  const toggle = async () => {
+    const next = !on;
+    setOn(next);
+    try {
+      // Straight from the click: browsers only let sound start from one.
+      await engine.setSound(next);
+    } catch {
+      setOn(false);
+      toast.error("The map’s sounds couldn’t load.");
+    }
+  };
+  const Icon = on ? Volume2Icon : VolumeOffIcon;
+  return (
+    <button
+      aria-label="Map sound"
+      aria-pressed={on}
+      className="bg-background/70 text-foreground/50 hover:text-foreground focus-visible:ring-ring/50 aria-pressed:text-foreground absolute right-9 bottom-2 flex size-6 items-center justify-center rounded-full backdrop-blur transition-colors outline-none focus-visible:ring-3"
+      onClick={toggle}
+      type="button"
+    >
+      <Icon className="size-3.5" />
+    </button>
   );
 }
 
@@ -222,6 +256,7 @@ export function MapView({
         <>
           {children?.(engine, { distance: view.distance })}
           <Compass engine={engine} heading={view.heading} />
+          <SoundToggle engine={engine} />
           <Attribution lines={engine.manifest.attribution} />
         </>
       ) : (

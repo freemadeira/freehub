@@ -16,6 +16,8 @@ import type { Frame } from "./geo.ts";
 import { toLocal } from "./geo.ts";
 import type { Materials } from "./materials.ts";
 import { PALETTE } from "./palette.ts";
+import type { Voice } from "./voice.ts";
+import { createVoices } from "./voice.ts";
 
 const HANG = 2.6;
 const VISIBLE_WITHIN = 9000;
@@ -48,6 +50,8 @@ function pointAt(cable: Cable, along: number, out: Vector3): Vector3 {
 /** Cable cars and lifts from OSM: a sagging cable and cabins riding it. */
 export class Aerialways {
   readonly group = new Group();
+  /** Each cabin, rumbling along its cable while it's drawn. */
+  readonly voices: Voice[];
   private readonly cables: Cable[] = [];
   private readonly cabins: InstancedMesh;
   private readonly matrix = new Matrix4();
@@ -113,6 +117,7 @@ export class Aerialways {
       this.group.add(line);
     }
     const count = this.cables.reduce((sum, cable) => sum + cable.cabins, 0);
+    this.voices = createVoices(count);
     this.cabins = new InstancedMesh(
       new BoxGeometry(2.2, 2.3, 2.6).translate(0, -HANG, 0),
       materials.solid,
@@ -144,6 +149,9 @@ export class Aerialways {
     const near = cameraPosition.distanceTo(target) < VISIBLE_WITHIN;
     this.group.visible = near && this.cables.length > 0;
     if (!this.group.visible) {
+      for (const voice of this.voices) {
+        voice.level = 0;
+      }
       return;
     }
     let index = 0;
@@ -168,6 +176,9 @@ export class Aerialways {
         this.matrix.makeRotationY(heading);
         this.matrix.setPosition(this.position);
         this.cabins.setMatrixAt(index, this.matrix);
+        const voice = this.voices[index] as Voice;
+        voice.position.copy(this.position);
+        voice.level = 1;
         index += 1;
       }
     }

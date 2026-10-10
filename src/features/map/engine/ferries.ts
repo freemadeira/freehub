@@ -14,6 +14,8 @@ import type { Frame, Point } from "./geo.ts";
 import { toLocal } from "./geo.ts";
 import type { SharedUniforms } from "./materials.ts";
 import { hash } from "./random.ts";
+import type { Voice } from "./voice.ts";
+import { createVoices } from "./voice.ts";
 
 /** Meters a second, and seconds at the quay, away out of sight, turning. */
 const SPEED = 10;
@@ -167,6 +169,8 @@ interface Pose {
   position: Vector3;
   heading: number;
   shown: number;
+  /** 0 to 1: idling at the quay up to full ahead. */
+  engine: number;
 }
 
 /**
@@ -178,11 +182,14 @@ function poseOf(run: Run, t: number, pose: Pose): boolean {
   const away = run.shuttle ? DWELL : AWAY;
   const outward = runAt(run, 0, pose.position);
   pose.shown = 1;
+  pose.engine = 1;
   if (t < DWELL) {
     const inward =
       runAt(run, Math.min(run.length, 50), pose.position) + Math.PI;
     runAt(run, 0, pose.position);
-    pose.heading = turn(inward, outward, smooth((t - (DWELL - TURN)) / TURN));
+    const turning = smooth((t - (DWELL - TURN)) / TURN);
+    pose.heading = turn(inward, outward, turning);
+    pose.engine = 0.3 + 0.5 * turning;
     return true;
   }
   const out = t - DWELL;
@@ -194,6 +201,7 @@ function poseOf(run: Run, t: number, pose: Pose): boolean {
   const back = out - crossing - away;
   if (back < 0) {
     pose.heading = runAt(run, run.length, pose.position);
+    pose.engine = 0.3;
     return run.shuttle;
   }
   pose.heading = runAt(run, run.length - back * SPEED, pose.position) + Math.PI;
@@ -201,12 +209,29 @@ function poseOf(run: Run, t: number, pose: Pose): boolean {
   return back < crossing;
 }
 
+/**
+ * How many times a boat has left a quay by `time`: its own port's, and the far
+ * one's when it shuttles.
+ */
+function departures(run: Run, period: number, time: number): number {
+  const t = ((time % period) + period) % period;
+  const far = DWELL + run.length / SPEED + DWELL;
+  return (
+    2 * Math.floor(time / period) +
+    (t >= DWELL ? 1 : 0) +
+    (run.shuttle && t >= far ? 1 : 0)
+  );
+}
+
 /** Ferries on their routes, a couple each, growing a little with distance. */
 export class Ferries {
   readonly group = new Group();
+  /** Each boat's engines; its cue counts departures, for the horn. */
+  readonly voices: Voice[];
   private readonly runs: Run[];
   private readonly fleet: Fleet;
   private readonly pose: Pose = {
+    engine: 0,
     heading: 0,
     position: new Vector3(),
     shown: 1,
@@ -232,6 +257,7 @@ export class Ferries {
       return run && run.length > 200 ? [run] : [];
     });
     this.fleet = new Fleet(shape, shared, this.runs.length * BOATS, shadows);
+    this.voices = createVoices(this.runs.length * BOATS);
     this.group.add(this.fleet.mesh);
   }
 
@@ -245,11 +271,13 @@ export class Ferries {
         const slot = index * BOATS + boat;
         if (!frozen) {
           this.place(run, ((time % period) + period) % period, slot, camera);
+          (this.voices[slot] as Voice).cue = departures(run, period, time);
         } else if (boat === 0) {
           // Standing still, one waits at the quay.
           this.place(run, DWELL / 2, slot, camera);
         } else {
           this.fleet.hide(slot);
+          (this.voices[slot] as Voice).level = 0;
         }
       }
     }
@@ -257,10 +285,14 @@ export class Ferries {
 
   private place(run: Run, t: number, slot: number, camera: Vector3) {
     const { pose } = this;
+    const voice = this.voices[slot] as Voice;
     if (!poseOf(run, t, pose) || pose.shown <= 0) {
       this.fleet.hide(slot);
+      voice.level = 0;
       return;
     }
+    voice.position.copy(pose.position);
+    voice.level = pose.engine * pose.shown;
     const grow = Math.min(
       3,
       Math.max(1, pose.position.distanceTo(camera) / 4000)

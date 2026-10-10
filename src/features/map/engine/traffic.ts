@@ -297,6 +297,36 @@ export function createTraffic(
   return meshes;
 }
 
+/**
+ * Roughly where each car slot's car is, x and z in the tile, two floats a
+ * slot: the middle of the stretch of road it covers. Enough to hear how busy
+ * a street is; the shader above has the exact places.
+ */
+export function carSpots(data: TrafficData): Float32Array {
+  const { cars, paths } = data;
+  const count = cars.length / TRAFFIC_STRIDE;
+  const spots = new Float32Array(count * 2);
+  for (let slot = 0; slot < count; slot += 1) {
+    const at = slot * TRAFFIC_STRIDE;
+    const value = (offset: number) => cars[at + offset] ?? 0;
+    const u = value(4) + (value(5) + 0.5) * value(1);
+    const [first, s0, s1, length, gap, code] = [8, 9, 10, 11, 12, 13].map(
+      value
+    ) as [number, number, number, number, number, number];
+    const twoWay = Math.floor(code / 16) % 2 === 1;
+    const reversed = Math.floor(code / 32) % 2 === 1;
+    let s = reversed ? length - u : u;
+    if (twoWay) {
+      s = u < length ? u : 2 * length + gap - u;
+    }
+    // Path samples are two meters apart.
+    const index = first + Math.round((Math.min(s1, Math.max(s0, s)) - s0) / 2);
+    spots[slot * 2] = paths[index * 4] ?? 0;
+    spots[slot * 2 + 1] = paths[index * 4 + 2] ?? 0;
+  }
+  return spots;
+}
+
 /** Frees a traffic mesh; the path texture goes with the tile's last one. */
 export function disposeTraffic(mesh: Mesh): void {
   mesh.geometry.dispose();

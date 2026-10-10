@@ -44,6 +44,7 @@ import { Planes } from "./planes.ts";
 import { WorkerPool } from "./pool.ts";
 import type { Quality } from "./protocol.ts";
 import { createSeaUniforms } from "./sea.ts";
+import { Soundscape } from "./sound/soundscape.ts";
 import { TileManager } from "./tiles.ts";
 import type { Vehicles } from "./vehicles.ts";
 import { createVehicles, vehicleMaterial } from "./vehicles.ts";
@@ -152,6 +153,8 @@ export class MapEngine {
   private readonly aerialways: Aerialways;
   private readonly planes: Planes;
   private readonly ferries: Ferries;
+  /** Made the first time sound is turned on. */
+  private sound?: Soundscape;
   /** Moored boats', shared by every tile. */
   private readonly boatMaterial: Material;
   private readonly water: Mesh;
@@ -418,6 +421,12 @@ export class MapEngine {
     const frozen = this.options.reducedMotion ?? false;
     this.planes.update(this.life, this.camera.position, frozen);
     this.ferries.update(this.life, this.camera.position, frozen);
+    this.sound?.update({
+      camera: this.camera,
+      distance: view.distance,
+      night: this.night,
+      target: this.target,
+    });
     this.overlay.update(this.camera, this.size.x, this.size.y);
     if (this.night > 0.01) {
       this.bloom.intensity = 2 * this.night;
@@ -531,6 +540,29 @@ export class MapEngine {
     this.controls.flyTo(target, this.options.reducedMotion ? 0 : duration);
   }
 
+  /**
+   * Plays what the view sounds like, or stops; sound starts off. Browsers only
+   * let it start from a click or a key press, so turn it on from one. Rejects
+   * when the recordings can't load.
+   */
+  async setSound(on: boolean): Promise<void> {
+    if (!on) {
+      this.sound?.stop();
+      return;
+    }
+    const { landcover } = this.manifest;
+    const world = new URL(this.options.world, window.location.href);
+    this.sound ??= new Soundscape({
+      cabins: this.aerialways.voices,
+      cars: (x, z, radius) => this.tiles.carsNear(x, z, radius),
+      cover: { ...landcover, href: new URL(landcover.url, world).href },
+      ferries: this.ferries.voices,
+      height: (x, z) => this.field.sample(x, z),
+      planes: this.planes.voices,
+    });
+    await this.sound.start();
+  }
+
   /** True once every tile the view asked for is built. */
   get idle(): boolean {
     return !this.tiles.busy;
@@ -605,6 +637,7 @@ export class MapEngine {
     this.aerialways.dispose();
     this.planes.dispose();
     this.ferries.dispose();
+    this.sound?.dispose();
     this.boatMaterial.dispose();
     this.overlay.dispose();
     this.composer.dispose();
