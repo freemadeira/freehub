@@ -17,7 +17,7 @@ Then:
 
 1. Fork this repo.
 2. Set `relays` in `public/config.json` to your team relay.
-3. Replace `public/logo.svg`, `public/logo-dark.svg` and `public/favicon.svg`, and the installed app's name and icons in `public/manifest.webmanifest`, `public/icons/` and `public/apple-touch-icon.png`.
+3. Replace `public/logo.svg` and `public/logo-dark.svg`, the browser tab's `public/favicon.png`, and the installed app's name and icons in `public/manifest.webmanifest`, `public/icons/` and `public/apple-touch-icon.png`. Freehub's own are made from `assets/icon.png`; `icons/badge.png` is the icon's shape in white, which Android shows in the status bar.
 4. Optionally, give the team a map of your region: see [Map](#map).
 5. Optionally, give each project a Drive for its files: see [Drive](#drive).
 6. Optionally, push notifications to people's phones and computers: see [Notifications](#notifications).
