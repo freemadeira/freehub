@@ -60,15 +60,20 @@ function substitute(value: unknown): unknown {
   return value;
 }
 
-function readSources(path: string): SourceConfig[] {
+// From SOURCES when it's set, which suits hosts configured through environment
+// variables, or else from the sources file.
+function readSources(): SourceConfig[] {
+  const inline = process.env.SOURCES?.trim();
+  const path = process.env.SOURCES_FILE?.trim() || "/app/sources.json";
+  const where = inline ? "SOURCES" : path;
   let raw: unknown;
   try {
-    raw = JSON.parse(readFileSync(path, "utf-8"));
+    raw = JSON.parse(inline || readFileSync(path, "utf-8"));
   } catch (error) {
-    throw new ConfigError(`Can't read the sources file ${path}: ${error}`);
+    throw new ConfigError(`Can't read the sources from ${where}: ${error}`);
   }
   if (!Array.isArray(raw)) {
-    throw new ConfigError(`${path} must hold a list of sources.`);
+    throw new ConfigError(`${where} must hold a list of sources.`);
   }
   const sources = raw.map((entry: unknown) => {
     const source = substitute(entry) as Partial<SourceConfig>;
@@ -104,9 +109,7 @@ export function loadConfig(): ConnectorConfig {
     }
     throw new ConfigError("CONNECTOR_KEY must be an nsec or a hex key.");
   }
-  const sources = readSources(
-    process.env.SOURCES_FILE?.trim() || "/app/sources.json"
-  );
+  const sources = readSources();
   const [only] = sources;
   const name =
     process.env.CONNECTOR_NAME?.trim() ||

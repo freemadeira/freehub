@@ -223,7 +223,7 @@ Behind an existing reverse proxy, leave `DOMAIN` unset so Caddy serves plain HTT
 A connector runs next to the app as its own container, built from this repository with `connector/Dockerfile`. It gets webhooks from its sources, fetches what tables map from the source's API, and publishes records to the team relay; every hour it also catches up on what changed in the last 26 hours, in case a webhook went missing. Shopify is the only kind of source so far: new kinds go in `connector/sources/`.
 
 1. Make a Nostr key for the connector and whitelist its npub on the team relay.
-2. Write a sources file from `connector/sources.example.json`. Settings written as `${NAME}` are read from the environment, so secrets stay out of the file.
+2. Write the sources, as in `connector/sources.example.json`, to a file or to the `SOURCES` variable. Settings written as `${NAME}` are read from the environment, so secrets stay out of them.
 3. Run the image with these environment variables, and the sources file at `/app/sources.json`:
 
    | Variable | Notes |
@@ -232,14 +232,15 @@ A connector runs next to the app as its own container, built from this repositor
    | `RELAY_URL` | The team relay. |
    | `PUBLIC_URL` | Where the connector is reachable, such as `https://connect.example.com`. Webhooks go to `<PUBLIC_URL>/sources/<source id>`. |
    | `CONNECTOR_NAME` | The name records show as written by. Defaults to the source's name when there's one source. |
-   | `SOURCES_FILE` | Defaults to `/app/sources.json`. |
+   | `SOURCES` | The sources as JSON, instead of a file. |
+   | `SOURCES_FILE` | Defaults to `/app/sources.json`. Used when `SOURCES` isn't set. |
    | `PORT` | Defaults to `3000`. `GET /` answers `ok`, for health checks. |
 
 4. Add its npub to `connectors` in `config.json`, then switch its source on in a table's settings.
 
 To bring in older items, run `node connector.js backfill <source id> <YYYY-MM-DD>` inside the container. It writes about 40 records a minute, to stay under the relay's limits.
 
-For Shopify, create an app for your store in the Shopify Dev Dashboard with the `read_orders` scope (and `read_all_orders` for orders older than 60 days), request protected customer data access for name and email, install it on the store, and put its client ID and secret in the sources file with the store's `<handle>.myshopify.com` domain. The connector gets its own access token and sets up the order webhooks itself. A legacy custom app's static token works too, as `accessToken`.
+For Shopify, create the app from the store's admin (Settings → Apps → Develop apps → Build apps in Dev Dashboard) with the scopes `read_orders` and `read_customers` (and `read_all_orders` for orders older than 60 days), install it on the store, and put its client ID and secret in the sources with the store's `<handle>.myshopify.com` domain. The connector gets its own access token and sets up the order webhooks itself. An app made in the store's own organization gets protected customer data without asking, but customers' names and emails only on the Grow plan or higher: on other plans the connector leaves Customer and Email out of what tables can map. A legacy custom app's static token works too, as `accessToken`.
 
 ### Static host
 
