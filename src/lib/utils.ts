@@ -56,3 +56,20 @@ export function writeStorage(key: string, value: string | null): void {
     // Storage blocked: state just won't survive a reload.
   }
 }
+
+const BYTE_UNITS = ["B", "KB", "MB", "GB"] as const;
+const fineSize = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+const wholeSize = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 0,
+});
+
+/** A file's size as people read it, like "2.4 MB" or "820 KB". */
+export function formatBytes(bytes: number): string {
+  let size = bytes;
+  let unit = 0;
+  while (size >= 1024 && unit < BYTE_UNITS.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return `${(size < 10 ? fineSize : wholeSize).format(size)} ${BYTE_UNITS[unit]}`;
+}

@@ -20,6 +20,8 @@ import { UserAvatar } from "@/components/user-avatar";
 import { cardPath, OPENED_FROM_BOARD } from "@/features/board/board-context";
 import { pagePath, REVEAL_MENTION } from "@/features/docs/docs-context";
 import { PageIcon } from "@/features/docs/page-icon";
+import { fileHref } from "@/features/drive/drive-context";
+import { FileIcon } from "@/features/drive/file-icon";
 import type { Inbox, InboxItem } from "@/hooks/use-inbox";
 import { useProfile } from "@/hooks/use-profile";
 import { pageTitle } from "@/lib/docs";
@@ -50,6 +52,9 @@ function linkTo(item: InboxItem): { href: string; state: object } {
   if ("page" in item) {
     return { href: pagePath(item.project, item.page), state: REVEAL_MENTION };
   }
+  if ("file" in item) {
+    return { href: fileHref(item.project, item.file), state: {} };
+  }
   const { board, card } = item;
   return {
     // The inbox knows neither the board's other cards nor other boards with
@@ -60,6 +65,38 @@ function linkTo(item: InboxItem): { href: string; state: object } {
     }),
     state: OPENED_FROM_BOARD,
   };
+}
+
+/** What the mention is in: the card by its key and title, or the page or file by its icon and name. */
+function Subject({ item }: { item: InboxItem }) {
+  const title = cn("truncate", !item.read && "text-foreground font-medium");
+  if ("file" in item) {
+    return (
+      <>
+        <FileIcon className="self-center" file={item.file} size="sm" />
+        <span className={title}>{item.file.name}</span>
+      </>
+    );
+  }
+  if ("page" in item) {
+    return (
+      <>
+        <PageIcon
+          className="text-muted-foreground self-center"
+          page={item.page}
+        />
+        <span className={title}>{pageTitle(item.page)}</span>
+      </>
+    );
+  }
+  return (
+    <>
+      <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+        {cardKey(item.board, item.card)}
+      </span>
+      <span className={title}>{item.card.title || "Untitled"}</span>
+    </>
+  );
 }
 
 function Row({ item, inbox }: { item: InboxItem; inbox: Inbox }) {
@@ -93,23 +130,7 @@ function Row({ item, inbox }: { item: InboxItem; inbox: Inbox }) {
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex min-w-0 items-baseline gap-2">
-            {"page" in item ? (
-              <PageIcon
-                className="text-muted-foreground self-center"
-                page={item.page}
-              />
-            ) : (
-              <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                {cardKey(item.board, item.card)}
-              </span>
-            )}
-            <span
-              className={cn("truncate", !read && "text-foreground font-medium")}
-            >
-              {"page" in item
-                ? pageTitle(item.page)
-                : item.card.title || "Untitled"}
-            </span>
+            <Subject item={item} />
           </span>
           <span className="text-muted-foreground truncate text-sm">
             {name} mentioned you: <MentionText content={notification.content} />

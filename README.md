@@ -2,7 +2,7 @@
 
 <div align="center">
 <h1>Freehub</h1>
-<p>Nostr-first project management, CRM, docs and maps</p>
+<p>Nostr-first project management, CRM, docs, files and maps</p>
 </div>
 
 ## Screenshots
@@ -88,6 +88,9 @@ pnpm fix
 | `src/lib/crm-templates.ts` | The table templates offered in "New table" |
 | `src/lib/sources.ts` | Connector sources and how they map onto tables |
 | `src/lib/docs.ts` | Doc pages and how they nest |
+| `src/lib/drive.ts` | Drive folders and files, and how they nest |
+| `src/lib/blossom.ts` | Blossom servers, and sealing files before they go there |
+| `src/lib/drive-upload.ts` | The upload queue, carried on across screens |
 | `src/lib/merge.ts` | Merging two edits of the same page |
 | `src/lib/mentions.ts` | Mentions in comments and docs (NIP-27) |
 | `src/lib/notifications.ts` | The rules that turn events into notifications |
@@ -106,7 +109,7 @@ pnpm fix
 You need a private Nostr relay for the team. It must:
 
 - require NIP-42 AUTH for reads and writes, and only let whitelisted pubkeys in;
-- store kinds 0, 30301–30308, 1111 and 5;
+- store kinds 0, 30301–30310, 1111 and 5;
 - keep its database on persistent storage, since the relay holds the only copy of the team's data;
 - be reachable over `wss://`.
 
@@ -118,7 +121,8 @@ Then:
 2. Set `relays` in `public/config.json` to your team relay.
 3. Replace `public/logo.svg`, `public/logo-dark.svg` and `public/favicon.svg`.
 4. Optionally, give the team a map of your region: see [Map](#map).
-5. Whitelist the npub of everyone who uses the app, viewers too, on the relay. Anyone who isn't whitelisted gets a "No access" screen showing their npub, ready to copy and send to you. The app can't read the whitelist, so the first time someone joins a project or board, paste their npub (or the whole whitelist file) into its members field; after that they're suggested by name everywhere.
+5. Optionally, give each project a Drive for its files: see [Drive](#drive).
+6. Whitelist the npub of everyone who uses the app, viewers too, on the relay. Anyone who isn't whitelisted gets a "No access" screen showing their npub, ready to copy and send to you. The app can't read the whitelist, so the first time someone joins a project or board, paste their npub (or the whole whitelist file) into its members field; after that they're suggested by name everywhere.
 
 ### Configuration
 
@@ -135,6 +139,7 @@ All settings live in `public/config.json`:
 | `lookupRelays` | purplepag.es, user.kindpag.es, relay.damus.io | Public relays used to look up members' names and avatars. |
 | `map` | none | `{ "world": "/worlds/<name>/world.json" }`, the address of a world pack. Without it there's no Map tab, and the map's code is never downloaded. See [Map](#map). |
 | `connectors` | none | npubs of the connectors your organization runs. Their sources show up in each table's settings, under **Connections**. See [Connectors](#connectors). |
+| `blossom` | none | Blossom servers for the team's files, as `https://` URLs. Uploads go to the first; files are read from whichever has them. Without it there's no Drive. See [Drive](#drive). |
 
 Relay URLs must start with `wss://`. `ws://` is accepted only for localhost.
 
@@ -189,6 +194,36 @@ The bake downloads OpenStreetMap data through [Overpass](https://overpass-api.de
 To serve a pack, put it where the app can reach it: under `public/worlds/` when running locally, or mounted at `/branding/worlds/<name>` in the container, like `config.json`. Any other web address works too if it allows cross-origin requests.
 
 The map comes from your own server: no tiles or fonts are fetched from anyone else. OpenStreetMap data is under the [ODbL](https://www.openstreetmap.org/copyright), so the map credits its contributors, and a world pack you publish is shared under the same license.
+
+### Drive
+
+Each project gets a Drive for its files once `config.json` lists a [Blossom](https://github.com/hzrd149/blossom) server under `blossom`. Files are encrypted in the browser before they leave it (AES-GCM, a new key per file), and the key travels in the file's event on your private relay, so the Blossom server only ever holds what it can't read. Files are opened in the browser to preview them as well, whole and in memory, which is why each can be up to 100 MB.
+
+The server must:
+
+- take uploads only from the team, through BUD-11 authorization (`PUT /upload`), and let each uploader delete their own blobs (`DELETE /<sha256>`);
+- accept `application/octet-stream`, since every blob is encrypted, up to a little over 100 MB;
+- keep blobs for good: no expiry rules;
+- answer cross-origin requests from the app, with the `Authorization` and `X-SHA-256` headers allowed.
+
+[blossom-server](https://github.com/hzrd149/blossom-server) does all of this. Its example config deletes blobs nobody opened for a week, so replace its `storage.rules` with one rule that lists the team and lasts for as long as you need, and keep `upload.requirePubkeyInRule` on:
+
+```yaml
+storage:
+  rules:
+    - type: "*"
+      expiration: 100 years
+      pubkeys:
+        - <hex pubkey of each teammate>
+upload:
+  requireAuth: true
+  requirePubkeyInRule: true
+  maxSize: 110000000
+list:
+  enabled: false
+```
+
+To try it locally, run any Blossom server on your machine and add `"blossom": ["http://localhost:3000"]` (or its port) to `public/config.json`; `http://` is accepted only for localhost.
 
 ## Deploy
 
@@ -257,6 +292,7 @@ There is no backend and no database. The app is a static site: every change is a
 - **CRM.** Each project can hold several tables, such as merchants, companies, people or deals. Every table has its own fields (text, numbers, money, dates, selects, members, links to other tables and more) and can have a stage field that turns it into a pipeline with won and lost endings. Any project member can add tables, change their fields and edit records. Records show up as a table (sorting, search, filters, column picker, bulk changes, CSV import and export), as a pipeline board and as insights. Every stage change is kept on the record, so its journey and the time spent in each stage can be read back. Notes, calls, emails, meetings and visits are logged on a record as comments.
 - **Connectors.** A connector is an optional service with its own Nostr key that feeds a source, such as an online store, into CRM tables: each order becomes a record. It describes each source in a manifest, and a table only gets records once a member switches the source on in **Table settings → Connections** and picks which field each piece of data goes to. Records keep a stable id per item, so an order changing later updates its record. When the source changes a value, the record takes it; when it doesn't, a teammate's edit to that field stays. A record a member deleted is never brought back.
 - **Map.** With a world pack set up, the Map tab shows the region in 3D: terrain, buildings with their windows and roofs, trees, roads, the sea and its surf, place names and landmarks. It follows the app's theme, with lit windows and streets at night. Records of every table with a Location field show as pins in the color of their stage, and in a list in the corner that filters by table and folds away; clicking either opens the record. A Location field takes coordinates or a pasted Google Maps, Apple Maps or OpenStreetMap link, or a click on the map through the pin button next to the field. Drag to move, right-drag or two fingers to turn and tilt, scroll or pinch to zoom; arrow keys pan and `+`/`-` zoom.
+- **Drive.** With a Blossom server set up, each project has a Drive: folders and files, shown as a tree under the project in the sidebar and on the project page. Files and whole folders go in by dragging them from the computer, picking them or pasting a screenshot, and upload in the background while you move around the app. Pictures, videos, audio, PDFs, texts and CSVs preview in place, a thumbnail is drawn in the browser for pictures, videos and PDFs, and each file has its details and comments, where `@` mentions someone. Any project member can add, rename, move or delete anything; viewers can browse, preview and download. Deleted things wait in the trash for 30 days, then any member's app deletes them for good when they next open the Drive. Stars and recent files are each person's own.
 - **Docs.** Each project has docs: pages that can hold pages of their own, shown as a tree under the project in the sidebar. Any project member can write, move or delete any page. Pages are edited in place, as in Notion. Typing `/` opens a menu of blocks, and `@` mentions someone in the project. Hovering a block shows `+`, which adds a block below it, and a handle that drags it somewhere else or opens its menu. List items move on their own, and `Mod+Shift+↑`/`↓` moves the block the cursor is in. Pages in the sidebar can be dragged before, after or into each other. The text is saved as Markdown a second after typing pauses.
 - **Editing a page together.** When two people edit a page at once, each one's saved edits show up in the other's page as they arrive, without moving their cursor. The two versions are merged line by line, so edits to different lines, even neighbouring list items, are all kept. When both change the same line, the person still typing keeps theirs; between two saved versions, every device picks the same one.
 - **Saving.** Changes show up right away, then go to the signer and on to the relay. Once signed, a change is kept in the browser until every team relay has it, so it survives reloads and time offline. A change still waiting on the signer is lost if the tab closes, and the app warns before that happens.
@@ -276,8 +312,10 @@ Boards and cards follow the draft kanban NIP used by [kanbanstr](https://github.
 | 30305 | CRM table | `d`, `a` (project), `title`, `singular`, `slug`, `icon`, `description`, `creator`, `created`, `field` (id, type, name, config), `option` (field, id, label, color, stage outcome), `p` (connectors that may write its records), `source` (connector, source), `map` (connector, source, attribute, field), `map-option` (connector, source, attribute, value, option) |
 | 30306 | CRM record | `d`, `a` (table), `a` (project), `title`, `rank`, `created`, `creator`, `val` (field, value), `moved` (stage, time, member or connector) |
 | 30307 | Doc page | `d`, `a` (project), `title`, `icon`, `parent`, `rank`, `created`, `creator`, `prev` (the version it was edited from), `p` (one per person mentioned), `mention` (person, who mentioned them, when) |
+| 30309 | Drive folder | `d`, `a` (project), `name`, `parent`, `color`, `icon`, `created`, `creator`, `trashed` (time, who) |
+| 30310 | Drive file | `d`, `a` (project), `name`, `folder`, `size`, `m` (MIME type), `dim`, `duration`, `x` (hash of the encrypted file), `encryption-algorithm`, `decryption-key`, `decryption-nonce`, `thumbnail` (hash, nonce), `creator`, `created`, `updated`, `trashed` (time, who) |
 | 30308 | Connector source | `d`, `name`, `type`, `attr` (id, type, name, config), `value` (attribute, id, label, color, stage outcome) |
-| 1111 | Comment on a card, or activity on a record ([NIP-22](https://github.com/nostr-protocol/nips/blob/master/22.md)) | `A`, `K`, `P`, `a`, `k`, `p` (plus one per person mentioned), `activity` (records only) |
+| 1111 | Comment on a card or a Drive file, or activity on a record ([NIP-22](https://github.com/nostr-protocol/nips/blob/master/22.md)) | `A`, `K`, `P`, `a`, `k`, `p` (plus one per person mentioned), `activity` (records only) |
 | 5 | Deleted board, project or comment ([NIP-09](https://github.com/nostr-protocol/nips/blob/master/09.md)) | `a` or `e`, `k` |
 
 `d` tags are 16 random hex characters, so every address (`kind:pubkey:d`) stays under the 100 characters that relays built on [eventstore](https://github.com/fiatjaf/eventstore), Haven among them, index for `#a` queries. Boards and projects made before that used longer `d` tags, so their cards, sprints, tables, records and comments are fetched by author instead and matched by address in the browser.
@@ -287,6 +325,8 @@ A board's `col` tags are the statuses it uses, one per column, and a card's `s` 
 Each member publishes their own version of a card, sprint, CRM table, record or doc page under the same `d` tag, and the newest version from any member wins. Deleting one publishes a new version tagged `deleted`. A record keeps one `val` tag per value, so a multi-select holds several, and field values are stored as plain text: numbers as decimals, dates as `YYYY-MM-DD`, places as `lat,lng` in degrees, members as hex pubkeys and links to other records by their `d` tag.
 
 A connector publishes a source manifest per source, and a kind 0 profile with its name on the team relays. A table switches a source on with a `source` tag and maps its attributes with `map` and `map-option` tags; its `p` tags name the connectors allowed to write its records, so a connector finds its tables with a `#p` query. Besides members, a record's versions count from those connectors only, and only in that table. A connector's record has `creator` set to the connector and a `d` tag made from the table, the source and the item's id, so the same order always lands on the same record.
+
+A Drive file's blob is sealed with AES-GCM under a key made for that file; its thumbnail uses the same key with a nonce of its own. The encryption tags follow NIP-17's file messages, and `x` is the SHA-256 of the encrypted blob, which is the name the Blossom servers know it by. A folder or file put in the trash gets a `trashed` tag, and what's inside a trashed folder goes with it untagged. Deleting one for good publishes a version tagged `deleted`, as for cards; a file's still names its blobs and `creator`, so the uploader's app deletes them from the servers, since only the uploader's key can.
 
 A doc page's text is the event's content, as Markdown. Its `parent` is the `d` tag of the page it sits under, and pages at the top have none. `prev` is the id of the version the editor started from, so a teammate's editor knows what each side changed when it merges two versions saved at once. Deleting a page deletes the pages under it too. Everyone the text mentions gets a `p` tag, and a `mention` tag with who mentioned them and when, in seconds; each version carries these on from the one it was edited from, so every member's version names the same notification, and the newest time wins when they differ.
 
@@ -300,6 +340,7 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 - [Motion](https://motion.dev/) — animations
 - [dnd-kit](https://dndkit.com/) — drag and drop
 - [three.js](https://threejs.org/) — the 3D map, with [postprocessing](https://github.com/pmndrs/postprocessing) for its night glow, [earcut](https://github.com/mapbox/earcut) for roofs and [vector-tile](https://github.com/mapbox/vector-tile-js) for its data
+- [PDF.js](https://mozilla.github.io/pdf.js/) — thumbnails of PDFs, drawn in the browser on upload
 - [Tiptap](https://tiptap.dev/) — the card description and doc page editor, on [ProseMirror](https://prosemirror.net/), with [marked](https://marked.js.org/) reading its Markdown
 - [node-diff3](https://github.com/bhousel/node-diff3) — line diffs for merging edits of the same page
 - [applesauce](https://github.com/hzrd149/applesauce) — Nostr event store, relay connections and signers
@@ -316,7 +357,11 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 - Removing someone from a board or project, or making them a viewer, hides the cards, sprints, CRM tables, records and doc pages whose newest version is theirs: each falls back to an older version or disappears, a table with its records. Comments on their versions are hidden too, and boards they made in a project move out of it. Adding them back as a member shows it all again.
 - Other clients of the kanban NIP, and copies of this app from before viewers, read a viewer as a member.
 - The statuses are fixed, after Linear's: Triage, Backlog, Todo, In progress, In review, Done, Canceled and Duplicate. Each board picks which of them it uses, but can't rename or reorder them. Boards made before these statuses use To do, In progress and Done until their creator turns more on. Copies of this app from before these statuses read the new ones as Todo.
-- No file attachments yet.
+- Cards and doc pages can't hold files yet; files go in a project's Drive.
+- A Drive file is encrypted and opened whole, in memory, so files are capped at 100 MB, and a video plays once it has all arrived.
+- Only the person who uploaded a file can delete it from the Blossom servers, and their app does so the next time they open the Drive after it was deleted for good. Files deleted after their uploader left the team stay on the servers, encrypted, with nothing pointing at them.
+- Stars and recent files are kept in the browser, like the inbox, so another device starts without them.
+- Two people adding something with the same name to the same folder at the same moment both keep it; the Drive numbers names only as they're added from one device.
 - A linked image in a description, such as a `[![badge](…)](…)` badge, loses its link once the description is edited.
 - A CRM record is saved as a whole, so two people changing different fields of the same record at the same moment can undo one another's change.
 - Importing a CSV signs one event per row; a signer app may ask to approve each one. At most 500 rows go in per import.
@@ -326,10 +371,10 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 - A doc page is saved whole, as one event, so a long page costs a little more with each save. Edits merge line by line: a paragraph is one line, so two people rewriting the same paragraph at once keep only one version of it.
 - A deleted page can't be brought back. Deleting a page while someone else has it open drops whatever they hadn't saved yet.
 - Pages have no links to other pages yet, other than the ones under them; a link to a page's address works as any web link.
-- The inbox keeps what you read or archived in the browser, so another device starts with every mention unread. It shows the newest 200 mentions in comments, and every page in your projects that mentions you. Only card comments and doc pages can mention people for now.
+- The inbox keeps what you read or archived in the browser, so another device starts with every mention unread. It shows the newest 200 mentions in comments, and every page in your projects that mentions you. Only card comments, doc pages and comments on Drive files can mention people for now.
 - The map needs WebGL 2. It draws one region per app, and a pin per record, so thousands of located records crowd it.
 - The map guesses most building heights, since few are tagged in OpenStreetMap, and builds windows and roofs from rules rather than the real buildings.
-- `INBOX` and `MAP` can't be board codes, since the inbox lives at `/inbox` and the map at `/map`. Likewise a table named "Docs" gets the link `docs-2`, since a project's docs live at `/p/<project>/docs`.
+- `INBOX` and `MAP` can't be board codes, since the inbox lives at `/inbox` and the map at `/map`. Likewise a table named "Docs" or "Drive" gets the link `docs-2` or `drive-2`, since a project's docs and Drive live at `/p/<project>/docs` and `/p/<project>/drive`.
 
 ## License
 

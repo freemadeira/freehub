@@ -16,6 +16,8 @@ import {
   COMMENT_KIND,
   CRM_RECORD_KIND,
   CRM_TABLE_KIND,
+  DRIVE_FILE_KIND,
+  DRIVE_FOLDER_KIND,
   PROJECT_KIND,
   SPRINT_KIND,
 } from "@/lib/model";
@@ -30,8 +32,12 @@ const PERMISSIONS = NostrConnectSigner.buildSigningPermissions([
   PROJECT_KIND,
   CRM_TABLE_KIND,
   CRM_RECORD_KIND,
+  DRIVE_FOLDER_KIND,
+  DRIVE_FILE_KIND,
   COMMENT_KIND,
   5,
+  // Blossom's authorization for uploading and deleting files.
+  24_242,
 ]);
 
 const EXTENSION_TIMEOUT = 60_000;

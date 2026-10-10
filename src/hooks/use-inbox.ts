@@ -3,12 +3,20 @@ import { getTagValue } from "applesauce-core/helpers/event";
 
 import { useObservableValue } from "@/hooks/use-observable-value";
 import type { DocPage, DocsContent } from "@/lib/docs";
+import type { DriveFile } from "@/lib/drive";
+import { resolveFile } from "@/lib/drive";
 import { inboxStore } from "@/lib/inbox";
 import type { Board, Card } from "@/lib/model";
-import { CARD_KIND, DELETE_KIND, resolveCard } from "@/lib/model";
+import {
+  CARD_KIND,
+  DELETE_KIND,
+  DRIVE_FILE_KIND,
+  resolveCard,
+} from "@/lib/model";
 import { eventStore } from "@/lib/nostr";
 import type {
   CommentNotification,
+  FileNotification,
   PageNotification,
 } from "@/lib/notifications";
 import {
@@ -22,6 +30,7 @@ import { sync } from "@/lib/relays";
 export type InboxItem = (
   | { notification: CommentNotification; board: Board; card: Card }
   | { notification: PageNotification; project: Project; page: DocPage }
+  | { notification: FileNotification; project: Project; file: DriveFile }
 ) & { read: boolean };
 
 export interface Inbox {
@@ -42,15 +51,45 @@ export interface InboxScope {
   loaded: boolean;
 }
 
-function byCard(events: NostrEvent[]): Map<string, NostrEvent[]> {
-  const cards = new Map<string, NostrEvent[]>();
+/** Events grouped by their `d` tag: each card's or file's versions. */
+function byId(events: NostrEvent[]): Map<string, NostrEvent[]> {
+  const found = new Map<string, NostrEvent[]>();
   for (const event of events) {
     const id = getTagValue(event, "d");
     if (id) {
-      cards.set(id, [...(cards.get(id) ?? []), event]);
+      found.set(id, [...(found.get(id) ?? []), event]);
     }
   }
-  return cards;
+  return found;
+}
+
+/** The file a notification points at, in a project its author belongs to. */
+function locateFile(
+  notification: FileNotification,
+  projects: Project[],
+  versions: NostrEvent[]
+): { project: Project; file: DriveFile } | undefined {
+  for (const project of projects) {
+    if (project.members.includes(notification.actor)) {
+      const file = resolveFile(project, versions, notification.fileId);
+      if (file) {
+        return { file, project };
+      }
+    }
+  }
+  return undefined;
+}
+
+/** Each thing's versions, as notifications of one type point at them by `d` tag. */
+function useVersions(kind: number, ids: string[]): Map<string, NostrEvent[]> {
+  const key = [...new Set(ids)].join(",");
+  const filters = [{ "#d": key.split(","), kinds: [kind] }];
+  useObservableValue(() => (key ? sync(filters) : undefined), [key]);
+  const events = useObservableValue(
+    () => (key ? eventStore.timeline(filters) : undefined),
+    [key]
+  );
+  return byId(events ?? []);
 }
 
 /** The card a notification points at, on a board its author belongs to. */
@@ -109,9 +148,14 @@ export function useInbox(pubkey: string, scope: InboxScope): Inbox {
   const comments = notifications.filter(
     (item): item is CommentNotification => item.type === "comment"
   );
+  const fileComments = notifications.filter(
+    (item): item is FileNotification => item.type === "file"
+  );
 
   // Deleted comments drop out of the store, and with them their notification.
-  const commentKey = comments.map((item) => item.id).join(",");
+  const commentKey = [...comments, ...fileComments]
+    .map((item) => item.id)
+    .join(",");
   useObservableValue(
     () =>
       commentKey
@@ -120,18 +164,14 @@ export function useInbox(pubkey: string, scope: InboxScope): Inbox {
     [commentKey]
   );
 
-  const cardKey = [...new Set(comments.map((item) => item.cardId))].join(",");
-  const cardFilters = [{ "#d": cardKey.split(","), kinds: [CARD_KIND] }];
-  useObservableValue(
-    () => (cardKey ? sync(cardFilters) : undefined),
-    [cardKey]
+  const versions = useVersions(
+    CARD_KIND,
+    comments.map((item) => item.cardId)
   );
-  const cardEvents = useObservableValue(
-    () => (cardKey ? eventStore.timeline(cardFilters) : undefined),
-    [cardKey]
+  const fileVersions = useVersions(
+    DRIVE_FILE_KIND,
+    fileComments.map((item) => item.fileId)
   );
-
-  const versions = byCard(cardEvents ?? []);
   const items = notifications.flatMap((notification): InboxItem[] => {
     if (marks?.archived.has(notification.id)) {
       return [];
@@ -140,6 +180,14 @@ export function useInbox(pubkey: string, scope: InboxScope): Inbox {
     if (notification.type === "page") {
       const found = locatePage(notification, pubkey, scope);
       return found ? [{ ...found, read }] : [];
+    }
+    if (notification.type === "file") {
+      const found = locateFile(
+        notification,
+        scope.projects,
+        fileVersions.get(notification.fileId) ?? []
+      );
+      return found ? [{ ...found, notification, read }] : [];
     }
     const found = locateCard(
       notification,

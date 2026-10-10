@@ -1,13 +1,13 @@
 import { cn } from "cn";
-import { PlusIcon, Settings2Icon } from "lucide-react";
+import { PlusIcon, Settings2Icon, UploadIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "wouter";
 
 import { IconButton } from "@/components/icon-button";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { TopBar } from "@/components/top-bar";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,10 +22,16 @@ import { tablePath } from "@/features/crm/crm-context";
 import { NewTableDialog } from "@/features/crm/new-table-dialog";
 import { TableIcon } from "@/features/crm/table-icon";
 import { PageGrid, useNewPage } from "@/features/docs/docs-page";
+import { drivePath } from "@/features/drive/drive-context";
+import { RecentFiles } from "@/features/drive/recent-files";
+import { recentFiles } from "@/features/drive/use-drive-entries";
 import { ProjectDialog } from "@/features/projects/project-dialog";
+import { useDriveContent, useDriveMarks } from "@/hooks/use-drive";
+import { hasBlossom } from "@/lib/blossom";
 import type { CrmRecord, CrmTable, ProjectContent } from "@/lib/crm";
 import { firstValue, stageField } from "@/lib/crm";
 import type { DocsContent } from "@/lib/docs";
+import { uploadFiles } from "@/lib/drive-upload";
 import type { Board } from "@/lib/model";
 import { canEdit } from "@/lib/model";
 import { SWATCH_COLORS } from "@/lib/palette";
@@ -139,6 +145,83 @@ function TableCard({
       )}
       <StageBar records={records} table={table} />
     </Link>
+  );
+}
+
+/** Recent files shown on the project page. */
+const RECENT_SHOWN = 6;
+
+/** Files lately opened or added in the project's Drive, and a way to add more. */
+function DriveSection({
+  project,
+  pubkey,
+  editable,
+}: {
+  project: Project;
+  pubkey: string;
+  editable: boolean;
+}) {
+  const { content, loaded } = useDriveContent(project);
+  const marks = useDriveMarks(pubkey, project);
+  const files = recentFiles(content, marks).slice(0, RECENT_SHOWN);
+  const filePicker = useRef<HTMLInputElement>(null);
+
+  let body: ReactNode = (
+    <p className="text-muted-foreground text-sm">
+      No files in this project yet.
+    </p>
+  );
+  if (files.length > 0) {
+    body = <RecentFiles files={files} project={project} />;
+  } else if (!loaded) {
+    body = (
+      <div
+        aria-busy
+        className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"
+      >
+        <Skeleton className="aspect-4/3 rounded-2xl" />
+        <Skeleton className="aspect-4/3 rounded-2xl" />
+      </div>
+    );
+  }
+
+  return (
+    <Section
+      action={
+        <div className="flex items-center gap-2">
+          {editable && (
+            <Button onClick={() => filePicker.current?.click()} variant="ghost">
+              <UploadIcon />
+              Upload
+            </Button>
+          )}
+          <Link
+            className={buttonVariants({ variant: "outline" })}
+            href={drivePath(project)}
+          >
+            Open Drive
+          </Link>
+        </div>
+      }
+      title="Drive"
+    >
+      {body}
+      <input
+        aria-label="Upload files"
+        className="sr-only"
+        multiple
+        onChange={(event) => {
+          const picked = [...(event.target.files ?? [])];
+          event.target.value = "";
+          if (picked.length > 0) {
+            uploadFiles(picked, { project });
+          }
+        }}
+        ref={filePicker}
+        tabIndex={-1}
+        type="file"
+      />
+    </Section>
   );
 }
 
@@ -301,6 +384,9 @@ export function ProjectPage({
             </p>
           )}
         </Section>
+        {hasBlossom() && (
+          <DriveSection editable={editable} project={project} pubkey={pubkey} />
+        )}
       </main>
       <ProjectDialog
         {...dialogProps("settings")}

@@ -20,6 +20,7 @@ import {
   CARD_KIND,
   COMMENT_KIND,
   DOC_PAGE_KIND,
+  DRIVE_FILE_KIND,
   isDeleted,
   PROJECT_KIND,
 } from "@/lib/model";
@@ -52,8 +53,18 @@ export interface PageNotification extends MentionFields {
   pageId: string;
 }
 
+/** Someone mentioned the recipient in a comment on a Drive file. */
+export interface FileNotification extends MentionFields {
+  type: "file";
+  /** The file's `d` tag; its project comes from the file itself. */
+  fileId: string;
+}
+
 /** Everything that can reach someone. A new rule adds its own member. */
-export type Notification = CommentNotification | PageNotification;
+export type Notification =
+  | CommentNotification
+  | PageNotification
+  | FileNotification;
 
 export interface NotificationRule {
   /** Relay filters for the events that may notify the recipient. */
@@ -62,39 +73,58 @@ export interface NotificationRule {
   derive: (event: NostrEvent, recipient: string) => Notification | undefined;
 }
 
-const cardMention: NotificationRule = {
-  derive(event, recipient) {
-    if (
-      event.kind !== COMMENT_KIND ||
-      event.pubkey === recipient ||
-      getTagValue(event, "K") !== String(CARD_KIND) ||
-      !mentions(event.content, recipient)
-    ) {
-      return;
-    }
-    const card = parseReplaceableAddress(getTagValue(event, "A") ?? "");
-    if (card?.kind !== CARD_KIND) {
-      return;
-    }
-    return {
-      actor: event.pubkey,
-      cardId: card.identifier,
-      content: event.content,
-      createdAt: event.created_at,
-      id: event.id,
-      type: "comment",
-    };
-  },
-  // Mentions carry a `p` tag per person, so the relay can do the routing.
-  filters: (recipient) => [
-    {
-      "#K": [String(CARD_KIND)],
-      "#p": [recipient],
-      kinds: [COMMENT_KIND],
-      limit: LIMIT,
+/**
+ * Mentions of the recipient in comments on things of one kind, with the
+ * commented thing's `d` tag as `about` makes it into a notification.
+ */
+function commentMention(
+  kind: number,
+  about: (id: string, mention: MentionFields) => Notification
+): NotificationRule {
+  return {
+    derive(event, recipient) {
+      if (
+        event.kind !== COMMENT_KIND ||
+        event.pubkey === recipient ||
+        getTagValue(event, "K") !== String(kind) ||
+        !mentions(event.content, recipient)
+      ) {
+        return;
+      }
+      const root = parseReplaceableAddress(getTagValue(event, "A") ?? "");
+      if (root?.kind !== kind) {
+        return;
+      }
+      return about(root.identifier, {
+        actor: event.pubkey,
+        content: event.content,
+        createdAt: event.created_at,
+        id: event.id,
+      });
     },
-  ],
-};
+    // Mentions carry a `p` tag per person, so the relay can do the routing.
+    filters: (recipient) => [
+      {
+        "#K": [String(kind)],
+        "#p": [recipient],
+        kinds: [COMMENT_KIND],
+        limit: LIMIT,
+      },
+    ],
+  };
+}
+
+const cardMention = commentMention(CARD_KIND, (cardId, mention) => ({
+  ...mention,
+  cardId,
+  type: "comment",
+}));
+
+const fileMention = commentMention(DRIVE_FILE_KIND, (fileId, mention) => ({
+  ...mention,
+  fileId,
+  type: "file",
+}));
 
 /**
  * The mention of the recipient in this version of a page. Every member saves
@@ -142,6 +172,7 @@ const docMention: NotificationRule = {
 export const NOTIFICATION_RULES: readonly NotificationRule[] = [
   cardMention,
   docMention,
+  fileMention,
 ];
 
 export function notificationFilters(recipient: string): Filter[] {

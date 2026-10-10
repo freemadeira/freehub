@@ -12,6 +12,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getConfig } from "@/config";
 import { BoardRoute, findBoard, parseSlug } from "@/features/board/board-route";
+import { UploadTray } from "@/features/drive/upload-tray";
 import { HomePage } from "@/features/home/home-page";
 import { INBOX_PATH, InboxPage } from "@/features/inbox/inbox-page";
 import { LoginPage } from "@/features/login/login-page";
@@ -19,10 +20,12 @@ import { MAP_PATH } from "@/features/map/map-path";
 import { ProjectDialog } from "@/features/projects/project-dialog";
 import { useBoards } from "@/hooks/use-boards";
 import { useDocs } from "@/hooks/use-docs";
+import { useDriveTrees } from "@/hooks/use-drive";
 import { useInbox } from "@/hooks/use-inbox";
 import { useObservableValue } from "@/hooks/use-observable-value";
 import { useProjectTables } from "@/hooks/use-project-content";
 import { useProjects } from "@/hooks/use-projects";
+import { hasBlossom } from "@/lib/blossom";
 import { accounts } from "@/lib/nostr";
 import { inProject } from "@/lib/project";
 import { access$ } from "@/lib/relays";
@@ -67,6 +70,9 @@ function Workspace({ pubkey }: { pubkey: string }) {
   const { projects, loaded: projectsLoaded } = useProjects(pubkey);
   const tables = useProjectTables(projects);
   const { docs, loaded: docsLoaded } = useDocs(projects);
+  // Only teams with somewhere to keep files have a Drive.
+  const drive = hasBlossom();
+  const trees = useDriveTrees(drive ? projects : []);
   const inbox = useInbox(pubkey, {
     boards,
     docs,
@@ -90,6 +96,7 @@ function Workspace({ pubkey }: { pubkey: string }) {
       <AppSidebar
         boards={boards}
         docs={docs}
+        drive={drive ? trees : undefined}
         onNewProject={newProject}
         projects={projects}
         pubkey={pubkey}
@@ -160,6 +167,7 @@ function Workspace({ pubkey }: { pubkey: string }) {
         projects={projects}
         pubkey={pubkey}
       />
+      {drive && <UploadTray trees={trees} />}
     </SidebarProvider>
   );
 }

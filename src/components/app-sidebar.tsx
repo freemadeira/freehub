@@ -42,11 +42,14 @@ import { boardPath } from "@/features/board/board-context";
 import { findBoard, parseSlug } from "@/features/board/board-route";
 import { TableIcon } from "@/features/crm/table-icon";
 import { SidebarDocs } from "@/features/docs/sidebar-docs";
+import { SidebarDrive } from "@/features/drive/sidebar-drive";
 import { INBOX_PATH } from "@/features/inbox/inbox-page";
 import { MAP_PATH } from "@/features/map/map-path";
 import type { CrmTable } from "@/lib/crm";
 import type { DocsContent } from "@/lib/docs";
 import { EMPTY_DOCS } from "@/lib/docs";
+import type { DriveTree } from "@/lib/drive";
+import { EMPTY_TREE } from "@/lib/drive";
 import type { Board } from "@/lib/model";
 import { canEdit } from "@/lib/model";
 import type { Project } from "@/lib/project";
@@ -87,6 +90,8 @@ interface ProjectItemProps {
   project: Project;
   tables: CrmTable[];
   docs: DocsContent;
+  /** This project's Drive folders, or nothing when the team keeps no files. */
+  drive?: DriveTree;
   /** This project's boards. */
   boards: Board[];
   /** Every board, to tell apart boards sharing a code. */
@@ -102,6 +107,7 @@ function ProjectItem({
   project,
   tables,
   docs,
+  drive,
   boards,
   allBoards,
   openBoard,
@@ -168,6 +174,13 @@ function ProjectItem({
             docs={docs}
             project={project}
           />
+          {drive && (
+            <SidebarDrive
+              canEdit={canEdit(project, pubkey)}
+              project={project}
+              tree={drive}
+            />
+          )}
         </SidebarMenuSub>
       </CollapsibleContent>
     </Collapsible>
@@ -180,6 +193,8 @@ interface AppSidebarProps {
   tables: Map<string, CrmTable[]>;
   /** Every project's doc pages, by project address. */
   docs: Map<string, DocsContent>;
+  /** Every project's Drive folders, by project address; none when the team keeps no files. */
+  drive?: Map<string, DriveTree>;
   pubkey: string;
   /** Unread notifications in the inbox. */
   unread: number;
@@ -191,6 +206,7 @@ export function AppSidebar({
   projects,
   tables,
   docs,
+  drive,
   pubkey,
   unread,
   onNewProject,
@@ -299,6 +315,11 @@ export function AppSidebar({
                   allBoards={boards}
                   boards={projectBoards}
                   docs={docs.get(project.address) ?? EMPTY_DOCS}
+                  drive={
+                    drive
+                      ? (drive.get(project.address) ?? EMPTY_TREE)
+                      : undefined
+                  }
                   key={project.address}
                   openBoard={openBoard}
                   location={location}

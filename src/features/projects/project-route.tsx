@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, Redirect, useLocation } from "wouter";
 
 import { TopBar } from "@/components/top-bar";
 import { buttonVariants } from "@/components/ui/button";
@@ -14,9 +14,12 @@ import {
 } from "@/features/docs/docs-context";
 import { DocsPage } from "@/features/docs/docs-page";
 import { PageView } from "@/features/docs/page-view";
+import { DRIVE_SEGMENT } from "@/features/drive/drive-context";
+import { DriveRoute } from "@/features/drive/drive-page";
 import { ProjectPage } from "@/features/projects/project-page";
 import { useProjectContent } from "@/hooks/use-project-content";
 import { useSources } from "@/hooks/use-sources";
+import { hasBlossom } from "@/lib/blossom";
 import type { DocsContent } from "@/lib/docs";
 import { EMPTY_DOCS } from "@/lib/docs";
 import type { Board } from "@/lib/model";
@@ -181,7 +184,21 @@ export function ProjectRoute({
   ...props
 }: ProjectRouteProps) {
   const project = projects.find((item) => item.slug === slug.toLowerCase());
-  if (project && props.tableSlug?.toLowerCase() === DOCS_SEGMENT) {
+  const segment = props.tableSlug?.toLowerCase();
+  if (project && segment === DRIVE_SEGMENT) {
+    // Only teams with somewhere to keep files have a Drive.
+    return hasBlossom() ? (
+      <DriveRoute
+        folderParam={props.recordId}
+        key={project.address}
+        project={project}
+        pubkey={props.pubkey}
+      />
+    ) : (
+      <Redirect replace to={`/p/${project.slug}`} />
+    );
+  }
+  if (project && segment === DOCS_SEGMENT) {
     return (
       <DocsView
         docs={docs.get(project.address) ?? EMPTY_DOCS}

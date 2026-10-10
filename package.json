@@ -51,6 +51,7 @@
     "motion": "^14.0.0",
     "node-diff3": "^3.2.1",
     "pbf": "^5.1.2",
+    "pdfjs-dist": "^6.4.299",
     "postprocessing": "^6.39.5",
     "qrcode": "^1.5.4",
     "react": "^19.3.0",

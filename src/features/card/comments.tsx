@@ -108,7 +108,7 @@ function CommentItem({ comment, own }: { comment: Comment; own: boolean }) {
   );
 }
 
-interface Draft {
+export interface Draft {
   text: string;
   /** Who was picked from the list, so their `@Name` still mentions them. */
   picked: Mention[];
@@ -125,7 +125,7 @@ function isMention(value: unknown): value is Mention {
   );
 }
 
-function parseDraft(saved: unknown): Draft {
+export function parseDraft(saved: unknown): Draft {
   const fields = draftFields(saved);
   return {
     picked: Array.isArray(fields.picked) ? fields.picked.filter(isMention) : [],
@@ -133,7 +133,7 @@ function parseDraft(saved: unknown): Draft {
   };
 }
 
-function isEmptyDraft({ text }: Draft): boolean {
+export function isEmptyDraft({ text }: Draft): boolean {
   return text.trim() === "";
 }
 

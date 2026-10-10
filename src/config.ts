@@ -18,6 +18,11 @@ export interface Config {
   map?: MapConfig;
   /** Pubkeys of the connector services the organization runs, like a store's. */
   connectors: string[];
+  /**
+   * Blossom servers for the team's files: uploads go to the first, and files
+   * are read from whichever has them. Only organizations that set this get the Drive.
+   */
+  blossom: string[];
 }
 
 export class ConfigError extends Error {
@@ -97,6 +102,34 @@ function mapConfig(value: unknown): MapConfig | undefined {
   return { world };
 }
 
+function serverList(field: string, value: unknown): string[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new ConfigError(`"${field}" must be a list of server URLs.`);
+  }
+  const urls = new Set<string>();
+  for (const entry of value) {
+    let url: URL;
+    try {
+      url = new URL(String(entry));
+    } catch {
+      throw new ConfigError(`"${entry}" in "${field}" is not a valid URL.`);
+    }
+    const secure =
+      url.protocol === "https:" ||
+      (url.protocol === "http:" && LOCAL_HOSTS.has(url.hostname));
+    if (!secure) {
+      throw new ConfigError(
+        `"${entry}" in "${field}" must start with https://.`
+      );
+    }
+    urls.add(url.origin);
+  }
+  return [...urls];
+}
+
 function pubkeyList(field: string, value: unknown): string[] {
   if (value === undefined) {
     return [];
@@ -138,6 +171,7 @@ export async function loadConfig(): Promise<Config> {
 
   current = {
     accent: text(raw.accent),
+    blossom: serverList("blossom", raw.blossom),
     connectors: pubkeyList("connectors", raw.connectors),
     logo,
     logoDark: text(raw.logoDark) ?? logo,
