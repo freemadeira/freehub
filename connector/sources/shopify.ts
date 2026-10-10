@@ -54,9 +54,15 @@ interface OrdersPage {
   pageInfo: { hasNextPage: boolean; endCursor: string | null };
 }
 
+interface GraphQLError {
+  message: string;
+  path?: (string | number)[];
+  extensions?: { code?: string };
+}
+
 interface GraphQLResponse<T> {
   data?: T;
-  errors?: { message: string; extensions?: { code?: string } }[];
+  errors?: GraphQLError[];
 }
 
 interface UserError {
@@ -217,6 +223,31 @@ function webhookOrderId(body: Buffer): string | undefined {
   }
 }
 
+// The fields an attribute's selection asks for at the top of the order, like
+// `customer` in `customer { displayName }`.
+function topLevelFields(selection: string): string[] {
+  const fields: string[] = [];
+  let depth = 0;
+  for (const token of selection.match(/[A-Za-z_]\w*|[{}()]/gu) ?? []) {
+    if (token === "{" || token === "(") {
+      depth += 1;
+    } else if (token === "}" || token === ")") {
+      depth -= 1;
+    } else if (depth === 0) {
+      fields.push(token);
+    }
+  }
+  return fields;
+}
+
+// A plan or a missing scope keeps the field back, rather than the request failing.
+function isWithheld(problem: GraphQLError): boolean {
+  return (
+    problem.extensions?.code === "ACCESS_DENIED" ||
+    /access denied|not approved|protected customer data/iu.test(problem.message)
+  );
+}
+
 function seconds(iso: string): number {
   return Math.floor(Date.parse(iso) / 1000);
 }
@@ -226,9 +257,14 @@ export class ShopifyAdapter implements Adapter {
   private readonly settings: ShopifySettings;
   private token?: { value: string; expires: number };
   private days = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC" });
+  /** The store's .myshopify.com domains; Shopify signs webhooks with its main one. */
+  private domains: Set<string>;
+  /** Attributes Shopify keeps back from this app, logged once each. */
+  private readonly withheld = new Set<string>();
 
   constructor(config: SourceConfig) {
     this.settings = settings(config);
+    this.domains = new Set([this.settings.shop]);
     this.source = {
       attributes: ATTRIBUTES.map(({ attribute }) => ({
         ...attribute,
@@ -282,6 +318,10 @@ export class ShopifyAdapter implements Adapter {
     return body.access_token;
   }
 
+  /**
+   * Fields Shopify withholds come back as null, with the attributes that read
+   * them noted, as long as the rest of the answer is there.
+   */
   private async graphql<T>(
     query: string,
     variables: Record<string, unknown> = {},
@@ -316,12 +356,36 @@ export class ShopifyAdapter implements Adapter {
       await sleep(2000 * (attempt + 1));
       return this.graphql(query, variables, attempt + 1);
     }
-    if (body.errors?.length || !body.data) {
+    const errors = body.errors ?? [];
+    if (body.data && errors.length > 0 && errors.every(isWithheld)) {
+      this.noteWithheld(errors);
+      return body.data;
+    }
+    if (errors.length > 0 || !body.data) {
       throw new Error(
-        `Shopify GraphQL: ${body.errors?.map((error) => error.message).join("; ") ?? "no data"}`
+        `Shopify GraphQL: ${errors.map((error) => error.message).join("; ") || "no data"}`
       );
     }
     return body.data;
+  }
+
+  private noteWithheld(errors: GraphQLError[]): void {
+    const fields = new Set(
+      errors.flatMap((problem) => problem.path?.map(String) ?? [])
+    );
+    const attributes = ATTRIBUTES.filter(({ selection }) =>
+      topLevelFields(selection).some((field) => fields.has(field))
+    ).map(({ attribute }) => attribute.id);
+    const fresh = attributes.filter((id) => !this.withheld.has(id));
+    if (fresh.length > 0) {
+      console.warn(
+        `${this.source.id}: Shopify withholds ${fresh.join(", ")} from this app, ` +
+          "so they stay empty. Names and emails need the Grow plan or higher, and the read_customers scope."
+      );
+    }
+    for (const id of fresh) {
+      this.withheld.add(id);
+    }
   }
 
   private item(order: Order, wanted: Set<string>): Item {
@@ -341,16 +405,28 @@ export class ShopifyAdapter implements Adapter {
 
   async start(callbackUrl?: string): Promise<void> {
     const { shop: details } = await this.graphql<{
-      shop: { currencyCode: string; ianaTimezone: string };
-    }>("{ shop { currencyCode ianaTimezone } }");
+      shop: {
+        currencyCode: string;
+        ianaTimezone: string;
+        myshopifyDomain: string;
+      };
+    }>("{ shop { currencyCode ianaTimezone myshopifyDomain } }");
+    this.domains.add(details.myshopifyDomain.toLowerCase());
     this.days = new Intl.DateTimeFormat("en-CA", {
       timeZone: details.ianaTimezone,
     });
-    this.source.attributes = this.source.attributes.map((attribute) =>
-      attribute.type === "currency"
-        ? { ...attribute, config: details.currencyCode }
-        : attribute
+    // Asking for one order with every attribute shows what Shopify keeps back,
+    // so tables aren't offered fields that would stay empty.
+    await this.graphql(
+      `{ orders(first: 1) { nodes { ${orderSelection(new Set(ATTRIBUTES.map(({ attribute }) => attribute.id)))} } } }`
     );
+    this.source.attributes = this.source.attributes
+      .filter((attribute) => !this.withheld.has(attribute.id))
+      .map((attribute) =>
+        attribute.type === "currency"
+          ? { ...attribute, config: details.currencyCode }
+          : attribute
+      );
     if (callbackUrl) {
       await this.ensureWebhooks(callbackUrl);
     }
@@ -426,7 +502,11 @@ export class ShopifyAdapter implements Adapter {
   private verify(delivery: Delivery): boolean {
     const header = delivery.headers["x-shopify-hmac-sha256"];
     const domain = delivery.headers["x-shopify-shop-domain"];
-    if (typeof header !== "string" || domain !== this.settings.shop) {
+    if (
+      typeof header !== "string" ||
+      typeof domain !== "string" ||
+      !this.domains.has(domain.toLowerCase())
+    ) {
       return false;
     }
     const expected = createHmac("sha256", this.settings.clientSecret)
