@@ -185,7 +185,7 @@ Each person turns notifications on per device, with the bell at the top of the i
 
 The notifier runs next to the app as its own container, built from this repository with `notifier/Dockerfile`. It reads the team relay and works out each person's notifications with the same rules as the inbox. It waits a little, skips what was read meanwhile, and pushes the rest, with Web Push, to the devices people turned notifications on for. It never writes to the relay.
 
-1. Make a Nostr key for the notifier and whitelist its npub on the team relay.
+1. Make a Nostr key for the notifier, with `node notifier.js key` inside the image, and whitelist its npub on the team relay.
 2. Make its VAPID keys once, with `node notifier.js vapid` inside the image, and keep both. Devices subscribe to the public key, so changing it means everyone turns notifications on again.
 3. Run the image with these environment variables, and a volume at `/app/data`:
 

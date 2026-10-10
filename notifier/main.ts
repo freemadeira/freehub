@@ -3,9 +3,11 @@ import { createServer } from "node:http";
 import { EventStore } from "applesauce-core/event-store";
 import type { NostrEvent } from "applesauce-core/helpers/event";
 import type { Filter } from "applesauce-core/helpers/filter";
+import { npubEncode, nsecEncode } from "applesauce-core/helpers/pointers";
 import { getDisplayName } from "applesauce-core/helpers/profile";
 import { unixNow } from "applesauce-core/helpers/time";
 import { RelayPool } from "applesauce-relay";
+import { PrivateKeySigner } from "applesauce-signers";
 import { catchError, lastValueFrom, of, timeout, toArray } from "rxjs";
 
 import { notificationPath } from "@/features/inbox/notification-path";
@@ -516,6 +518,13 @@ async function main(): Promise<void> {
     const keys = generateVapidKeys();
     console.log(`VAPID_PUBLIC_KEY=${keys.publicKey}`);
     console.log(`VAPID_PRIVATE_KEY=${keys.privateKey}`);
+    return;
+  }
+  if (command === "key") {
+    // A new Nostr key for the notifier: whitelist the npub, keep the nsec secret.
+    const signer = new PrivateKeySigner();
+    console.log(`NOTIFIER_KEY=${nsecEncode(signer.key)}`);
+    console.log(`npub: ${npubEncode(await signer.getPublicKey())}`);
     return;
   }
   if (command !== undefined) {
