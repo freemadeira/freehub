@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "connector:build": "vite build --config connector/vite.config.ts",
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "check": "ultracite check",

@@ -1,3 +1,4 @@
+import { normalizeToPubkey } from "applesauce-core/helpers/pointers";
 import { normalizeURL } from "applesauce-core/helpers/url";
 
 export interface MapConfig {
@@ -15,6 +16,8 @@ export interface Config {
   lookupRelays: string[];
   /** Only organizations that set this get the map. */
   map?: MapConfig;
+  /** Pubkeys of the connector services the organization runs, like a store's. */
+  connectors: string[];
 }
 
 export class ConfigError extends Error {
@@ -94,6 +97,26 @@ function mapConfig(value: unknown): MapConfig | undefined {
   return { world };
 }
 
+function pubkeyList(field: string, value: unknown): string[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new ConfigError(`"${field}" must be a list of npubs.`);
+  }
+  return [
+    ...new Set(
+      value.map((entry) => {
+        const pubkey = normalizeToPubkey(String(entry));
+        if (!pubkey) {
+          throw new ConfigError(`"${entry}" in "${field}" is not an npub.`);
+        }
+        return pubkey;
+      })
+    ),
+  ];
+}
+
 export async function loadConfig(): Promise<Config> {
   const response = await fetch(`${import.meta.env.BASE_URL}config.json`, {
     cache: "no-cache",
@@ -115,6 +138,7 @@ export async function loadConfig(): Promise<Config> {
 
   current = {
     accent: text(raw.accent),
+    connectors: pubkeyList("connectors", raw.connectors),
     logo,
     logoDark: text(raw.logoDark) ?? logo,
     lookupRelays: relayList(

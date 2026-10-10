@@ -49,6 +49,8 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import type { ConnectionsState } from "@/features/crm/connections-editor";
+import { ConnectionsEditor } from "@/features/crm/connections-editor";
 import { useCrm } from "@/features/crm/crm-context";
 import {
   ADDABLE_TYPES,
@@ -57,8 +59,17 @@ import {
 } from "@/features/crm/field-meta";
 import { OptionsEditor, swap } from "@/features/crm/options-editor";
 import { TABLE_ICON_COMPONENTS } from "@/features/crm/table-icon";
+import { useSources } from "@/hooks/use-sources";
 import type { CrmTable, Field, FieldType, TableIcon } from "@/lib/crm";
-import { CURRENCIES, mergeFields, shortId, TABLE_ICONS } from "@/lib/crm";
+import {
+  CURRENCIES,
+  mergeConnections,
+  mergeConnectors,
+  mergeFields,
+  pruneConnections,
+  shortId,
+  TABLE_ICONS,
+} from "@/lib/crm";
 import { deleteTable, updateTable } from "@/lib/crm-actions";
 
 function newField(
@@ -322,23 +333,38 @@ function TableSettingsForm({ onDone }: { onDone: () => void }) {
   const [description, setDescription] = useState(table.description);
   const [icon, setIcon] = useState<TableIcon>(table.icon);
   const [fields, setFields] = useState(table.fields);
+  const [connectors, setConnectors] = useState(table.connectors);
+  const [connections, setConnections] = useState(table.connections);
+  const sources = useSources(content);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const base = opened.current;
-    updateTable(project, table, {
-      description:
-        description === base.description
-          ? table.description
-          : description.trim(),
-      fields: mergeFields(base.fields, fields, table.fields).map((field) => ({
+    const saved = mergeFields(base.fields, fields, table.fields).map(
+      (field) => ({
         ...field,
         name: field.name.trim() || FIELD_TYPE_META[field.type].label,
         options: field.options.map((option) => ({
           ...option,
           label: option.label.trim() || "Untitled",
         })),
-      })),
+      })
+    );
+    updateTable(project, table, {
+      connections: pruneConnections(
+        mergeConnections(base.connections, connections, table.connections),
+        saved
+      ),
+      connectors: mergeConnectors(
+        base.connectors,
+        connectors,
+        table.connectors
+      ),
+      description:
+        description === base.description
+          ? table.description
+          : description.trim(),
+      fields: saved,
       icon: icon === base.icon ? table.icon : icon,
       singular:
         singular === base.singular
@@ -453,6 +479,18 @@ function TableSettingsForm({ onDone }: { onDone: () => void }) {
           }
         />
       </div>
+
+      <ConnectionsEditor
+        connections={connections}
+        connectors={connectors}
+        fields={fields}
+        onChange={(next: ConnectionsState) => {
+          setFields(next.fields);
+          setConnectors(next.connectors);
+          setConnections(next.connections);
+        }}
+        sources={sources}
+      />
 
       <DialogFooter className="mt-1">
         <DeleteTable onDeleted={onDone} />

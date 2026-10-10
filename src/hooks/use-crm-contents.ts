@@ -1,5 +1,6 @@
 import { map, of } from "rxjs";
 
+import { getConfig } from "@/config";
 import { useObservableValue } from "@/hooks/use-observable-value";
 import type { ProjectContent } from "@/lib/crm";
 import { resolveProject } from "@/lib/crm";
@@ -17,10 +18,15 @@ export function useCrmContents(projects: Project[]): {
 } {
   const addresses = projects.map((project) => project.address);
   const key = projects.map((project) => project.event.id).join(",");
-  const members = [...new Set(projects.flatMap((project) => project.members))];
+  const authors = [
+    ...new Set([
+      ...projects.flatMap((project) => project.members),
+      ...getConfig().connectors,
+    ]),
+  ];
   const feed = () =>
     addresses.length > 0
-      ? sync(addressFilters("#a", addresses, { kinds: KINDS }, members))
+      ? sync(addressFilters("#a", addresses, { kinds: KINDS }, authors))
       : of(true);
   const loaded = useObservableValue(feed, [key]);
   const contents = useObservableValue(
