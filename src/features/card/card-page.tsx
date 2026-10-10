@@ -20,13 +20,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cardPath, useBoard } from "@/features/board/board-context";
+import { useBoard } from "@/features/board/board-context";
+import { CardActivitySection } from "@/features/card/card-activity";
 import { STATUS_STYLES } from "@/features/card/card-fields";
 import { CardProperties } from "@/features/card/card-properties";
-import { Comments } from "@/features/card/comments";
+import { SubscribeButton } from "@/features/card/subscribe-button";
 import { deleteCard, updateCard } from "@/lib/actions";
 import type { Card } from "@/lib/model";
 import { cardKey } from "@/lib/model";
+import { cardPath } from "@/lib/paths";
 
 // The text and comments read down a column in the middle, beside a panel of
 // properties. Narrower screens stack them, with the properties between the two.
@@ -90,7 +92,7 @@ function TitleField({ card }: { card: Card }) {
 }
 
 function DescriptionField({ card }: { card: Card }) {
-  const { board } = useBoard();
+  const { board, pubkey } = useBoard();
   return (
     <MarkdownEditor
       aria-label="Description"
@@ -102,11 +104,15 @@ function DescriptionField({ card }: { card: Card }) {
           event.target.blur();
         }
       }}
-      onValueCommitted={(description) => {
+      onValueCommitted={(description, picked) => {
         if (description !== card.description) {
-          updateCard(board, card, { description });
+          updateCard(board, card, { description }, picked);
         }
       }}
+      // Anyone who can read the card, viewers too, can be pointed at it.
+      people={[...board.members, ...board.viewers].filter(
+        (person) => person !== pubkey
+      )}
       placeholder="Add a description…"
       value={card.description}
     />
@@ -232,6 +238,7 @@ export function CardPage({ card, crumbs, onLeave }: CardPageProps) {
               ).href
             }
           />
+          <SubscribeButton card={card} />
           {canEdit && <DeleteCard card={card} onDeleted={onLeave} />}
         </FluidTooltip.Group>
       </TopBar>
@@ -255,7 +262,7 @@ export function CardPage({ card, crumbs, onLeave }: CardPageProps) {
           </div>
         </aside>
         <div className={cn(COLUMN, "pb-10")}>
-          <Comments card={card} className="border-t pt-6" />
+          <CardActivitySection card={card} className="border-t pt-6" />
         </div>
       </main>
     </>

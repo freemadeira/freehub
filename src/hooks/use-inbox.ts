@@ -1,44 +1,62 @@
 import type { NostrEvent } from "applesauce-core/helpers/event";
 import { getTagValue } from "applesauce-core/helpers/event";
+import type { Filter } from "applesauce-core/helpers/filter";
+import { unixNow } from "applesauce-core/helpers/time";
+import { useEffect, useState } from "react";
 
 import { useObservableValue } from "@/hooks/use-observable-value";
-import type { DocPage, DocsContent } from "@/lib/docs";
-import type { DriveFile } from "@/lib/drive";
-import { resolveFile } from "@/lib/drive";
+import { useSubscriptions } from "@/hooks/use-subscriptions";
+import type { CrmTable } from "@/lib/crm";
+import type { DocsContent } from "@/lib/docs";
 import { inboxStore } from "@/lib/inbox";
-import type { Board, Card } from "@/lib/model";
+import { isArchived, isRead } from "@/lib/inbox-marks";
+import type { Board } from "@/lib/model";
 import {
   CARD_KIND,
+  CRM_RECORD_KIND,
   DELETE_KIND,
+  DOC_PAGE_KIND,
   DRIVE_FILE_KIND,
-  resolveCard,
 } from "@/lib/model";
 import { eventStore } from "@/lib/nostr";
 import type {
-  CommentNotification,
-  FileNotification,
-  PageNotification,
-} from "@/lib/notifications";
+  NotificationScope,
+  NotificationTarget,
+} from "@/lib/notification-targets";
+import { locateNotification } from "@/lib/notification-targets";
+import type { Notification } from "@/lib/notifications";
 import {
   deriveNotifications,
+  hasArrived,
   notificationFilters,
-  pageNotification,
+  notificationSubject,
 } from "@/lib/notifications";
 import type { Project } from "@/lib/project";
 import { sync } from "@/lib/relays";
+import { cardSubject } from "@/lib/subscriptions";
 
-export type InboxItem = (
-  | { notification: CommentNotification; board: Board; card: Card }
-  | { notification: PageNotification; project: Project; page: DocPage }
-  | { notification: FileNotification; project: Project; file: DriveFile }
-) & { read: boolean };
+/** How often reminders that came due are looked for. */
+const CLOCK = 60_000;
+
+export type InboxItem = NotificationTarget & { read: boolean };
+
+/** Notifications about one card, page, file or record, shown as one row. */
+export interface InboxGroup {
+  subject: string;
+  /** Newest first. */
+  items: InboxItem[];
+  /** The newest, which the row tells. */
+  latest: InboxItem;
+  read: boolean;
+}
 
 export interface Inbox {
-  items: InboxItem[];
+  groups: InboxGroup[];
+  /** Rows with something unread. */
   unread: number;
   loaded: boolean;
   setRead: (items: InboxItem[], read: boolean) => void;
-  archive: (items: InboxItem[]) => void;
+  setArchived: (items: InboxItem[], archived: boolean) => void;
 }
 
 /** Where notifications point: the boards and projects the user is in. */
@@ -47,90 +65,107 @@ export interface InboxScope {
   projects: Project[];
   /** Every project's pages, keyed by project address. */
   docs: Map<string, DocsContent>;
+  /** Every project's tables, keyed by project address. */
+  tables: Map<string, CrmTable[]>;
   /** Whether they have all loaded. */
   loaded: boolean;
 }
 
-/** Events grouped by their `d` tag: each card's or file's versions. */
-function byId(events: NostrEvent[]): Map<string, NostrEvent[]> {
+/** The time, in seconds, a minute at a time. */
+function useClock(): number {
+  const [now, setNow] = useState(unixNow);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(unixNow()), CLOCK);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
+}
+
+function versionKey(kind: number, id: string): string {
+  return `${kind}:${id}`;
+}
+
+/** Filters for every version of the cards, files and records notifications point at. */
+function versionFilters(notifications: Notification[]): Filter[] {
+  const ids = (type: Notification["type"]) => [
+    ...new Set(
+      notifications.flatMap((notification) => {
+        if (notification.type !== type) {
+          return [];
+        }
+        if (notification.type === "card") {
+          return [notification.cardId];
+        }
+        if (notification.type === "file") {
+          return [notification.fileId];
+        }
+        return notification.type === "record" ? [notification.recordId] : [];
+      })
+    ),
+  ];
+  return [
+    { "#d": ids("card"), kinds: [CARD_KIND] },
+    { "#d": ids("file"), kinds: [DRIVE_FILE_KIND] },
+    { "#d": ids("record"), kinds: [CRM_RECORD_KIND] },
+  ].filter((filter) => filter["#d"].length > 0);
+}
+
+/** Each thing's versions by kind and `d` tag, pages from the docs already loaded. */
+function useVersions(
+  notifications: Notification[],
+  docs: Map<string, DocsContent>
+): Map<string, NostrEvent[]> {
+  const filters = versionFilters(notifications);
+  const key = JSON.stringify(filters);
+  useObservableValue(() => sync(filters), [key]);
+  const events = useObservableValue(
+    () => (filters.length > 0 ? eventStore.timeline(filters) : undefined),
+    [key]
+  );
   const found = new Map<string, NostrEvent[]>();
-  for (const event of events) {
+  for (const event of events ?? []) {
     const id = getTagValue(event, "d");
     if (id) {
-      found.set(id, [...(found.get(id) ?? []), event]);
+      const at = versionKey(event.kind, id);
+      found.set(at, [...(found.get(at) ?? []), event]);
+    }
+  }
+  for (const content of docs.values()) {
+    for (const [id, versions] of content.versions) {
+      found.set(versionKey(DOC_PAGE_KIND, id), versions);
     }
   }
   return found;
 }
 
-/** The file a notification points at, in a project its author belongs to. */
-function locateFile(
-  notification: FileNotification,
-  projects: Project[],
-  versions: NostrEvent[]
-): { project: Project; file: DriveFile } | undefined {
-  for (const project of projects) {
-    if (project.members.includes(notification.actor)) {
-      const file = resolveFile(project, versions, notification.fileId);
-      if (file) {
-        return { file, project };
-      }
-    }
-  }
-  return undefined;
-}
-
-/** Each thing's versions, as notifications of one type point at them by `d` tag. */
-function useVersions(kind: number, ids: string[]): Map<string, NostrEvent[]> {
-  const key = [...new Set(ids)].join(",");
-  const filters = [{ "#d": key.split(","), kinds: [kind] }];
-  useObservableValue(() => (key ? sync(filters) : undefined), [key]);
-  const events = useObservableValue(
-    () => (key ? eventStore.timeline(filters) : undefined),
-    [key]
+/** Ids of the comments notifications come from, so deleting one takes its notification. */
+function commentIds(notifications: Notification[]): string[] {
+  return notifications.flatMap((notification) =>
+    notification.type !== "page" && !notification.id.startsWith("due:")
+      ? [notification.id]
+      : []
   );
-  return byId(events ?? []);
 }
 
-/** The card a notification points at, on a board its author belongs to. */
-function locateCard(
-  notification: CommentNotification,
-  boards: Board[],
-  versions: NostrEvent[]
-): { board: Board; card: Card } | undefined {
-  for (const board of boards) {
-    if (board.members.includes(notification.actor)) {
-      const card = resolveCard(board, versions, notification.cardId);
-      if (card) {
-        return { board, card };
-      }
-    }
+function group(items: InboxItem[]): InboxGroup[] {
+  const groups = new Map<string, InboxItem[]>();
+  for (const item of items) {
+    const subject = notificationSubject(item.notification);
+    groups.set(subject, [...(groups.get(subject) ?? []), item]);
   }
-  return undefined;
-}
-
-/**
- * The page a notification points at, if its newest version still mentions
- * the recipient as the notification says, by a member of its project. The
- * notification is read again from that version, with the words as they are now.
- */
-function locatePage(
-  notification: PageNotification,
-  recipient: string,
-  { projects, docs }: InboxScope
-):
-  | { notification: PageNotification; project: Project; page: DocPage }
-  | undefined {
-  const project = projects.find(
-    (item) => item.address === notification.project
-  );
-  const page = docs.get(notification.project)?.byId.get(notification.pageId);
-  const current = page && pageNotification(page.event, recipient);
-  return project?.members.includes(notification.actor) &&
-    page &&
-    current?.id === notification.id
-    ? { notification: current, page, project }
-    : undefined;
+  return [...groups].flatMap(([subject, grouped]) => {
+    const [latest] = grouped;
+    return latest
+      ? [
+          {
+            items: grouped,
+            latest,
+            read: grouped.every((item) => item.read),
+            subject,
+          },
+        ]
+      : [];
+  });
 }
 
 const ids = (items: InboxItem[]) => items.map((item) => item.notification.id);
@@ -144,65 +179,51 @@ export function useInbox(pubkey: string, scope: InboxScope): Inbox {
     [pubkey]
   );
   const marks = useObservableValue(() => inboxStore(pubkey).marks$, [pubkey]);
-  const notifications = deriveNotifications(events ?? [], pubkey);
-  const comments = notifications.filter(
-    (item): item is CommentNotification => item.type === "comment"
-  );
-  const fileComments = notifications.filter(
-    (item): item is FileNotification => item.type === "file"
+  const unsubscribed = useSubscriptions(pubkey).off;
+  const now = useClock();
+  // Reminders wait for their time; news about cards unsubscribed from stops.
+  const notifications = deriveNotifications(events ?? [], pubkey).filter(
+    (notification) =>
+      hasArrived(notification, now) &&
+      (notification.direct ||
+        notification.type !== "card" ||
+        !unsubscribed.has(cardSubject({ id: notification.cardId })))
   );
 
-  // Deleted comments drop out of the store, and with them their notification.
-  const commentKey = [...comments, ...fileComments]
-    .map((item) => item.id)
-    .join(",");
+  const comments = commentIds(notifications).join(",");
   useObservableValue(
     () =>
-      commentKey
-        ? sync([{ "#e": commentKey.split(","), kinds: [DELETE_KIND] }])
+      comments
+        ? sync([{ "#e": comments.split(","), kinds: [DELETE_KIND] }])
         : undefined,
-    [commentKey]
+    [comments]
   );
 
-  const versions = useVersions(
-    CARD_KIND,
-    comments.map((item) => item.cardId)
-  );
-  const fileVersions = useVersions(
-    DRIVE_FILE_KIND,
-    fileComments.map((item) => item.fileId)
-  );
+  const versions = useVersions(notifications, scope.docs);
+  const known: NotificationScope = {
+    boards: scope.boards,
+    projects: scope.projects,
+    tables: (project) => scope.tables.get(project.address) ?? [],
+    versions: (kind, id) => versions.get(versionKey(kind, id)) ?? [],
+  };
   const items = notifications.flatMap((notification): InboxItem[] => {
-    if (marks?.archived.has(notification.id)) {
+    if (marks && isArchived(marks, notification.id)) {
       return [];
     }
-    const read = marks?.read.has(notification.id) ?? false;
-    if (notification.type === "page") {
-      const found = locatePage(notification, pubkey, scope);
-      return found ? [{ ...found, read }] : [];
-    }
-    if (notification.type === "file") {
-      const found = locateFile(
-        notification,
-        scope.projects,
-        fileVersions.get(notification.fileId) ?? []
-      );
-      return found ? [{ ...found, notification, read }] : [];
-    }
-    const found = locateCard(
-      notification,
-      scope.boards,
-      versions.get(notification.cardId) ?? []
-    );
-    return found ? [{ ...found, notification, read }] : [];
+    const target = locateNotification(notification, pubkey, known);
+    return target
+      ? [{ ...target, read: marks ? isRead(marks, notification.id) : false }]
+      : [];
   });
+  const groups = group(items);
   const store = inboxStore(pubkey);
 
   return {
-    archive: (archived) => store.archive(ids(archived)),
-    items,
+    groups,
     loaded: (loaded ?? false) && scope.loaded,
+    setArchived: (changed, archived) =>
+      store.setArchived(ids(changed), archived),
     setRead: (changed, read) => store.setRead(ids(changed), read),
-    unread: items.filter((item) => !item.read).length,
+    unread: groups.filter((item) => !item.read).length,
   };
 }

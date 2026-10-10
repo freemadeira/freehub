@@ -256,6 +256,24 @@ export function resolveDocs(
   return { byId, children, pages, roots, versions };
 }
 
+/** One page's newest version in the project, by its members, unless it was deleted. */
+export function resolvePage(
+  project: Project,
+  events: NostrEvent[],
+  id: string
+): DocPage | undefined {
+  const authors = new Set(project.members);
+  const own = events.filter(
+    (event) =>
+      getTagValue(event, "d") === id &&
+      addressOf(event, PROJECT_KIND) === project.address
+  );
+  const event = latestVersions(own, DOC_PAGE_KIND, authors).get(id);
+  return event && !isDeleted(event)
+    ? parsePage(event, id, project.address)
+    : undefined;
+}
+
 /** The pages above this one, from the top down. */
 export function ancestors(content: DocsContent, page: DocPage): DocPage[] {
   const chain: DocPage[] = [];

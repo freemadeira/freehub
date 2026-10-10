@@ -3,11 +3,11 @@ import { createServer } from "node:http";
 
 import { CRM_TABLE_KIND, SOURCE_KIND } from "@/lib/model";
 import { sourceTemplate, sourceTombstoneTemplate } from "@/lib/sources";
+import { TeamRelay } from "@/lib/team-relay";
 import { errorMessage } from "@/lib/utils";
 
 import type { ConnectorConfig } from "./config";
 import { loadConfig } from "./config";
-import { TeamRelay } from "./relay";
 import { createAdapter } from "./sources";
 import type { Adapter, Item } from "./sources/types";
 import type { Outcome } from "./writer";

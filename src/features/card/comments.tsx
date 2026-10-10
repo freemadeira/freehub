@@ -1,12 +1,12 @@
 import { cn } from "cn";
-import { format, formatDistanceToNowStrict } from "date-fns";
 import { Trash2Icon } from "lucide-react";
 import type { FormEvent } from "react";
-import { useEffect, useId, useState } from "react";
+import { useState } from "react";
 
 import { IconButton } from "@/components/icon-button";
 import { MentionText } from "@/components/mention-text";
 import { MentionTextarea } from "@/components/mention-textarea";
+import { TimelineMarker, TimelineTime } from "@/components/timeline";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,21 +20,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/user-avatar";
 import { useBoard } from "@/features/board/board-context";
-import { useComments } from "@/hooks/use-comments";
 import { useLocalDraft } from "@/hooks/use-local-draft";
 import { useProfile } from "@/hooks/use-profile";
 import { addComment, deleteComment } from "@/lib/actions";
 import { draftFields, draftKey, draftText } from "@/lib/drafts";
-import { inboxStore } from "@/lib/inbox";
 import type { Mention } from "@/lib/mentions";
-import { encodeMentions, mentions } from "@/lib/mentions";
+import { encodeMentions } from "@/lib/mentions";
 import type { Card, Comment } from "@/lib/model";
-
-function ago(date: Date): string {
-  return Date.now() - date.getTime() < 60_000
-    ? "Just now"
-    : formatDistanceToNowStrict(date, { addSuffix: true });
-}
 
 function DeleteComment({ comment }: { comment: Comment }) {
   const [open, setOpen] = useState(false);
@@ -71,9 +63,15 @@ function DeleteComment({ comment }: { comment: Comment }) {
   );
 }
 
-function CommentItem({ comment, own }: { comment: Comment; own: boolean }) {
+/** A comment on the card's timeline: who wrote it, when, and what. */
+export function CommentEntry({
+  comment,
+  own,
+}: {
+  comment: Comment;
+  own: boolean;
+}) {
   const { name } = useProfile(comment.author);
-  const date = new Date(comment.createdAt * 1000);
   const signed = comment.event.sig !== "";
   return (
     <li
@@ -82,25 +80,16 @@ function CommentItem({ comment, own }: { comment: Comment; own: boolean }) {
         !signed && "opacity-60"
       )}
     >
-      <UserAvatar
-        aria-hidden
-        className="mt-0.5"
-        pubkey={comment.author}
-        size="sm"
-      />
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <div className="flex h-6 items-center gap-2">
-          <span className="truncate font-medium">{name}</span>
-          <time
-            className="text-muted-foreground shrink-0 text-xs"
-            dateTime={date.toISOString()}
-            title={format(date, "PPpp")}
-          >
-            {ago(date)}
-          </time>
+      <TimelineMarker>
+        <UserAvatar aria-hidden pubkey={comment.author} size="sm" />
+      </TimelineMarker>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex min-h-6 items-center gap-2">
+          <span className="truncate text-sm font-medium">{name}</span>
+          <TimelineTime at={comment.createdAt} />
           {own && signed && <DeleteComment comment={comment} />}
         </div>
-        <p className="wrap-break-word whitespace-pre-wrap">
+        <p className="bg-card shadow-surface rounded-xl p-3 text-sm wrap-break-word whitespace-pre-wrap">
           <MentionText content={comment.content} />
         </p>
       </div>
@@ -137,7 +126,7 @@ export function isEmptyDraft({ text }: Draft): boolean {
   return text.trim() === "";
 }
 
-function Composer({ card }: { card: Card }) {
+export function Composer({ card }: { card: Card }) {
   const { board, pubkey } = useBoard();
   // Kept when the card closes, until it's sent.
   const [{ text, picked }, setDraft] = useLocalDraft(
@@ -149,7 +138,7 @@ function Composer({ card }: { card: Card }) {
   const send = () => {
     const content = encodeMentions(text.trim(), picked);
     if (content) {
-      addComment(card, content);
+      addComment(board, card, content);
       setDraft({ picked: [], text: "" });
     }
   };
@@ -192,63 +181,5 @@ function Composer({ card }: { card: Card }) {
         </Button>
       )}
     </form>
-  );
-}
-
-export function Comments({
-  card,
-  className,
-}: {
-  card: Card;
-  className?: string;
-}) {
-  const id = useId();
-  const { board, canEdit, pubkey } = useBoard();
-  const comments = useComments(board, card);
-
-  // Seeing the card counts as reading the mentions of you in it.
-  const mentionKey = comments
-    .filter(
-      (comment) =>
-        comment.author !== pubkey && mentions(comment.content, pubkey)
-    )
-    .map((comment) => comment.id)
-    .join(",");
-  useEffect(() => {
-    if (mentionKey) {
-      inboxStore(pubkey).setRead(mentionKey.split(","), true);
-    }
-  }, [mentionKey, pubkey]);
-
-  if (!canEdit && comments.length === 0) {
-    return null;
-  }
-
-  return (
-    <section
-      aria-labelledby={id}
-      className={cn("flex flex-col gap-4", className)}
-    >
-      <h2 className="flex items-center gap-2 font-medium" id={id}>
-        Comments
-        {comments.length > 0 && (
-          <span className="text-muted-foreground tabular-nums">
-            {comments.length}
-          </span>
-        )}
-      </h2>
-      {comments.length > 0 && (
-        <ol className="flex flex-col gap-4">
-          {comments.map((comment) => (
-            <CommentItem
-              comment={comment}
-              key={comment.id}
-              own={comment.author === pubkey}
-            />
-          ))}
-        </ol>
-      )}
-      {canEdit && <Composer card={card} />}
-    </section>
   );
 }

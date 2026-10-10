@@ -14,6 +14,12 @@
 	@app not path /assets/*
 	header @app Cache-Control "no-cache"
 
+	# Open apps poll this to learn a new build went live.
+	header /version.json Cache-Control "no-store"
+
+	# Go's file server doesn't know this type, and browsers want it.
+	header /manifest.webmanifest Content-Type "application/manifest+json"
+
 	# Files mounted at /branding (config.json, logos) win over the built copies,
 	# so they can change without a rebuild.
 	@branding {

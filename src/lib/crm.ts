@@ -1,10 +1,12 @@
 import type { NostrEvent } from "applesauce-core/helpers/event";
 import { getTagValue } from "applesauce-core/helpers/event";
 
+import { mentionedPubkeys, mentionReference } from "@/lib/mentions";
 import type { Comment, Template } from "@/lib/model";
 import {
   addressedId,
   COMMENT_KIND,
+  commentPeopleTags,
   CRM_RECORD_KIND,
   CRM_TABLE_KIND,
   integer,
@@ -171,6 +173,19 @@ export interface ProjectContent {
 }
 
 export type Activity = Comment & { type: ActivityType };
+
+/** The `activity` of an entry saying who was put in a member field. */
+export const ASSIGNED = "assigned";
+
+/** Someone put people in one of the record's member fields. */
+export interface Assignment {
+  id: string;
+  author: string;
+  createdAt: number;
+  field: string;
+  people: string[];
+  event: NostrEvent;
+}
 
 export function shortId(): string {
   return crypto.randomUUID().replaceAll("-", "").slice(0, 8);
@@ -766,24 +781,79 @@ export function recordTombstoneTemplate(
   };
 }
 
+/** NIP-22 tags pointing at the record, which every entry on it carries. */
+function recordThreadTags(
+  record: Pick<CrmRecord, "author" | "id">
+): string[][] {
+  const address = `${CRM_RECORD_KIND}:${record.author}:${record.id}`;
+  return [
+    ["A", address],
+    ["K", String(CRM_RECORD_KIND)],
+    ["P", record.author],
+    ["a", address],
+    ["k", String(CRM_RECORD_KIND)],
+  ];
+}
+
+/** A note, call or visit logged on the record, with a `p` tag for everyone it mentions. */
 export function activityTemplate(
   record: CrmRecord,
   type: ActivityType,
   content: string
 ): Template {
-  const address = `${CRM_RECORD_KIND}:${record.author}:${record.id}`;
   return {
     content,
     kind: COMMENT_KIND,
     tags: [
-      ["A", address],
-      ["K", String(CRM_RECORD_KIND)],
-      ["P", record.author],
-      ["a", address],
-      ["k", String(CRM_RECORD_KIND)],
-      ["p", record.author],
+      ...recordThreadTags(record),
+      ...commentPeopleTags(record.author, mentionedPubkeys(content), []),
       ["activity", type],
     ],
+  };
+}
+
+/** People just put in one of the record's member fields, told through their `p` tags. */
+export function assignmentTemplate(
+  record: Pick<CrmRecord, "author" | "id">,
+  field: Field,
+  people: string[]
+): Template {
+  return {
+    content: `Assigned ${people.map(mentionReference).join(", ")} as ${field.name}`,
+    kind: COMMENT_KIND,
+    tags: [
+      ...recordThreadTags(record),
+      ...commentPeopleTags(record.author, people, []),
+      ["activity", ASSIGNED],
+      ["field", field.id],
+    ],
+  };
+}
+
+/** Whether the entry was logged by someone, as a note or a call, rather than told by the app. */
+export function isLoggedActivity(event: NostrEvent): boolean {
+  return getTagValue(event, "activity") !== ASSIGNED;
+}
+
+export function parseAssignment(event: NostrEvent): Assignment | undefined {
+  const field = getTagValue(event, "field");
+  const people = event.tags.flatMap(([name, pubkey]) =>
+    name === "p" &&
+    isPubkey(pubkey) &&
+    event.content.includes(mentionReference(pubkey))
+      ? [pubkey]
+      : []
+  );
+  if (isLoggedActivity(event) || !field || people.length === 0) {
+    return undefined;
+  }
+  return {
+    author: event.pubkey,
+    createdAt: event.created_at,
+    event,
+    field,
+    id: event.id,
+    people,
   };
 }
 
@@ -803,6 +873,28 @@ export function parseActivity(event: NostrEvent): Activity {
 /** Everyone who may write the record: the members and the table's connectors. */
 export function recordAuthors(project: Project, table: CrmTable): string[] {
   return [...new Set([...project.members, ...table.connectors])];
+}
+
+/** One record's newest version in the table, unless it was deleted. */
+export function resolveRecord(
+  project: Project,
+  table: CrmTable,
+  events: NostrEvent[],
+  id: string
+): CrmRecord | undefined {
+  const versions = events.filter(
+    (event) =>
+      getTagValue(event, "d") === id &&
+      addressedId(event, CRM_TABLE_KIND) === table.id
+  );
+  const event = latestVersions(
+    versions,
+    CRM_RECORD_KIND,
+    new Set(recordAuthors(project, table))
+  ).get(id);
+  return event && !isDeleted(event)
+    ? parseRecord(event, id, table.id)
+    : undefined;
 }
 
 /** Each author's copy of a record has its own address, so comments may point at any of them. */

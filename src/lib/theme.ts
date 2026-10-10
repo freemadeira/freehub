@@ -22,6 +22,20 @@ function isDark(theme: Theme): boolean {
   return theme === "dark" || (theme === "system" && media.matches);
 }
 
+/** The phone's status bar, and an installed app's title bar, take the page's background. */
+function paintBars(): void {
+  const meta = document.querySelector<HTMLMetaElement>(
+    'meta[name="theme-color"]'
+  );
+  const background = window
+    .getComputedStyle(document.documentElement)
+    .getPropertyValue("--background")
+    .trim();
+  if (meta && background) {
+    meta.content = background;
+  }
+}
+
 function apply(theme: Theme): void {
   const dark = isDark(theme);
   const freeze = document.createElement("style");
@@ -30,6 +44,7 @@ function apply(theme: Theme): void {
   document.documentElement.classList.toggle("dark", dark);
   document.documentElement.style.colorScheme = dark ? "dark" : "light";
   window.getComputedStyle(document.body);
+  paintBars();
   requestAnimationFrame(() => freeze.remove());
 }
 

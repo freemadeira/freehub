@@ -1,5 +1,4 @@
 import { cn } from "cn";
-import { format, formatDistanceToNowStrict } from "date-fns";
 import type { LucideIcon } from "lucide-react";
 import {
   CalendarClockIcon,
@@ -10,11 +9,15 @@ import {
   PlusIcon,
   StickyNoteIcon,
   Trash2Icon,
+  UserPlusIcon,
 } from "lucide-react";
-import type { FormEvent, ReactNode } from "react";
-import { useId, useState } from "react";
+import type { FormEvent } from "react";
+import { Fragment, useId, useState } from "react";
 
 import { IconButton } from "@/components/icon-button";
+import { MentionText } from "@/components/mention-text";
+import { MentionTextarea } from "@/components/mention-textarea";
+import { Timeline, TimelineMarker, TimelineTime } from "@/components/timeline";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,17 +30,25 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { FluidTooltip } from "@/components/ui/fluid-tooltip";
-import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { UserAvatar } from "@/components/user-avatar";
+import type { Draft as MessageDraft } from "@/features/card/comments";
+import { parseDraft as parseMessageDraft } from "@/features/card/comments";
 import { useCrm } from "@/features/crm/crm-context";
 import { useLocalDraft } from "@/hooks/use-local-draft";
 import { useProfile } from "@/hooks/use-profile";
 import { useRecordActivity } from "@/hooks/use-record-activity";
-import type { Activity, ActivityType, CrmRecord, StageMove } from "@/lib/crm";
+import type {
+  Activity,
+  ActivityType,
+  Assignment,
+  CrmRecord,
+  StageMove,
+} from "@/lib/crm";
 import { ACTIVITY_TYPES, findOption, stageField } from "@/lib/crm";
 import { addActivity, deleteActivity } from "@/lib/crm-actions";
-import { draftFields, draftKey, draftText } from "@/lib/drafts";
+import { draftFields, draftKey } from "@/lib/drafts";
+import { encodeMentions } from "@/lib/mentions";
 import { SWATCH_COLORS } from "@/lib/palette";
 
 const ACTIVITY_ICONS: Record<ActivityType, LucideIcon> = {
@@ -60,28 +71,9 @@ const ACTIVITY_VERBS: Record<ActivityType, string> = {
 
 type Entry =
   | { kind: "activity"; at: number; activity: Activity }
+  | { kind: "assigned"; at: number; assignment: Assignment }
   | { kind: "move"; at: number; move: StageMove }
   | { kind: "created"; at: number; by?: string };
-
-function ago(seconds: number): string {
-  const date = new Date(seconds * 1000);
-  return Date.now() - date.getTime() < 60_000
-    ? "Just now"
-    : formatDistanceToNowStrict(date, { addSuffix: true });
-}
-
-function When({ at }: { at: number }) {
-  const date = new Date(at * 1000);
-  return (
-    <time
-      className="text-muted-foreground shrink-0 text-xs"
-      dateTime={date.toISOString()}
-      title={format(date, "PPpp")}
-    >
-      {ago(at)}
-    </time>
-  );
-}
 
 function ProfileName({ pubkey }: { pubkey: string }) {
   const { name } = useProfile(pubkey);
@@ -93,14 +85,6 @@ function Name({ pubkey }: { pubkey?: string }) {
     <ProfileName pubkey={pubkey} />
   ) : (
     <span className="font-medium">Someone</span>
-  );
-}
-
-function Marker({ children }: { children: ReactNode }) {
-  return (
-    <span className="bg-background relative z-10 flex size-6 shrink-0 items-center justify-center">
-      {children}
-    </span>
   );
 }
 
@@ -150,9 +134,9 @@ function ActivityEntry({ activity }: { activity: Activity }) {
         !signed && "opacity-60"
       )}
     >
-      <Marker>
+      <TimelineMarker>
         <UserAvatar aria-hidden pubkey={activity.author} size="sm" />
-      </Marker>
+      </TimelineMarker>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex min-h-6 flex-wrap items-center gap-x-2">
           <span className="text-sm">
@@ -161,7 +145,7 @@ function ActivityEntry({ activity }: { activity: Activity }) {
               {ACTIVITY_VERBS[activity.type]}
             </span>
           </span>
-          <When at={activity.createdAt} />
+          <TimelineTime at={activity.createdAt} />
           {activity.author === pubkey && signed && (
             <DeleteActivity activity={activity} />
           )}
@@ -172,7 +156,7 @@ function ActivityEntry({ activity }: { activity: Activity }) {
             className="text-muted-foreground mt-0.5 size-4 shrink-0"
           />
           <p className="min-w-0 text-sm wrap-break-word whitespace-pre-wrap">
-            {activity.content}
+            <MentionText content={activity.content} />
           </p>
         </div>
       </div>
@@ -186,7 +170,7 @@ function MoveEntry({ move }: { move: StageMove }) {
   const option = field ? findOption(field, move.stage) : undefined;
   return (
     <li className="flex items-center gap-3">
-      <Marker>
+      <TimelineMarker>
         <span
           aria-hidden
           className={cn(
@@ -194,7 +178,7 @@ function MoveEntry({ move }: { move: StageMove }) {
             SWATCH_COLORS[option?.color ?? "gray"]
           )}
         />
-      </Marker>
+      </TimelineMarker>
       <span className="min-w-0 flex-1 text-sm">
         <Name pubkey={move.by} />{" "}
         <span className="text-muted-foreground">moved it to</span>{" "}
@@ -202,7 +186,41 @@ function MoveEntry({ move }: { move: StageMove }) {
           {option?.label ?? "a removed stage"}
         </span>
       </span>
-      <When at={move.at} />
+      <TimelineTime at={move.at} />
+    </li>
+  );
+}
+
+function AssignedEntry({ assignment }: { assignment: Assignment }) {
+  const { table } = useCrm();
+  const field = table.fields.find(({ id }) => id === assignment.field);
+  return (
+    <li className="flex items-center gap-3">
+      <TimelineMarker>
+        <UserPlusIcon aria-hidden className="text-muted-foreground size-4" />
+      </TimelineMarker>
+      <span className="min-w-0 flex-1 text-sm">
+        <Name pubkey={assignment.author} />{" "}
+        <span className="text-muted-foreground">assigned</span>{" "}
+        {assignment.people.map((pubkey, index) => (
+          <Fragment key={pubkey}>
+            {index > 0 && (
+              <span className="text-muted-foreground">
+                {index === assignment.people.length - 1 ? " and " : ", "}
+              </span>
+            )}
+            <ProfileName pubkey={pubkey} />
+          </Fragment>
+        ))}
+        {field && (
+          <>
+            {" "}
+            <span className="text-muted-foreground">as</span>{" "}
+            <span className="font-medium">{field.name}</span>
+          </>
+        )}
+      </span>
+      <TimelineTime at={assignment.createdAt} />
     </li>
   );
 }
@@ -211,29 +229,26 @@ function CreatedEntry({ at, by }: { at: number; by?: string }) {
   const { table } = useCrm();
   return (
     <li className="flex items-center gap-3">
-      <Marker>
+      <TimelineMarker>
         <PlusIcon aria-hidden className="text-muted-foreground size-4" />
-      </Marker>
+      </TimelineMarker>
       <span className="min-w-0 flex-1 text-sm">
         <Name pubkey={by} />{" "}
         <span className="text-muted-foreground">
           added this {table.singular.toLowerCase()}
         </span>
       </span>
-      <When at={at} />
+      <TimelineTime at={at} />
     </li>
   );
 }
 
-interface Draft {
-  type: ActivityType;
-  text: string;
-}
+type Draft = MessageDraft & { type: ActivityType };
 
 function parseDraft(saved: unknown): Draft {
   const fields = draftFields(saved);
   return {
-    text: draftText(fields.text),
+    ...parseMessageDraft(saved),
     type: ACTIVITY_TYPES.find((item) => item.id === fields.type)?.id ?? "note",
   };
 }
@@ -244,9 +259,9 @@ function isEmptyDraft({ text }: Draft): boolean {
 
 function Composer({ record }: { record: CrmRecord }) {
   const id = useId();
-  const { pubkey } = useCrm();
+  const { project, pubkey } = useCrm();
   // Kept when the record closes, until it's logged.
-  const [{ type, text }, setDraft] = useLocalDraft(
+  const [{ type, text, picked }, setDraft] = useLocalDraft(
     draftKey(pubkey, "activity", record.id),
     parseDraft,
     isEmptyDraft
@@ -255,10 +270,10 @@ function Composer({ record }: { record: CrmRecord }) {
     ACTIVITY_TYPES.find((item) => item.id === type)?.label ?? "Note";
 
   const send = () => {
-    const content = text.trim();
+    const content = encodeMentions(text.trim(), picked);
     if (content) {
       addActivity(record, type, content);
-      setDraft((draft) => ({ ...draft, text: "" }));
+      setDraft((draft) => ({ ...draft, picked: [], text: "" }));
     }
   };
 
@@ -273,9 +288,9 @@ function Composer({ record }: { record: CrmRecord }) {
         aria-label="Kind of entry"
         className="gap-0.5"
         onValueChange={(next) => {
-          const picked = ACTIVITY_TYPES.find((item) => item.id === next[0]);
-          if (picked) {
-            setDraft((draft) => ({ ...draft, type: picked.id }));
+          const chosen = ACTIVITY_TYPES.find((item) => item.id === next[0]);
+          if (chosen) {
+            setDraft((draft) => ({ ...draft, type: chosen.id }));
           }
         }}
         value={[type]}
@@ -300,20 +315,29 @@ function Composer({ record }: { record: CrmRecord }) {
           })}
         </FluidTooltip.Group>
       </ToggleGroup>
-      <Textarea
+      <MentionTextarea
         aria-label={label}
         className="min-h-16"
         id={id}
-        onChange={(event) => {
-          const { value } = event.target;
-          setDraft((draft) => ({ ...draft, text: value }));
-        }}
         onKeyDown={(event) => {
           if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
             event.preventDefault();
             send();
           }
         }}
+        onMention={(mention) =>
+          setDraft((draft) => ({
+            ...draft,
+            picked: [...draft.picked, mention],
+          }))
+        }
+        onValueChange={(value) =>
+          setDraft((draft) => ({ ...draft, text: value }))
+        }
+        // Anyone who can read the record, viewers too, can be pointed at it.
+        people={[...project.members, ...project.viewers].filter(
+          (person) => person !== pubkey
+        )}
         placeholder={
           type === "note"
             ? "Add a note…"
@@ -339,7 +363,7 @@ export function RecordActivity({
 }) {
   const id = useId();
   const { canEdit, project, table } = useCrm();
-  const activity = useRecordActivity(project, table, record);
+  const { activity, assignments } = useRecordActivity(project, table, record);
   const created: Entry = {
     at: record.createdAt,
     by: record.creator,
@@ -350,6 +374,11 @@ export function RecordActivity({
       activity: item,
       at: item.createdAt,
       kind: "activity",
+    })),
+    ...assignments.map((assignment): Entry => ({
+      assignment,
+      at: assignment.createdAt,
+      kind: "assigned",
     })),
     ...record.moves.map((move): Entry => ({ at: move.at, kind: "move", move })),
     created,
@@ -369,13 +398,21 @@ export function RecordActivity({
         )}
       </h3>
       {canEdit && <Composer record={record} />}
-      <ol className="before:bg-border relative flex flex-col gap-4 before:absolute before:top-3 before:bottom-3 before:left-3 before:w-px">
+      <Timeline>
         {entries.map((entry) => {
           if (entry.kind === "activity") {
             return (
               <ActivityEntry
                 activity={entry.activity}
                 key={entry.activity.id}
+              />
+            );
+          }
+          if (entry.kind === "assigned") {
+            return (
+              <AssignedEntry
+                assignment={entry.assignment}
+                key={entry.assignment.id}
               />
             );
           }
@@ -389,7 +426,7 @@ export function RecordActivity({
           }
           return <CreatedEntry at={entry.at} by={entry.by} key="created" />;
         })}
-      </ol>
+      </Timeline>
     </section>
   );
 }

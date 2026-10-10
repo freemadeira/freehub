@@ -461,6 +461,11 @@ export function clearFinished(): void {
   emit();
 }
 
+/** Whether any Drive upload is waiting or under way, so a reload would drop it. */
+export function uploadingToDrive(): boolean {
+  return items.some(isActive);
+}
+
 // Closing the tab would cut uploads off halfway, so the browser asks first.
 globalThis.addEventListener("beforeunload", (event) => {
   if (items.some(isActive)) {

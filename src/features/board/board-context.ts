@@ -2,7 +2,6 @@ import { createContext, use } from "react";
 
 import type { BoardLayout } from "@/features/board/layout-switch";
 import type { Board, BoardContent, Card, CardFields } from "@/lib/model";
-import { cardKey } from "@/lib/model";
 
 /** History state that lets leaving a card's page be a plain back navigation. */
 export const OPENED_FROM_BOARD = { fromBoard: true };
@@ -47,21 +46,4 @@ export function boardQuery(board: Board, boards: Board[]): URLSearchParams {
 export function boardPath(board: Board, boards: Board[]): string {
   const search = boardQuery(board, boards).toString();
   return `/${board.code}${search ? `?${search}` : ""}`;
-}
-
-/**
- * A card's path by its number. Pass `withId` when the number alone is not
- * enough: cards from clients that don't number them, or cards sharing a number.
- */
-export function cardPath(
-  board: Board,
-  card: Card,
-  { query, withId = false }: { query?: URLSearchParams; withId?: boolean } = {}
-): string {
-  const params = new URLSearchParams(query);
-  if (withId || card.number === undefined) {
-    params.set("card", card.id);
-  }
-  const search = params.toString();
-  return `/${cardKey(board, card)}${search ? `?${search}` : ""}`;
 }

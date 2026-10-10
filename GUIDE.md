@@ -7,7 +7,7 @@ How to run Freehub for your team, and how it works inside. To try it on your own
 You need a private Nostr relay for the team. It must:
 
 - require NIP-42 AUTH for reads and writes, and only let whitelisted pubkeys in;
-- store kinds 0, 30301–30310, 1111 and 5;
+- store kinds 0, 30078, 30301–30310, 1111 and 5;
 - keep its database on persistent storage, since the relay holds the only copy of the team's data;
 - be reachable over `wss://`.
 
@@ -17,10 +17,11 @@ Then:
 
 1. Fork this repo.
 2. Set `relays` in `public/config.json` to your team relay.
-3. Replace `public/logo.svg`, `public/logo-dark.svg` and `public/favicon.svg`.
+3. Replace `public/logo.svg` and `public/logo-dark.svg`, the browser tab's `public/favicon.png`, and the installed app's name and icons in `public/manifest.webmanifest`, `public/icons/` and `public/apple-touch-icon.png`. Freehub's own are made from `assets/icon.png`; `icons/badge.png` is the icon's shape in white, which Android shows in the status bar.
 4. Optionally, give the team a map of your region: see [Map](#map).
 5. Optionally, give each project a Drive for its files: see [Drive](#drive).
-6. Whitelist the npub of everyone who uses the app, viewers too, on the relay. Anyone who isn't whitelisted gets a "No access" screen showing their npub, ready to copy and send to you. The app can't read the whitelist, so the first time someone joins a project or board, paste their npub (or the whole whitelist file) into its members field; after that they're suggested by name everywhere.
+6. Optionally, push notifications to people's phones and computers: see [Notifications](#notifications).
+7. Whitelist the npub of everyone who uses the app, viewers too, on the relay. Anyone who isn't whitelisted gets a "No access" screen showing their npub, ready to copy and send to you. The app can't read the whitelist, so the first time someone joins a project or board, paste their npub (or the whole whitelist file) into its members field; after that they're suggested by name everywhere.
 
 ### Configuration
 
@@ -38,6 +39,7 @@ All settings live in `public/config.json`:
 | `map` | none | `{ "world": "/worlds/<name>/world.json" }`, the address of a world pack. Without it there's no Map tab, and the map's code is never downloaded. See [Map](#map). |
 | `connectors` | none | npubs of the connectors your organization runs. Their sources show up in each table's settings, under **Connections**. See [Connectors](#connectors). |
 | `blossom` | none | Blossom servers for the team's files, as `https://` URLs. Uploads go to the first; files are read from whichever has them. Without it there's no Drive. See [Drive](#drive). |
+| `notifier` | none | `{ "pubkey": "npub…", "vapidKey": "B…" }`, the notifier's npub and VAPID public key. Without it, notifications only show while the app is open. See [Notifications](#notifications). |
 
 Relay URLs must start with `wss://`. `ws://` is accepted only for localhost.
 
@@ -175,9 +177,39 @@ To bring in older items, run `node connector.js backfill <source id> <YYYY-MM-DD
 
 For Shopify, create the app from the store's admin (Settings → Apps → Develop apps → Build apps in Dev Dashboard) with the scopes `read_orders` and `read_customers` (and `read_all_orders` for orders older than 60 days), install it on the store, and put its client ID and secret in the sources with the store's `<handle>.myshopify.com` domain. The connector gets its own access token and sets up the order webhooks itself. An app made in the store's own organization gets protected customer data without asking, but customers' names and emails only on the Grow plan or higher: on other plans the connector leaves Customer and Email out of what tables can map. A legacy custom app's static token works too, as `accessToken`.
 
+### Notifications
+
+The app installs from the browser as a PWA: from Chrome or Edge's install button or the account menu, and on iPhone and iPad from Share → Add to Home Screen. It opens even without a connection, though boards and tables need the relay to show, and an open app reloads into a new deploy by itself while it's out of view.
+
+Each person turns notifications on per device, with the bell at the top of the inbox. Without a notifier, they show while the app is open in the background. With one, they're pushed even when it's closed; iPhone and iPad only take pushes in the app added to the Home Screen.
+
+The notifier runs next to the app as its own container, built from this repository with `notifier/Dockerfile`. It reads the team relay and works out each person's notifications with the same rules as the inbox. It waits a little, skips what was read meanwhile, and pushes the rest, with Web Push, to the devices people turned notifications on for. It never writes to the relay.
+
+1. Make a Nostr key for the notifier, with `node notifier.js key` inside the image, and whitelist its npub on the team relay.
+2. Make its VAPID keys once, with `node notifier.js vapid` inside the image, and keep both. Devices subscribe to the public key, so changing it means everyone turns notifications on again.
+3. Run the image with these environment variables, and a volume at `/app/data`:
+
+   | Variable | Notes |
+   | --- | --- |
+   | `NOTIFIER_KEY` | The notifier's nsec or hex key. |
+   | `RELAY_URL` | The team relay. |
+   | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | From step 2. |
+   | `VAPID_SUBJECT` | A `mailto:` or `https://` address where push services can reach you. |
+   | `DELAY` | Seconds news waits before it's pushed. Defaults to `30`. |
+   | `TZ` | The time zone due reminders go out in, such as `Atlantic/Madeira`. Defaults to UTC. |
+   | `LOOKUP_RELAYS` | Relays to read people's names from, comma-separated. Defaults to the app's. |
+   | `STATE_FILE` | Defaults to `/app/data/state.json`: what was pushed, so a restart repeats nothing. |
+   | `PORT` | Defaults to `3000`. Any request answers `ok`, for health checks. |
+
+4. Add it to `config.json`: `"notifier": { "pubkey": "<its npub>", "vapidKey": "<VAPID_PUBLIC_KEY>" }`.
+
+On Coolify, create it from the repository with the **Dockerfile** build pack and `notifier/Dockerfile`, with no domain, and the volume under **Persistent Storage**. On its first start, news already on the relay counts as told, so nothing old is pushed.
+
+The notifier reads every board, project and comment on the relay, and people's inbox marks and devices are encrypted to its key: keep the key as safe as the relay.
+
 ### Static host
 
-Run `pnpm build` and serve `dist/` from the root of a domain. Send unknown paths to `index.html`, and don't let browsers cache `index.html` or `config.json`. Files under `/assets/` are safe to cache forever.
+Run `pnpm build` and serve `dist/` from the root of a domain. Send unknown paths to `index.html`, and don't let browsers cache `index.html`, `config.json`, `sw.js` or `version.json`. Serve `manifest.webmanifest` as `application/manifest+json`. Files under `/assets/` are safe to cache forever.
 
 ## How it works
 
@@ -185,8 +217,8 @@ There is no backend and no database. The app is a static site: every change is a
 
 - **Projects.** A project groups boards, CRM tables and docs, and the sidebar lists them under it. Its creator picks its people, renames it and can delete it. Each person either can edit or can only view: viewers see the project's tables and docs but can't change them, add to them or comment. An organization can run as many projects as it likes, for example one per city or per product.
 - **Boards.** A board's creator picks its people the same way. Members can edit any card or sprint; viewers can read the board, its cards and their comments. Only the creator can rename the board, change who's on it or delete it. A board can sit in a project or on its own, and only the project's members can put boards in it. A new board in a project starts with the project's people and roles. Anything from viewers or anyone else not a member is ignored, even if it reaches the relay.
-- **Cards.** A card can have several assignees. Its description is rich text saved as Markdown: Markdown typed into it formats as you go (`### ` makes a heading, `[] ` or `- [ ] ` a checklist), pasted Markdown and web content keep their formatting, and text copied out across several blocks reads as Markdown. Raw HTML in a description stays plain text, and links only go to web and mail addresses.
-- **Inbox.** Typing `@` in a comment or a doc page suggests the people who can read it, viewers included. A mention is saved as a `nostr:npub…` reference in the text with a `p` tag for that person (NIP-27), so the relay routes it and other Nostr clients show it too. Mentions land in the person's inbox; opening the card or page marks them read, and a page opened from the inbox scrolls to the mention. A page is saved again and again as people type, so it also keeps who mentioned each person and when: they hear about it once, and again only when someone picks them from the list anew. Taking the mention out of the page takes it out of their inbox. Notifications are read from the comments and pages themselves through the rules in `src/lib/notifications.ts`, so another way of delivering them, such as an email bridge subscribed to the relay, can reuse the same rules.
+- **Cards.** A card can have several assignees. Its description is rich text saved as Markdown: Markdown typed into it formats as you go (`### ` makes a heading, `[] ` or `- [ ] ` a checklist), pasted Markdown and web content keep their formatting, and text copied out across several blocks reads as Markdown. Raw HTML in a description stays plain text, and links only go to web and mail addresses. The card keeps its history: who made it, and every change to its status, assignees, priority, due date and title, between its comments. Changes someone makes one after another are told as one.
+- **Inbox.** Typing `@` in a comment, a card's description, a doc page, a note on a record or a comment on a file suggests the people who can read it, viewers included. A mention is saved as a `nostr:npub…` reference in the text with a `p` tag for that person (NIP-27), so the relay routes it and other Nostr clients show it too. The inbox also tells people when they're assigned a card or put in a record's member field, when a card they're assigned is due the next day, and what happens on cards they subscribe to: comments, and changes to status, assignees, priority and due date. Making a card, being assigned it or commenting on it subscribes someone; the bell on the card's page subscribes or unsubscribes, and a row in the inbox can unsubscribe too. News about one card, page, file or record shows as one row. Opening it marks it read, and a page opened from the inbox scrolls to the mention. What each person read or archived is kept on the relay, encrypted, so all their devices agree. A page is saved again and again as people type, so it also keeps who mentioned each person and when: they hear about it once, and again only when someone picks them from the list anew. Taking the mention out of the page or description takes it out of their inbox. Notifications are read from the events themselves through the rules in `src/lib/notifications.ts`, which the [notifier](#notifications) shares.
 - **CRM.** Each project can hold several tables, such as merchants, companies, people or deals. Every table has its own fields (text, numbers, money, dates, selects, members, links to other tables and more) and can have a stage field that turns it into a pipeline with won and lost endings. Any project member can add tables, change their fields and edit records. Records show up as a table (sorting, search, filters, column picker, bulk changes, CSV import and export), as a pipeline board and as insights. Every stage change is kept on the record, so its journey and the time spent in each stage can be read back. Notes, calls, emails, meetings and visits are logged on a record as comments.
 - **Connectors.** A connector is an optional service with its own Nostr key that feeds a source, such as an online store, into CRM tables: each order becomes a record. It describes each source in a manifest, and a table only gets records once a member switches the source on in **Table settings → Connections** and picks which field each piece of data goes to. Records keep a stable id per item, so an order changing later updates its record. When the source changes a value, the record takes it; when it doesn't, a teammate's edit to that field stays. A record a member deleted is never brought back.
 - **Map.** With a world pack set up, the Map tab shows the region in 3D: terrain, buildings with their windows and roofs, trees, roads, the sea and its surf, place names and landmarks. It follows the app's theme, with lit windows and streets at night. Records of every table with a Location field show as pins in the color of their stage, and in a list in the corner that filters by table and folds away; clicking either opens the record. A Location field takes coordinates or a pasted Google Maps, Apple Maps or OpenStreetMap link, or a click on the map through the pin button next to the field. Drag to move, right-drag or two fingers to turn and tilt, scroll or pinch to zoom; arrow keys pan and `+`/`-` zoom.
@@ -204,7 +236,7 @@ Boards and cards follow the draft kanban NIP used by [kanbanstr](https://github.
 | Kind | Event | Tags |
 | --- | --- | --- |
 | 30301 | Board | `d`, `title`, `description`, `code`, `col` (status id, label, order), `p` (members, and viewers as `["p", pubkey, "", "viewer"]`), `a` (project, optional) |
-| 30302 | Card | `d`, `a` (board), `title`, `description`, `s` (status), `rank`, `number`, `p` (assignees), `priority`, `due`, `sprint`, `label` |
+| 30302 | Card | `d`, `a` (board), `title`, `description`, `s` (status), `rank`, `number`, `p` (assignees), `priority`, `due`, `sprint`, `label`, `creator`, `created` |
 | 30303 | Sprint | `d`, `a` (board), `title`, `number`, `status`, `start`, `end` |
 | 30304 | Project | `d`, `title`, `description`, `slug`, `color`, `p` (members and viewers, as on a board) |
 | 30305 | CRM table | `d`, `a` (project), `title`, `singular`, `slug`, `icon`, `description`, `creator`, `created`, `field` (id, type, name, config), `option` (field, id, label, color, stage outcome), `p` (connectors that may write its records), `source` (connector, source), `map` (connector, source, attribute, field), `map-option` (connector, source, attribute, value, option) |
@@ -213,7 +245,8 @@ Boards and cards follow the draft kanban NIP used by [kanbanstr](https://github.
 | 30309 | Drive folder | `d`, `a` (project), `name`, `parent`, `color`, `icon`, `created`, `creator`, `trashed` (time, who) |
 | 30310 | Drive file | `d`, `a` (project), `name`, `folder`, `size`, `m` (MIME type), `dim`, `duration`, `x` (hash of the encrypted file), `encryption-algorithm`, `decryption-key`, `decryption-nonce`, `thumbnail` (hash, nonce), `creator`, `created`, `updated`, `trashed` (time, who) |
 | 30308 | Connector source | `d`, `name`, `type`, `attr` (id, type, name, config), `value` (attribute, id, label, color, stage outcome) |
-| 1111 | Comment on a card or a Drive file, or activity on a record ([NIP-22](https://github.com/nostr-protocol/nips/blob/master/22.md)) | `A`, `K`, `P`, `a`, `k`, `p` (plus one per person mentioned), `activity` (records only) |
+| 1111 | Comment on a card or a Drive file, or activity on a card or a record ([NIP-22](https://github.com/nostr-protocol/nips/blob/master/22.md)) | `A`, `K`, `P`, `a`, `k`, `p` (plus one per person mentioned or told), `activity`, `change` (field, from, to; cards only), `field` (records only) |
+| 30078 | A person's own app data ([NIP-78](https://github.com/nostr-protocol/nips/blob/master/78.md)): inbox marks, subscriptions, or a device to push to | `d` (`freehub/inbox`, `freehub/subscriptions` or `freehub/push/<device>`), `p` (who can read it), `subscribed` and `unsubscribed` (`kind:id`), `deleted` |
 | 5 | Deleted board, project or comment ([NIP-09](https://github.com/nostr-protocol/nips/blob/master/09.md)) | `a` or `e`, `k` |
 
 `d` tags are 16 random hex characters, so every address (`kind:pubkey:d`) stays under the 100 characters that relays built on [eventstore](https://github.com/fiatjaf/eventstore), Haven among them, index for `#a` queries. Boards and projects made before that used longer `d` tags, so their cards, sprints, tables, records and comments are fetched by author instead and matched by address in the browser.
@@ -225,6 +258,10 @@ Each member publishes their own version of a card, sprint, CRM table, record or 
 A connector publishes a source manifest per source, and a kind 0 profile with its name on the team relays. A table switches a source on with a `source` tag and maps its attributes with `map` and `map-option` tags; its `p` tags name the connectors allowed to write its records, so a connector finds its tables with a `#p` query. Besides members, a record's versions count from those connectors only, and only in that table. A connector's record has `creator` set to the connector and a `d` tag made from the table, the source and the item's id, so the same order always lands on the same record.
 
 A Drive file's blob is sealed with AES-GCM under a key made for that file; its thumbnail uses the same key with a nonce of its own. The encryption tags follow NIP-17's file messages, and `x` is the SHA-256 of the encrypted blob, which is the name the Blossom servers know it by. A folder or file put in the trash gets a `trashed` tag, and what's inside a trashed folder goes with it untagged. Deleting one for good publishes a version tagged `deleted`, as for cards; a file's still names its blobs and `creator`, so the uploader's app deletes them from the servers, since only the uploader's key can.
+
+What happens to a card is a comment on it with an `activity` tag: `change`, with a `change` tag per value (`["change", "status", "todo", "done"]`, or `["change", "assignee", "", <pubkey>]` for someone assigned), or `mention` for people picked into its description. Other Nostr clients show these as comments. A comment or activity entry has a `p` tag for everyone told about it; a subscriber's carries the role `subscriber` after the relay hint, as `["p", pubkey, "", "subscriber"]`, so the relay routes it and the inbox knows why it came. Whoever writes it works out the subscribers: the card's creator and assignees, and whoever subscribed by choice, less whoever unsubscribed, from each person's `freehub/subscriptions` list. A record's assignment is an entry with `activity` `assigned` and the member field in `field`.
+
+Inbox marks and devices are encrypted with NIP-44 between their author and the person in their `p` tag: the notifier when there is one, so it can skip what was read and push to the device, or else the author. Marks keep up to 1000 read and 1000 archived notifications, by their ids, an event id cut to 16 characters.
 
 A doc page's text is the event's content, as Markdown. Its `parent` is the `d` tag of the page it sits under, and pages at the top have none. `prev` is the id of the version the editor started from, so a teammate's editor knows what each side changed when it merges two versions saved at once. Deleting a page deletes the pages under it too. Everyone the text mentions gets a `p` tag, and a `mention` tag with who mentioned them and when, in seconds; each version carries these on from the one it was edited from, so every member's version names the same notification, and the newest time wins when they differ.
 
@@ -245,7 +282,13 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 | `src/lib/merge.ts` | Merging two edits of the same page |
 | `src/lib/mentions.ts` | Mentions in comments and docs (NIP-27) |
 | `src/lib/notifications.ts` | The rules that turn events into notifications |
-| `src/lib/inbox.ts` | What each person read or archived in the inbox |
+| `src/lib/notification-targets.ts` | Checking a notification against what it points at |
+| `src/lib/card-activity.ts` | A card's history: its changes and mentions |
+| `src/lib/subscriptions.ts` | Who subscribes to what |
+| `src/lib/inbox-marks.ts`, `src/lib/inbox.ts` | What each person read or archived, kept on the relay |
+| `src/lib/push-devices.ts`, `src/lib/notify.ts` | Devices to push to, and notifications on this one |
+| `src/lib/pwa.ts`, `src/lib/updates.ts`, `public/sw.js` | Installing the app, opening it offline, and updating it |
+| `src/lib/team-relay.ts` | The team relay as the connector and the notifier see it |
 | `src/lib/relays.ts` | Team relay connections, AUTH and access |
 | `src/lib/publish.ts` | Optimistic edits, signing and the outbox |
 | `src/lib/location.ts` | Reading places typed or pasted into the CRM |
@@ -254,6 +297,7 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 | `src/features/map/engine/` | The 3D map: three.js, no React or app code |
 | `tools/world/` | Bakes an OpenStreetMap region into a world pack |
 | `connector/` | The optional service that feeds sources, like a store, into tables |
+| `notifier/` | The optional service that pushes notifications to people's devices |
 
 ## Known limits
 
@@ -265,7 +309,7 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 - Cards and doc pages can't hold files yet; files go in a project's Drive.
 - A Drive file is encrypted and opened whole, in memory, so files are capped at 100 MB, and a video plays once it has all arrived.
 - Only the person who uploaded a file can delete it from the Blossom servers, and their app does so the next time they open the Drive after it was deleted for good. Files deleted after their uploader left the team stay on the servers, encrypted, with nothing pointing at them.
-- Stars and recent files are kept in the browser, like the inbox, so another device starts without them.
+- Stars and recent files are kept in the browser, so another device starts without them.
 - Two people adding something with the same name to the same folder at the same moment both keep it; the Drive numbers names only as they're added from one device.
 - A linked image in a description, such as a `[![badge](…)](…)` badge, loses its link once the description is edited.
 - A CRM record is saved as a whole, so two people changing different fields of the same record at the same moment can undo one another's change.
@@ -276,7 +320,9 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 - A doc page is saved whole, as one event, so a long page costs a little more with each save. Edits merge line by line: a paragraph is one line, so two people rewriting the same paragraph at once keep only one version of it.
 - A deleted page can't be brought back. Deleting a page while someone else has it open drops whatever they hadn't saved yet.
 - Pages have no links to other pages yet, other than the ones under them; a link to a page's address works as any web link.
-- The inbox keeps what you read or archived in the browser, so another device starts with every mention unread. It shows the newest 200 mentions in comments, and every page in your projects that mentions you. Only card comments, doc pages and comments on Drive files can mention people for now.
+- The inbox shows the newest 200 comments and activity entries of each kind that name you, and the newest 200 versions of pages and of cards assigned to you. With a signer that can't encrypt (NIP-44), what you read or archived stays in the browser, and the notifier can't push to you.
+- Whoever changes a card works out who subscribes, so someone who subscribed a moment before, on another device, may miss that change. Changes made by other Nostr clients, or by copies of this app from before the history, tell no one and don't show in it.
+- Due reminders go out at 9:00 the day before: in each device's own time zone in the app, and in the notifier's `TZ` for pushes.
 - The map needs WebGL 2. It draws one region per app, and a pin per record, so thousands of located records crowd it.
 - The map guesses most building heights, since few are tagged in OpenStreetMap, and builds windows and roofs from rules rather than the real buildings.
 - `INBOX` and `MAP` can't be board codes, since the inbox lives at `/inbox` and the map at `/map`. Likewise a table named "Docs" or "Drive" gets the link `docs-2` or `drive-2`, since a project's docs and Drive live at `/p/<project>/docs` and `/p/<project>/drive`.

@@ -12,10 +12,18 @@ import {
   serializeMarkdown,
 } from "@/components/markdown-editor/content";
 import {
+  MentionCommand,
+  MentionMenu,
+  MentionMenuStore,
+} from "@/components/markdown-editor/mention-menu";
+import {
   hideSelectionToolbar,
   LinkTarget,
   SelectionToolbar,
 } from "@/components/markdown-editor/toolbar";
+import { useProfileNames } from "@/hooks/use-profile-names";
+import { onLeave } from "@/lib/leaving";
+import { mentionNames } from "@/lib/mentions";
 
 function isSubmit(event: KeyboardEvent): boolean {
   return (
@@ -32,16 +40,22 @@ export function MarkdownEditorView({
   onKeyDown,
   placeholder = "",
   className,
+  people,
   "aria-label": label,
 }: MarkdownEditorProps) {
+  const mentionMenu = useMemo(() => new MentionMenuStore(), []);
+  const mentioning = people !== undefined;
+  const profileNames = useProfileNames(people ?? []);
+  const names = mentionNames(people ?? [], profileNames);
   const extensions = useMemo(
     () => [
       ...CONTENT,
       MarkdownClipboard,
       LinkTarget,
+      MentionCommand.configure({ store: mentioning ? mentionMenu : null }),
       Placeholder.configure({ placeholder }),
     ],
-    [placeholder]
+    [placeholder, mentioning, mentionMenu]
   );
   // The value from outside, as editor content and as the markdown that saves.
   const incoming = useMemo(() => {
@@ -57,7 +71,7 @@ export function MarkdownEditorView({
     const markdown = serializeMarkdown(doc);
     if (markdown !== synced.current.markdown) {
       synced.current = { markdown, value };
-      onValueCommitted(markdown);
+      onValueCommitted(markdown, mentionMenu.takePicked());
     }
     return markdown;
   };
@@ -159,6 +173,14 @@ export function MarkdownEditorView({
     return () => document.removeEventListener("visibilitychange", hidden);
   }, []);
 
+  // And so does reloading into a new build.
+  const onReload = useEffectEvent(() => {
+    if (editor && !editor.isDestroyed) {
+      commit(editor.getJSON());
+    }
+  });
+  useEffect(() => onLeave(() => onReload()), []);
+
   return (
     <>
       <EditorContent editor={editor} onKeyDown={onKeyDown} />
@@ -168,6 +190,9 @@ export function MarkdownEditorView({
           onLeave={() => leave(editor)}
           ref={toolbar}
         />
+      )}
+      {editor && mentioning && (
+        <MentionMenu editor={editor} names={names} store={mentionMenu} />
       )}
     </>
   );

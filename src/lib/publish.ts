@@ -34,6 +34,11 @@ const RETRY_INTERVAL = 30_000;
 const outboxSize$ = new BehaviorSubject(0);
 const signing$ = new BehaviorSubject(0);
 
+/** Whether a change is at the signer, so it only exists in memory. */
+export function signingChanges(): boolean {
+  return signing$.value > 0;
+}
+
 /** Changes no relay has accepted yet, whether still at the signer or queued to send. */
 export const unsynced$ = combineLatest([signing$, outboxSize$]).pipe(
   map(([signing, queued]) => signing + queued)

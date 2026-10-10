@@ -36,7 +36,7 @@ const MIN_RECONNECT = 10;
 const MAX_RECONNECT = 120;
 const REFUSED_RETRY = 60_000;
 
-/** The team relay as the connector sees it: authenticated as its key. */
+/** The team relay as a service sees it, like a connector or the notifier: authenticated as its key. */
 export class TeamRelay {
   readonly relay: Relay;
   readonly pubkey: string;
@@ -111,7 +111,7 @@ export class TeamRelay {
               const refused = this.refused(error);
               console.error(
                 refused
-                  ? `The relay refuses this connector; is its npub on the whitelist? ${errorMessage(error)}`
+                  ? `The relay refuses this key; is its npub on the whitelist? ${errorMessage(error)}`
                   : `Relay subscription ended: ${errorMessage(error)}`
               );
               return timer(refused ? REFUSED_RETRY : MIN_RECONNECT * 1000);
@@ -131,7 +131,7 @@ export class TeamRelay {
     this.relay.close();
   }
 
-  /** Resolves once authenticated as the connector. */
+  /** Resolves once authenticated as the service. */
   authenticated(): Promise<unknown> {
     if (this.relay.authenticatedAs === this.pubkey) {
       return Promise.resolve();
@@ -142,7 +142,7 @@ export class TeamRelay {
         timeout({
           each: AUTH_TIMEOUT,
           with: () => {
-            throw new Error("The relay didn't authenticate the connector.");
+            throw new Error("The relay didn't authenticate this key.");
           },
         })
       )

@@ -18,9 +18,9 @@ import {
 import type { Project } from "@/lib/project";
 import { parseProject } from "@/lib/project";
 import type { SourceFields } from "@/lib/sources";
+import type { TeamRelay } from "@/lib/team-relay";
 
 import { mapItem, mergeRecord } from "./merge";
-import type { TeamRelay } from "./relay";
 import type { Item } from "./sources/types";
 
 /** A table that switched a source of this connector on. */

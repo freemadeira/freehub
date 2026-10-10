@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { getConfig } from "@/config";
-import { recordPath, useCrm } from "@/features/crm/crm-context";
+import { useCrm } from "@/features/crm/crm-context";
 import { FieldInput } from "@/features/crm/field-input";
 import { FIELD_TYPE_META } from "@/features/crm/field-meta";
 import { RecordActivity } from "@/features/crm/record-activity";
@@ -34,6 +34,7 @@ import { firstValue, recordStage, recordTitle, stageField } from "@/lib/crm";
 import { deleteRecord, setValues, updateRecord } from "@/lib/crm-actions";
 import { isChecked } from "@/lib/crm-values";
 import { CHIP_COLORS, SWATCH_COLORS } from "@/lib/palette";
+import { recordPath } from "@/lib/paths";
 
 const TITLE = "py-1 text-xl leading-snug font-semibold";
 const FIELD_NAME =
