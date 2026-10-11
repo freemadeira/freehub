@@ -3,11 +3,12 @@ import { registerCommonAccountTypes } from "applesauce-accounts/accounts";
 import { EventStore } from "applesauce-core/event-store";
 import type { NostrEvent } from "applesauce-core/helpers/event";
 import { verifyEvent } from "applesauce-core/helpers/event";
-import { createEventLoaderForStore } from "applesauce-loaders/loaders";
+import { createUnifiedEventLoader } from "applesauce-loaders/loaders";
 import { RelayPool } from "applesauce-relay";
 import { NostrConnectSigner } from "applesauce-signers";
 
 import { getConfig } from "@/config";
+import { startProfiles } from "@/lib/profiles";
 import { readStorage, writeStorage } from "@/lib/utils";
 
 const ACCOUNTS_KEY = "accounts";
@@ -39,9 +40,12 @@ export function abortSigning(reason: Error): void {
 }
 
 export function initNostr(): void {
-  eventStore.eventLoader = createEventLoaderForStore(eventStore, pool, {
-    lookupRelays: getConfig().lookupRelays,
-  });
+  const { connectors, lookupRelays, relays } = getConfig();
+  startProfiles(
+    eventStore,
+    createUnifiedEventLoader(pool, { eventStore, lookupRelays }),
+    { connectors, teamRelays: relays }
+  );
 
   const saved = readStorage(ACCOUNTS_KEY);
   if (saved) {

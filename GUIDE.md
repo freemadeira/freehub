@@ -35,7 +35,7 @@ All settings live in `public/config.json`:
 | `accent` | `#ffcb05` | Any CSS color. Buttons use dark or white text, whichever reads better on it. |
 | `relays` | required | Team relays. Boards are read from and written to all of them; a change counts as saved once one accepts it, and the others get it in the background. |
 | `signerRelays` | nos.lol, relay.primal.net, relay.damus.io | Relays the app and a signer app talk through when logging in by QR code. |
-| `lookupRelays` | purplepag.es, user.kindpag.es, relay.damus.io | Public relays used to look up members' names and avatars. |
+| `lookupRelays` | purplepag.es, profiles.nostr1.com, directory.yabu.me | Public relays used to look up members' names and avatars. |
 | `map` | none | `{ "world": "/worlds/<name>/world.json" }`, the address of a world pack. Without it there's no Map tab, and the map's code is never downloaded. See [Map](#map). |
 | `connectors` | none | npubs of the connectors your organization runs. Their sources show up in each table's settings, under **Connections**. See [Connectors](#connectors). |
 | `blossom` | none | Blossom servers for the team's files, as `https://` URLs. Uploads go to the first; files are read from whichever has them. Without it there's no Drive. See [Drive](#drive). |
@@ -229,6 +229,7 @@ There is no backend and no database. The app is a static site: every change is a
 - **Editing a page together.** When two people edit a page at once, each one's saved edits show up in the other's page as they arrive, without moving their cursor. The two versions are merged line by line, so edits to different lines, even neighbouring list items, are all kept. When both change the same line, the person still typing keeps theirs; between two saved versions, every device picks the same one.
 - **Saving.** Changes show up right away, then go to the signer and on to the relay. Once signed, a change is kept in the browser until every team relay has it, so it survives reloads and time offline. A change still waiting on the signer is lost if the tab closes, and the app warns before that happens.
 - **Loading.** Relays only send their newest few hundred events per request, so the app pages back through everything they hold before a board or table counts as loaded, then keeps listening. When a relay drops or closes the connection, it reconnects and catches up on what it missed.
+- **Names.** Members' names and avatars come from the lookup relays. Each browser keeps the last 200 it saw, shows them at once and checks them again in the background, so they also show while those relays are down. A name not found is looked for again, less often as time goes on and right away when the device is back online, for as long as it's on screen. Someone with no Nostr profile shows as a short npub, and an avatar whose host doesn't answer shows as a color.
 - **Where data goes.** Board data is only sent to the team relays, plus, encrypted, the relays a signer app talks through. Lookup relays only see which profiles are being fetched.
 
 ### Events

@@ -15,7 +15,7 @@ export function useProfileNames(pubkeys: string[]): Map<string, string> {
         : combineLatest(
             pubkeys.map((pubkey) =>
               eventStore.profile(pubkey).pipe(
-                map((profile) => getDisplayName(profile) ?? shortNpub(pubkey)),
+                map((profile) => getDisplayName(profile) || shortNpub(pubkey)),
                 startWith(shortNpub(pubkey))
               )
             )

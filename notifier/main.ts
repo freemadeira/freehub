@@ -2,13 +2,21 @@ import { createServer } from "node:http";
 
 import { EventStore } from "applesauce-core/event-store";
 import type { NostrEvent } from "applesauce-core/helpers/event";
+import { verifyEvent } from "applesauce-core/helpers/event";
 import type { Filter } from "applesauce-core/helpers/filter";
 import { npubEncode, nsecEncode } from "applesauce-core/helpers/pointers";
 import { getDisplayName } from "applesauce-core/helpers/profile";
 import { unixNow } from "applesauce-core/helpers/time";
 import { RelayPool } from "applesauce-relay";
 import { PrivateKeySigner } from "applesauce-signers";
-import { catchError, lastValueFrom, of, timeout, toArray } from "rxjs";
+import {
+  catchError,
+  EMPTY,
+  lastValueFrom,
+  takeUntil,
+  timer,
+  toArray,
+} from "rxjs";
 
 import { notificationPath } from "@/features/inbox/notification-path";
 import { notificationMessage } from "@/features/inbox/notification-text";
@@ -72,6 +80,8 @@ const REFRESH_OVERLAP = 5 * 60;
 /** How often due dates are looked at for reminders. */
 const DUE_INTERVAL = 60_000;
 const NAME_TTL = 60 * 60_000;
+/** Someone whose name wasn't found is asked about again sooner: a relay may only have been slow. */
+const NAME_MISS_TTL = 5 * 60_000;
 const NAME_TIMEOUT = 5000;
 
 /** What notifications point at, kept whole, so each can be checked before it's pushed. */
@@ -137,7 +147,7 @@ class Notifier {
   private readonly gone = new Set<string>();
   /** Decrypted marks and devices, by the event they came from. */
   private readonly opened = new Map<string, string | undefined>();
-  private readonly names = new Map<string, { name: string; at: number }>();
+  private readonly names = new Map<string, { name?: string; until: number }>();
   private fetchedAt = 0;
   /**
    * On a first start, news already there counts as told: pushing the last
@@ -461,33 +471,37 @@ class Notifier {
   private async loadNames(people: string[]): Promise<void> {
     const now = Date.now();
     const missing = people.filter(
-      (pubkey) => (this.names.get(pubkey)?.at ?? 0) < now - NAME_TTL
+      (pubkey) => (this.names.get(pubkey)?.until ?? 0) <= now
     );
     if (missing.length === 0) {
       return;
     }
+    // What came in by then counts, so one slow relay doesn't lose the others' answers.
     const profiles = await lastValueFrom(
       this.lookup
         .request(this.config.lookupRelays, { authors: missing, kinds: [0] })
         .pipe(
-          toArray(),
-          timeout(NAME_TIMEOUT),
-          catchError(() => of([] as NostrEvent[]))
+          takeUntil(timer(NAME_TIMEOUT)),
+          catchError(() => EMPTY),
+          toArray()
         )
     );
     for (const pubkey of missing) {
       const [newest] = profiles
-        .filter((profile) => profile.pubkey === pubkey)
+        .filter((profile) => profile.pubkey === pubkey && verifyEvent(profile))
         .toSorted((a, b) => b.created_at - a.created_at);
-      this.names.set(pubkey, {
-        at: now,
-        name: getDisplayName(newest) ?? shortNpub(pubkey),
-      });
+      // Not found this time: keep the name from before, if any.
+      this.names.set(
+        pubkey,
+        newest
+          ? { name: getDisplayName(newest), until: now + NAME_TTL }
+          : { name: this.names.get(pubkey)?.name, until: now + NAME_MISS_TTL }
+      );
     }
   }
 
   private name(pubkey: string): string {
-    return this.names.get(pubkey)?.name ?? shortNpub(pubkey);
+    return this.names.get(pubkey)?.name || shortNpub(pubkey);
   }
 
   stop(): void {

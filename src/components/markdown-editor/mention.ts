@@ -5,14 +5,14 @@ import { getDisplayName } from "applesauce-core/helpers/profile";
 import { leadingMention, mentionReference } from "@/lib/mentions";
 import { isPubkey } from "@/lib/model";
 import { eventStore } from "@/lib/nostr";
+import { PROFILE_KIND } from "@/lib/profiles";
 import { shortNpub } from "@/lib/utils";
 
-const PROFILE_KIND = 0;
 /** Looks like the mentions in comments. */
 const CHIP = "bg-primary/20 rounded-md px-1 font-medium";
 
 function label(name: string | undefined, pubkey: string): string {
-  return `@${name ?? shortNpub(pubkey)}`;
+  return `@${name || shortNpub(pubkey)}`;
 }
 
 // The name as known right now, for copied text.

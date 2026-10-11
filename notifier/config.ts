@@ -15,8 +15,8 @@ export interface NotifierConfig {
 
 const DEFAULT_LOOKUP_RELAYS = [
   "wss://purplepag.es",
-  "wss://user.kindpag.es",
-  "wss://relay.damus.io",
+  "wss://profiles.nostr1.com",
+  "wss://directory.yabu.me",
 ];
 
 export class ConfigError extends Error {

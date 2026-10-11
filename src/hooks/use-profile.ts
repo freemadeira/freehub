@@ -18,7 +18,7 @@ export function useProfile(pubkey: string): Profile {
     [pubkey]
   );
   return {
-    name: getDisplayName(profile) ?? shortNpub(pubkey),
+    name: getDisplayName(profile) || shortNpub(pubkey),
     picture: getProfilePicture(profile),
   };
 }

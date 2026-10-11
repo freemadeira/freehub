@@ -45,8 +45,8 @@ const DEFAULT_SIGNER_RELAYS = [
 ];
 const DEFAULT_LOOKUP_RELAYS = [
   "wss://purplepag.es",
-  "wss://user.kindpag.es",
-  "wss://relay.damus.io",
+  "wss://profiles.nostr1.com",
+  "wss://directory.yabu.me",
 ];
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 

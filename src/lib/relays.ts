@@ -1,5 +1,6 @@
 import type { NostrEvent } from "applesauce-core/helpers/event";
 import type { Filter } from "applesauce-core/helpers/filter";
+import { isFromRelay } from "applesauce-core/helpers/relays";
 import type { PublishResponse, RelayReqMessage } from "applesauce-relay";
 import { AuthRequiredError, Relay, RelayClosedError } from "applesauce-relay";
 import type { Observable } from "rxjs";
@@ -40,6 +41,7 @@ import {
 
 import { getConfig } from "@/config";
 import { abortSigning, accounts, eventStore } from "@/lib/nostr";
+import { PROFILE_KIND } from "@/lib/profiles";
 import { signerState$ } from "@/lib/signer";
 import { errorMessage, TimeoutError, withTimeout } from "@/lib/utils";
 
@@ -204,7 +206,18 @@ function closeSession(session: Session): void {
   for (const relay of session.relays) {
     relay.close();
   }
-  eventStore.removeByFilters({});
+  // Public profiles are the same for every account: keeping them means names
+  // still on screen don't fall back to npubs on the next login. Ones from the
+  // team relays, like connectors', go with everything else from there.
+  const urls = session.relays.map((relay) => relay.url);
+  for (const event of eventStore.getByFilters({})) {
+    if (
+      event.kind !== PROFILE_KIND ||
+      urls.some((url) => isFromRelay(event, url))
+    ) {
+      eventStore.remove(event);
+    }
+  }
 }
 
 export function startRelays(): void {
