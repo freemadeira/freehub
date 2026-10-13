@@ -18,12 +18,14 @@ import { ProjectAvatar } from "@/components/project-avatar";
 import type { Crumb } from "@/components/top-bar";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
+import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { docsPath, pagePath } from "@/features/docs/docs-context";
 import { IconPicker } from "@/features/docs/icon-picker";
 import type { PageEditorHandle } from "@/features/docs/page-editor";
 import { PageEditor } from "@/features/docs/page-editor";
 import { PageIcon } from "@/features/docs/page-icon";
 import { PageMenu } from "@/features/docs/page-menu";
+import { PinButton } from "@/features/home/pin-controls";
 import { useReadSubject } from "@/features/inbox/inbox-context";
 import type { DocPage, DocsContent } from "@/lib/docs";
 import { ancestors, pageMentions, pageTemplate, pageTitle } from "@/lib/docs";
@@ -316,17 +318,22 @@ export function PageView({ project, docs, page, pubkey }: PageViewProps) {
   return (
     <>
       <TopBar crumbs={crumbsFor(project, docs, page)}>
-        <PageMenu
-          canEdit={editable}
-          docs={docs}
-          page={page}
-          project={project}
-          trigger={
-            <IconButton label="Page options">
-              <EllipsisIcon />
-            </IconButton>
-          }
-        />
+        <FluidTooltip.Group>
+          <PinButton
+            pin={{ id: page.id, project: project.address, type: "page" }}
+          />
+          <PageMenu
+            canEdit={editable}
+            docs={docs}
+            page={page}
+            project={project}
+            trigger={
+              <IconButton label="Page options">
+                <EllipsisIcon />
+              </IconButton>
+            }
+          />
+        </FluidTooltip.Group>
       </TopBar>
       <main className="flex grow flex-col">
         <article

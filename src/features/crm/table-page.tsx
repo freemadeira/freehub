@@ -25,6 +25,7 @@ import { RecordSheet } from "@/features/crm/record-sheet";
 import { RecordsView } from "@/features/crm/records-view";
 import { TableIcon } from "@/features/crm/table-icon";
 import { TableSettingsDialog } from "@/features/crm/table-settings-dialog";
+import { PinButton } from "@/features/home/pin-controls";
 import type { CrmRecord, CrmTable, ProjectContent } from "@/lib/crm";
 import { stageField } from "@/lib/crm";
 import { canEdit } from "@/lib/model";
@@ -125,7 +126,9 @@ export function TablePage({
             label: table.title,
           },
         ]}
-      />
+      >
+        <PinButton pin={{ address: table.address, type: "table" }} />
+      </TopBar>
       <main className="flex grow flex-col px-4 pb-10 sm:px-6">
         <Tabs className="grow gap-4" onValueChange={showView} value={view}>
           <div className="flex flex-wrap items-center justify-between gap-3">

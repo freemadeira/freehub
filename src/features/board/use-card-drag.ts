@@ -27,7 +27,7 @@ export interface CardMove<K extends string, T extends Ranked = Card> {
 type Groups<K extends string, T> = Record<K, T[]>;
 
 // Enter follows the card link, so only Space picks a card up.
-const SENSORS = [
+export const SENSORS = [
   PointerSensor,
   KeyboardSensor.configure({
     keyboardCodes: {

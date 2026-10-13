@@ -28,6 +28,7 @@ import { BoardDialog } from "@/features/boards/board-dialog";
 import { CardPage, CardPageSkeleton } from "@/features/card/card-page";
 import type { NewCardDefaults } from "@/features/card/new-card-dialog";
 import { NewCardDialog } from "@/features/card/new-card-dialog";
+import { PinButton } from "@/features/home/pin-controls";
 import { useBoardContent } from "@/hooks/use-board-content";
 import type { Board } from "@/lib/model";
 import { canEdit, needsCardId } from "@/lib/model";
@@ -245,7 +246,11 @@ export function BoardPage({
 
   return (
     <BoardContext value={scope}>
-      {!cardOpen && <TopBar crumbs={crumbs} />}
+      {!cardOpen && (
+        <TopBar crumbs={crumbs}>
+          <PinButton pin={{ address: board.address, type: "board" }} />
+        </TopBar>
+      )}
       {/* Kept under an open card, so leaving it finds the board as it was. */}
       <Activity mode={cardOpen ? "hidden" : "visible"}>
         <main

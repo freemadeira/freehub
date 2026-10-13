@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { Link } from "wouter";
 
 import { IconButton } from "@/components/icon-button";
+import { Section } from "@/components/page-section";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { TopBar } from "@/components/top-bar";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import { PageGrid, useNewPage } from "@/features/docs/docs-page";
 import { drivePath } from "@/features/drive/drive-context";
 import { RecentFiles } from "@/features/drive/recent-files";
 import { recentFiles } from "@/features/drive/use-drive-entries";
+import { PinButton } from "@/features/home/pin-controls";
 import { ProjectDialog } from "@/features/projects/project-dialog";
 import { useDriveContent, useDriveMarks } from "@/hooks/use-drive";
 import { hasBlossom } from "@/lib/blossom";
@@ -37,26 +39,6 @@ import { SWATCH_COLORS } from "@/lib/palette";
 import { tablePath } from "@/lib/paths";
 import type { Project } from "@/lib/project";
 import { inProject } from "@/lib/project";
-
-function Section({
-  title,
-  action,
-  children,
-}: {
-  title: string;
-  action?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="flex flex-col gap-4">
-      <div className="flex h-9 items-center justify-between gap-4">
-        <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
 
 /** Share of records in each stage, as one bar split by stage color. */
 function StageBar({
@@ -298,7 +280,9 @@ export function ProjectPage({
         crumbs={[
           { icon: <ProjectAvatar project={project} />, label: project.title },
         ]}
-      />
+      >
+        <PinButton pin={{ address: project.address, type: "project" }} />
+      </TopBar>
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-10 px-4 pt-4 pb-10 sm:px-6">
         <header className="flex flex-wrap items-start gap-4">
           <ProjectAvatar project={project} size="lg" />

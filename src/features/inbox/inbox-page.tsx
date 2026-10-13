@@ -243,7 +243,8 @@ function subscribedNews(group: InboxGroup): InboxItem | undefined {
   );
 }
 
-function Row({
+/** One thing's news: what happened last, with ways to mark, unsubscribe or archive it. */
+export function InboxRow({
   group,
   inbox,
   pubkey,
@@ -345,7 +346,7 @@ function InboxList({ inbox, pubkey }: { inbox: Inbox; pubkey: string }) {
     return (
       <ol aria-label="Notifications" className="flex flex-col gap-0.5">
         {inbox.groups.map((group) => (
-          <Row
+          <InboxRow
             group={group}
             inbox={inbox}
             key={group.subject}

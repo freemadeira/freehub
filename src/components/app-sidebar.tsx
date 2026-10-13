@@ -4,6 +4,7 @@ import {
   InboxIcon,
   MapIcon,
   PlusIcon,
+  SquareArrowOutUpRightIcon,
   SquareKanbanIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -17,6 +18,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
   Sidebar,
   SidebarContent,
@@ -43,6 +50,7 @@ import { findBoard, parseSlug } from "@/features/board/board-route";
 import { TableIcon } from "@/features/crm/table-icon";
 import { SidebarDocs } from "@/features/docs/sidebar-docs";
 import { SidebarDrive } from "@/features/drive/sidebar-drive";
+import { PinMenuItem } from "@/features/home/pin-controls";
 import { INBOX_PATH } from "@/features/inbox/inbox-page";
 import { MAP_PATH } from "@/features/map/map-path";
 import type { CrmTable } from "@/lib/crm";
@@ -50,6 +58,8 @@ import type { DocsContent } from "@/lib/docs";
 import { EMPTY_DOCS } from "@/lib/docs";
 import type { DriveTree } from "@/lib/drive";
 import { EMPTY_TREE } from "@/lib/drive";
+import type { Pin } from "@/lib/home";
+import { pinKey } from "@/lib/home";
 import type { Board } from "@/lib/model";
 import { canEdit } from "@/lib/model";
 import type { Project } from "@/lib/project";
@@ -84,6 +94,29 @@ function readOpened(key: string): Record<string, boolean> {
   } catch {
     return {};
   }
+}
+
+/** What each item in the sidebar pins to Home, by the key its `data-pin` holds. */
+function sidebarPins(
+  projects: Project[],
+  boards: Board[],
+  tables: Map<string, CrmTable[]>,
+  docs: Map<string, DocsContent>
+): Map<string, Pin> {
+  const pins: Pin[] = [
+    ...projects.map((project): Pin => ({
+      address: project.address,
+      type: "project",
+    })),
+    ...boards.map((board): Pin => ({ address: board.address, type: "board" })),
+    ...[...tables.values()]
+      .flat()
+      .map((table): Pin => ({ address: table.address, type: "table" })),
+    ...[...docs].flatMap(([project, content]) =>
+      content.pages.map((page): Pin => ({ id: page.id, project, type: "page" }))
+    ),
+  ];
+  return new Map(pins.map((pin) => [pinKey(pin), pin]));
 }
 
 interface ProjectItemProps {
@@ -124,6 +157,7 @@ function ProjectItem({
       render={<SidebarMenuItem />}
     >
       <SidebarMenuButton
+        data-pin={pinKey({ address: project.address, type: "project" })}
         isActive={location === base}
         render={<NavLink href={base} />}
       >
@@ -147,6 +181,7 @@ function ProjectItem({
             return (
               <SidebarMenuSubItem key={table.id}>
                 <SidebarMenuSubButton
+                  data-pin={pinKey({ address: table.address, type: "table" })}
                   isActive={
                     location === href || location.startsWith(`${href}/`)
                   }
@@ -161,6 +196,7 @@ function ProjectItem({
           {boards.map((board) => (
             <SidebarMenuSubItem key={board.address}>
               <SidebarMenuSubButton
+                data-pin={pinKey({ address: board.address, type: "board" })}
                 isActive={board === openBoard}
                 render={<NavLink href={boardPath(board, allBoards)} />}
               >
@@ -222,6 +258,8 @@ export function AppSidebar({
   }, [storageKey, opened]);
 
   const looseBoards = outsideProjects(boards, projects);
+  const pins = sidebarPins(projects, boards, tables, docs);
+  const [menuFor, setMenuFor] = useState<{ pin: Pin; href: string }>();
 
   const isOpen = (project: Project): boolean =>
     opened[project.address] ?? projects.length <= OPEN_BY_DEFAULT;
@@ -254,117 +292,153 @@ export function AppSidebar({
         </NavLink>
         {!isMobile && <SidebarTrigger />}
       </SidebarHeader>
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={location === "/"}
-                render={<NavLink href="/" />}
-              >
-                <HouseIcon />
-                <span>Home</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            {getConfig().map && (
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={location === MAP_PATH}
-                  render={<NavLink href={MAP_PATH} />}
-                >
-                  <MapIcon />
-                  <span>Map</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )}
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={location === INBOX_PATH}
-                render={<NavLink href={INBOX_PATH} />}
-              >
-                <InboxIcon />
-                <span>Inbox</span>
-                {unread > 0 && (
-                  <span className="sr-only">, {unread} unread</span>
-                )}
-              </SidebarMenuButton>
-              {unread > 0 && (
-                <SidebarMenuBadge
-                  aria-hidden
-                  className="text-foreground font-medium"
-                >
-                  {unread > MAX_BADGE ? `${MAX_BADGE}+` : unread}
-                </SidebarMenuBadge>
-              )}
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
-        <SidebarGroup>
-          <SidebarGroupLabel>Projects</SidebarGroupLabel>
-          <SidebarGroupAction onClick={onNewProject} title="New project">
-            <PlusIcon />
-            <span className="sr-only">New project</span>
-          </SidebarGroupAction>
-          <SidebarMenu>
-            {projects.map((project) => {
-              const projectBoards = boards.filter((board) =>
-                inProject(board, project)
-              );
-              return (
-                <ProjectItem
-                  allBoards={boards}
-                  boards={projectBoards}
-                  docs={docs.get(project.address) ?? EMPTY_DOCS}
-                  drive={
-                    drive
-                      ? (drive.get(project.address) ?? EMPTY_TREE)
-                      : undefined
-                  }
-                  key={project.address}
-                  openBoard={openBoard}
-                  location={location}
-                  onOpenChange={(open) =>
-                    setOpened({ ...opened, [project.address]: open })
-                  }
-                  open={isOpen(project)}
-                  project={project}
-                  pubkey={pubkey}
-                  tables={tables.get(project.address) ?? []}
-                />
-              );
-            })}
-            {projects.length === 0 && (
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  className="text-muted-foreground"
-                  onClick={onNewProject}
-                >
-                  <PlusIcon />
-                  <span>New project</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )}
-          </SidebarMenu>
-        </SidebarGroup>
-        {looseBoards.length > 0 && (
+      <ContextMenu>
+        <ContextMenuTrigger
+          onContextMenuCapture={(event) => {
+            const link = (event.target as HTMLElement).closest<HTMLElement>(
+              "[data-pin]"
+            );
+            const pin = link?.dataset.pin
+              ? pins.get(link.dataset.pin)
+              : undefined;
+            const href = link?.getAttribute("href");
+            setMenuFor(pin && href ? { href, pin } : undefined);
+            // Nothing to pin there: the browser's own menu shows.
+            if (!(pin && href)) {
+              event.stopPropagation();
+            }
+          }}
+          render={<SidebarContent />}
+        >
           <SidebarGroup>
-            <SidebarGroupLabel>Boards</SidebarGroupLabel>
             <SidebarMenu>
-              {looseBoards.map((board) => (
-                <SidebarMenuItem key={board.address}>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location === "/"}
+                  render={<NavLink href="/" />}
+                >
+                  <HouseIcon />
+                  <span>Home</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {getConfig().map && (
+                <SidebarMenuItem>
                   <SidebarMenuButton
-                    isActive={board === openBoard}
-                    render={<NavLink href={boardPath(board, boards)} />}
+                    isActive={location === MAP_PATH}
+                    render={<NavLink href={MAP_PATH} />}
                   >
-                    <SquareKanbanIcon />
-                    <span>{board.title}</span>
+                    <MapIcon />
+                    <span>Map</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-              ))}
+              )}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location === INBOX_PATH}
+                  render={<NavLink href={INBOX_PATH} />}
+                >
+                  <InboxIcon />
+                  <span>Inbox</span>
+                  {unread > 0 && (
+                    <span className="sr-only">, {unread} unread</span>
+                  )}
+                </SidebarMenuButton>
+                {unread > 0 && (
+                  <SidebarMenuBadge
+                    aria-hidden
+                    className="text-foreground font-medium"
+                  >
+                    {unread > MAX_BADGE ? `${MAX_BADGE}+` : unread}
+                  </SidebarMenuBadge>
+                )}
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroup>
-        )}
-      </SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>Projects</SidebarGroupLabel>
+            <SidebarGroupAction onClick={onNewProject} title="New project">
+              <PlusIcon />
+              <span className="sr-only">New project</span>
+            </SidebarGroupAction>
+            <SidebarMenu>
+              {projects.map((project) => {
+                const projectBoards = boards.filter((board) =>
+                  inProject(board, project)
+                );
+                return (
+                  <ProjectItem
+                    allBoards={boards}
+                    boards={projectBoards}
+                    docs={docs.get(project.address) ?? EMPTY_DOCS}
+                    drive={
+                      drive
+                        ? (drive.get(project.address) ?? EMPTY_TREE)
+                        : undefined
+                    }
+                    key={project.address}
+                    openBoard={openBoard}
+                    location={location}
+                    onOpenChange={(open) =>
+                      setOpened({ ...opened, [project.address]: open })
+                    }
+                    open={isOpen(project)}
+                    project={project}
+                    pubkey={pubkey}
+                    tables={tables.get(project.address) ?? []}
+                  />
+                );
+              })}
+              {projects.length === 0 && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    className="text-muted-foreground"
+                    onClick={onNewProject}
+                  >
+                    <PlusIcon />
+                    <span>New project</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+            </SidebarMenu>
+          </SidebarGroup>
+          {looseBoards.length > 0 && (
+            <SidebarGroup>
+              <SidebarGroupLabel>Boards</SidebarGroupLabel>
+              <SidebarMenu>
+                {looseBoards.map((board) => (
+                  <SidebarMenuItem key={board.address}>
+                    <SidebarMenuButton
+                      data-pin={pinKey({
+                        address: board.address,
+                        type: "board",
+                      })}
+                      isActive={board === openBoard}
+                      render={<NavLink href={boardPath(board, boards)} />}
+                    >
+                      <SquareKanbanIcon />
+                      <span>{board.title}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroup>
+          )}
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          {menuFor && (
+            <>
+              <PinMenuItem pin={menuFor.pin} />
+              {/* What the browser's own menu offered for the link. */}
+              <DropdownMenuItem
+                onClick={() => window.open(menuFor.href, "_blank", "noopener")}
+              >
+                <SquareArrowOutUpRightIcon />
+                Open in new tab
+              </DropdownMenuItem>
+            </>
+          )}
+        </ContextMenuContent>
+      </ContextMenu>
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>

@@ -1,8 +1,9 @@
 import { PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Link } from "wouter";
 
+import { Section } from "@/components/page-section";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,14 @@ import {
   MemberAvatars,
 } from "@/features/boards/board-card";
 import { BoardDialog } from "@/features/boards/board-dialog";
+import { CustomizeHome } from "@/features/home/customize";
+import { useHome } from "@/features/home/home-context";
+import { Mentions } from "@/features/home/mentions";
+import { MyTasks } from "@/features/home/my-tasks";
+import { Pinned } from "@/features/home/pinned";
 import type { CrmTable } from "@/lib/crm";
+import type { DocsContent } from "@/lib/docs";
+import type { HomeSection } from "@/lib/home";
 import type { Board } from "@/lib/model";
 import type { Project } from "@/lib/project";
 import { inProject, outsideProjects } from "@/lib/project";
@@ -53,26 +61,6 @@ function ProjectCard({
   );
 }
 
-function Section({
-  title,
-  action,
-  children,
-}: {
-  title: string;
-  action?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="flex flex-col gap-4">
-      <div className="flex h-9 items-center justify-between gap-4">
-        <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
 function CardsSkeleton() {
   return (
     <div aria-busy className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -87,6 +75,7 @@ interface HomePageProps {
   boards: Board[];
   projects: Project[];
   tables: Map<string, CrmTable[]>;
+  docs: Map<string, DocsContent>;
   loaded: boolean;
   pubkey: string;
   onNewProject: () => void;
@@ -96,10 +85,12 @@ export function HomePage({
   boards,
   projects,
   tables,
+  docs,
   loaded,
   pubkey,
   onNewProject,
 }: HomePageProps) {
+  const { prefs } = useHome();
   const [creatingBoard, setCreatingBoard] = useState(false);
   const looseBoards = outsideProjects(boards, projects);
   const newProject = (
@@ -114,25 +105,20 @@ export function HomePage({
       New board
     </Button>
   );
+  const nothingYet = projects.length === 0 && boards.length === 0;
 
-  let content: ReactNode;
-  if (projects.length === 0 && boards.length === 0) {
-    content = loaded ? (
-      <Empty className="py-24">
-        <EmptyTitle>Start your first project</EmptyTitle>
-        <EmptyDescription>
-          Projects hold boards and CRM tables, shared with the people you add.
-        </EmptyDescription>
-        <div className="flex flex-wrap justify-center gap-2">
-          {newProject}
-          {newBoard}
-        </div>
-      </Empty>
-    ) : (
-      <CardsSkeleton />
-    );
-  } else {
-    content = (
+  const sections: Record<HomeSection, ReactNode> = {
+    mentions: <Mentions pubkey={pubkey} />,
+    pinned: (
+      <Pinned
+        boards={boards}
+        docs={docs}
+        loaded={loaded}
+        projects={projects}
+        tables={tables}
+      />
+    ),
+    projects: (
       <>
         <Section action={projects.length > 0 && newProject} title="Projects">
           {projects.length > 0 ? (
@@ -171,12 +157,46 @@ export function HomePage({
           </Section>
         )}
       </>
+    ),
+    tasks: (
+      <MyTasks
+        boards={boards}
+        loaded={loaded}
+        projects={projects}
+        pubkey={pubkey}
+      />
+    ),
+  };
+
+  let content: ReactNode;
+  if (nothingYet) {
+    content = loaded ? (
+      <Empty className="py-24">
+        <EmptyTitle>Start your first project</EmptyTitle>
+        <EmptyDescription>
+          Projects hold boards and CRM tables, shared with the people you add.
+        </EmptyDescription>
+        <div className="flex flex-wrap justify-center gap-2">
+          {newProject}
+          {newBoard}
+        </div>
+      </Empty>
+    ) : (
+      <CardsSkeleton />
     );
+  } else {
+    content = prefs.sections
+      .filter((section) => !section.hidden)
+      .map((section) => (
+        <Fragment key={section.id}>{sections[section.id]}</Fragment>
+      ));
   }
 
   return (
     <>
-      <TopBar crumbs={[{ label: "Home" }]} />
+      <TopBar crumbs={[{ label: "Home" }]}>
+        {!nothingYet && <CustomizeHome />}
+      </TopBar>
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-10 px-4 pt-4 pb-10 sm:px-6">
         {content}
       </main>

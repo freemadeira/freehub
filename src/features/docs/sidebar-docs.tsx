@@ -30,6 +30,7 @@ import { PageMenu } from "@/features/docs/page-menu";
 import type { DocPage, DocsContent } from "@/lib/docs";
 import { ancestors, pageTitle } from "@/lib/docs";
 import { canMoveUnder, createPage, movePage } from "@/lib/docs-actions";
+import { pinKey } from "@/lib/home";
 import type { Project } from "@/lib/project";
 
 /** Where a dragged page lands, next to the page it's over or inside it. */
@@ -131,6 +132,11 @@ function PageRow({
         )}
         <SidebarMenuSubButton
           className={canEdit ? ROOM_FOR_TWO : ROOM_FOR_ONE}
+          data-pin={pinKey({
+            id: page.id,
+            project: project.address,
+            type: "page",
+          })}
           isActive={page.id === openId}
           render={<NavLink href={pagePath(project, page)} />}
           style={{ paddingLeft: inset }}

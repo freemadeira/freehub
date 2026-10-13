@@ -1,7 +1,5 @@
 import { useSortable } from "@dnd-kit/react/sortable";
 import { cn } from "cn";
-import { format, isBefore, parseISO, startOfToday } from "date-fns";
-import { CalendarIcon } from "lucide-react";
 import type { ReactNode, Ref } from "react";
 import { Link } from "wouter";
 
@@ -9,30 +7,14 @@ import { OPENED_FROM_BOARD, useBoard } from "@/features/board/board-context";
 import { CARD_SURFACE } from "@/features/board/card-surface";
 import {
   CardAssignees,
+  CardDue,
   CardPriority,
   CardStatus,
   isControlClick,
 } from "@/features/board/inline-pickers";
 import { LABEL_COLORS } from "@/features/card/card-fields";
 import type { Card, Label } from "@/lib/model";
-import { cardKey, isClosed } from "@/lib/model";
-
-function DueDate({ due, closed }: { due: string; closed: boolean }) {
-  const date = parseISO(due);
-  const overdue = !closed && isBefore(date, startOfToday());
-  return (
-    <span
-      className={cn(
-        "flex items-center gap-1 text-xs tabular-nums",
-        overdue ? "text-destructive" : "text-muted-foreground"
-      )}
-    >
-      <CalendarIcon className="size-3.5" />
-      <span className="sr-only">{overdue ? "Overdue" : "Due"}</span>
-      <time dateTime={due}>{format(date, "MMM d")}</time>
-    </span>
-  );
-}
+import { cardKey } from "@/lib/model";
 
 function LabelDots({ labels }: { labels: Label[] }) {
   return (
@@ -52,11 +34,11 @@ function LabelDots({ labels }: { labels: Label[] }) {
   );
 }
 
-function CardMeta({ card }: { card: Card }) {
+function CardMeta({ card, unsetDue }: { card: Card; unsetDue?: boolean }) {
   return (
     <>
       <CardPriority card={card} />
-      {card.due && <DueDate closed={isClosed(card.status)} due={card.due} />}
+      <CardDue card={card} unset={unsetDue} />
       {card.labels.length > 0 && <LabelDots labels={card.labels} />}
       <CardAssignees card={card} className="ml-auto" />
     </>
@@ -95,7 +77,7 @@ function useSortableCard({ card, index, group }: SortableCardProps) {
   }).ref;
 }
 
-function CardLink({
+export function CardLink({
   card,
   className,
   children,
@@ -151,9 +133,12 @@ export function CardTile(props: SortableCardProps) {
 
 export function CardRow({
   card,
+  unsetDue,
   ref,
 }: {
   card: Card;
+  /** Shows where to set a due date on cards without one. */
+  unsetDue?: boolean;
   ref?: Ref<HTMLAnchorElement>;
 }) {
   const { board } = useBoard();
@@ -169,7 +154,7 @@ export function CardRow({
       <CardStatus card={card} />
       <CardTitle className="min-w-0 flex-1 truncate" title={card.title} />
       <span className="flex shrink-0 items-center gap-2">
-        <CardMeta card={card} />
+        <CardMeta card={card} unsetDue={unsetDue} />
       </span>
     </CardLink>
   );
