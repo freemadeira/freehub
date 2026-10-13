@@ -1,7 +1,17 @@
 import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { cn } from "cn";
+import { format, isBefore, parseISO, startOfToday } from "date-fns";
+import { CalendarIcon, CalendarPlusIcon } from "lucide-react";
 import type { MouseEvent, ReactNode } from "react";
+import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import { useBoard } from "@/features/board/board-context";
 import { NoAssigneeIcon } from "@/features/card/assignee-icons";
@@ -21,7 +31,7 @@ import { AvatarStack, Person } from "@/features/card/card-parts";
 import { PriorityNoneIcon } from "@/features/card/priority-icons";
 import { updateCard } from "@/lib/actions";
 import type { Card, Priority, Status } from "@/lib/model";
-import { priorityLabel, statusLabel } from "@/lib/model";
+import { isClosed, priorityLabel, statusLabel } from "@/lib/model";
 
 /**
  * Whether a click on a card was for one of its own controls rather than for
@@ -156,6 +166,89 @@ export function CardPriority({ card }: { card: Card }) {
     >
       <PriorityIcon priority={priority} />
     </InlineSelect>
+  );
+}
+
+function DueLabel({ due, overdue }: { due: string; overdue: boolean }) {
+  return (
+    <span
+      className={cn(
+        "flex items-center gap-1 text-xs tabular-nums",
+        overdue ? "text-destructive" : "text-muted-foreground"
+      )}
+    >
+      <CalendarIcon aria-hidden className="size-3.5" />
+      <span className="sr-only">{overdue ? "Overdue" : "Due"}</span>
+      <time dateTime={due}>{format(parseISO(due), "MMM d")}</time>
+    </span>
+  );
+}
+
+/**
+ * The card's due date, which those who edit cards change from here. With
+ * `unset`, they also see where to set one when there's none.
+ */
+export function CardDue({
+  card,
+  unset = false,
+}: {
+  card: Card;
+  unset?: boolean;
+}) {
+  const { board, canEdit } = useBoard();
+  const [open, setOpen] = useState(false);
+  const { due } = card;
+  const overdue =
+    due !== undefined &&
+    !isClosed(card.status) &&
+    isBefore(parseISO(due), startOfToday());
+  if (!canEdit) {
+    return due && <DueLabel due={due} overdue={overdue} />;
+  }
+  if (!(due || unset)) {
+    return null;
+  }
+  const date = due ? parseISO(due) : undefined;
+  const pick = (day?: Date) => {
+    const next = day && format(day, "yyyy-MM-dd");
+    if (next !== due) {
+      updateCard(board, card, { due: next });
+    }
+    setOpen(false);
+  };
+  return (
+    <Popover onOpenChange={setOpen} open={open}>
+      <PopoverTrigger
+        aria-label={
+          date
+            ? `Due date: ${format(date, "MMM d")}${overdue ? ", overdue" : ""}`
+            : "Set due date"
+        }
+        className={TRIGGER}
+      >
+        {due ? (
+          <DueLabel due={due} overdue={overdue} />
+        ) : (
+          <CalendarPlusIcon
+            aria-hidden
+            className="text-muted-foreground/60 size-4"
+          />
+        )}
+      </PopoverTrigger>
+      <PopoverContent align="end" className="flex flex-col gap-1 p-2">
+        <Calendar
+          defaultMonth={date}
+          mode="single"
+          onSelect={pick}
+          selected={date}
+        />
+        {date && (
+          <Button onClick={() => pick()} size="sm" variant="ghost">
+            Clear
+          </Button>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 

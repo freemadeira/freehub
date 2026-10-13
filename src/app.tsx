@@ -13,6 +13,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { getConfig } from "@/config";
 import { BoardRoute, findBoard, parseSlug } from "@/features/board/board-route";
 import { UploadTray } from "@/features/drive/upload-tray";
+import { HomeContext, useHomeSettings } from "@/features/home/home-context";
 import { HomePage } from "@/features/home/home-page";
 import { InboxContext } from "@/features/inbox/inbox-context";
 import { INBOX_PATH, InboxPage } from "@/features/inbox/inbox-page";
@@ -101,6 +102,7 @@ function Workspace({ pubkey }: { pubkey: string }) {
   // Only teams with somewhere to keep files have a Drive.
   const drive = hasBlossom();
   const trees = useDriveTrees(drive ? projects : []);
+  const home = useHomeSettings(pubkey);
   const inbox = useInbox(pubkey, {
     boards,
     docs,
@@ -126,83 +128,86 @@ function Workspace({ pubkey }: { pubkey: string }) {
 
   return (
     <InboxContext value={inbox}>
-      <SidebarProvider>
-        <AppSidebar
-          boards={boards}
-          docs={docs}
-          drive={drive ? trees : undefined}
-          onNewProject={newProject}
-          projects={projects}
-          pubkey={pubkey}
-          tables={tables}
-          unread={inbox.unread}
-        />
-        <SidebarInset>
-          <Switch>
-            <Route path="/">
-              <HomePage
-                boards={boards}
-                loaded={boardsLoaded && projectsLoaded}
-                onNewProject={newProject}
-                projects={projects}
-                pubkey={pubkey}
-                tables={tables}
-              />
-            </Route>
-            <Route<ProjectParams> path="/p/:project/:table?/:record?">
-              {(route) => (
-                <Suspense fallback={<RouteFallback />}>
-                  <ProjectRoute
-                    boards={boards}
-                    docs={docs}
-                    docsLoaded={projectsLoaded && docsLoaded}
-                    loaded={projectsLoaded}
-                    projects={projects}
-                    pubkey={pubkey}
-                    recordId={route.record}
-                    slug={route.project}
-                    tableSlug={route.table}
-                  />
-                </Suspense>
-              )}
-            </Route>
-            <Route path={INBOX_PATH}>
-              <InboxPage inbox={inbox} pubkey={pubkey} />
-            </Route>
-            {getConfig().map && (
-              <Route path={MAP_PATH}>
-                <Suspense fallback={<RouteFallback />}>
-                  <MapRoute projects={projects} pubkey={pubkey} />
-                </Suspense>
-              </Route>
-            )}
-            {slug && (
-              <Route path="/:slug">
-                <BoardRoute
-                  board={board}
+      <HomeContext value={home}>
+        <SidebarProvider>
+          <AppSidebar
+            boards={boards}
+            docs={docs}
+            drive={drive ? trees : undefined}
+            onNewProject={newProject}
+            projects={projects}
+            pubkey={pubkey}
+            tables={tables}
+            unread={inbox.unread}
+          />
+          <SidebarInset>
+            <Switch>
+              <Route path="/">
+                <HomePage
                   boards={boards}
-                  cardNumber={slug.number}
-                  code={slug.code}
-                  loaded={boardsLoaded}
-                  project={boardProject}
+                  docs={docs}
+                  loaded={boardsLoaded && projectsLoaded}
+                  onNewProject={newProject}
                   projects={projects}
                   pubkey={pubkey}
+                  tables={tables}
                 />
               </Route>
-            )}
-            <Route>
-              <Redirect replace to="/" />
-            </Route>
-          </Switch>
-        </SidebarInset>
-        <ProjectDialog
-          onOpenChange={setCreatingProject}
-          open={creatingProject}
-          projects={projects}
-          pubkey={pubkey}
-        />
-        {drive && <UploadTray trees={trees} />}
-      </SidebarProvider>
+              <Route<ProjectParams> path="/p/:project/:table?/:record?">
+                {(route) => (
+                  <Suspense fallback={<RouteFallback />}>
+                    <ProjectRoute
+                      boards={boards}
+                      docs={docs}
+                      docsLoaded={projectsLoaded && docsLoaded}
+                      loaded={projectsLoaded}
+                      projects={projects}
+                      pubkey={pubkey}
+                      recordId={route.record}
+                      slug={route.project}
+                      tableSlug={route.table}
+                    />
+                  </Suspense>
+                )}
+              </Route>
+              <Route path={INBOX_PATH}>
+                <InboxPage inbox={inbox} pubkey={pubkey} />
+              </Route>
+              {getConfig().map && (
+                <Route path={MAP_PATH}>
+                  <Suspense fallback={<RouteFallback />}>
+                    <MapRoute projects={projects} pubkey={pubkey} />
+                  </Suspense>
+                </Route>
+              )}
+              {slug && (
+                <Route path="/:slug">
+                  <BoardRoute
+                    board={board}
+                    boards={boards}
+                    cardNumber={slug.number}
+                    code={slug.code}
+                    loaded={boardsLoaded}
+                    project={boardProject}
+                    projects={projects}
+                    pubkey={pubkey}
+                  />
+                </Route>
+              )}
+              <Route>
+                <Redirect replace to="/" />
+              </Route>
+            </Switch>
+          </SidebarInset>
+          <ProjectDialog
+            onOpenChange={setCreatingProject}
+            open={creatingProject}
+            projects={projects}
+            pubkey={pubkey}
+          />
+          {drive && <UploadTray trees={trees} />}
+        </SidebarProvider>
+      </HomeContext>
     </InboxContext>
   );
 }

@@ -15,6 +15,7 @@ import type {
 } from "react-day-picker";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { firstDayOfWeek } from "@/lib/utils";
 
 const CHEVRONS = {
   down: ChevronDownIcon,
@@ -97,6 +98,7 @@ function Calendar({
   locale,
   formatters,
   components,
+  weekStartsOn = firstDayOfWeek(),
   ...props
 }: React.ComponentProps<typeof DayPicker> & {
   buttonVariant?: React.ComponentProps<typeof Button>["variant"];
@@ -114,6 +116,7 @@ function Calendar({
       )}
       captionLayout={captionLayout}
       locale={locale}
+      weekStartsOn={weekStartsOn}
       formatters={{
         formatMonthDropdown: (date) =>
           date.toLocaleString(locale?.code, { month: "short" }),

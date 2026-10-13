@@ -1,14 +1,10 @@
 import { cn } from "cn";
-import { ListFilterIcon, XIcon } from "lucide-react";
+import { XIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import type { FilterOption } from "@/components/filter-popover";
+import { FilterGroup, FilterPopover } from "@/components/filter-popover";
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCrm } from "@/features/crm/crm-context";
 import type { RecordsTable } from "@/features/crm/table-features";
 import { EMPTY, FILTERABLE } from "@/features/crm/table-features";
@@ -17,12 +13,6 @@ import { useProfile } from "@/hooks/use-profile";
 import type { CrmRecord, Field } from "@/lib/crm";
 import { findOption } from "@/lib/crm";
 import { SWATCH_COLORS } from "@/lib/palette";
-
-interface FilterOption {
-  value: string;
-  label: ReactNode;
-  count: number;
-}
 
 function countBy(records: CrmRecord[], field: Field): Map<string, number> {
   const counts = new Map<string, number>();
@@ -89,40 +79,19 @@ function filterOptions(
 function FieldFilter({ table, field }: { table: RecordsTable; field: Field }) {
   const { project, records } = useCrm();
   const column = table.getColumn(field.id);
-  const picked = (column?.getFilterValue() as string[] | undefined) ?? [];
-  const options = filterOptions(field, records, project.members);
-  if (!column || options.length === 0) {
+  if (!column) {
     return null;
   }
   return (
-    <div className="flex flex-col gap-1.5">
-      <h3 className="text-muted-foreground px-1 text-xs font-medium">
-        {field.name}
-      </h3>
-      <ToggleGroup
-        aria-label={`Filter by ${field.name}`}
-        className="flex-wrap gap-1"
-        multiple
-        onValueChange={(next) => {
-          column.setFilterValue(next.length > 0 ? next : undefined);
-          table.setPageIndex(0);
-        }}
-        value={picked}
-      >
-        {options.map((option) => (
-          <ToggleGroupItem
-            className="hover:bg-foreground/5 data-pressed:bg-primary/15 data-pressed:inset-ring-primary/60 inset-ring-border flex h-7 max-w-full items-center gap-1.5 rounded-full px-2.5 text-xs inset-ring transition-[background-color,box-shadow] duration-150"
-            key={option.value}
-            value={option.value}
-          >
-            {option.label}
-            <span className="text-muted-foreground tabular-nums">
-              {option.count}
-            </span>
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
-    </div>
+    <FilterGroup
+      label={field.name}
+      onChange={(next) => {
+        column.setFilterValue(next.length > 0 ? next : undefined);
+        table.setPageIndex(0);
+      }}
+      options={filterOptions(field, records, project.members)}
+      value={(column.getFilterValue() as string[] | undefined) ?? []}
+    />
   );
 }
 
@@ -133,40 +102,18 @@ export function filterableFields(fields: Field[]): Field[] {
 export function FilterButton({ table }: { table: RecordsTable }) {
   const { table: crmTable } = useCrm();
   const fields = filterableFields(crmTable.fields);
-  const active = table.state.columnFilters.length;
   if (fields.length === 0) {
     return null;
   }
   return (
-    <Popover>
-      <PopoverTrigger render={<Button variant="outline" />}>
-        <ListFilterIcon />
-        Filter
-        {active > 0 && (
-          <span className="bg-primary text-primary-foreground -mr-1 flex size-5 items-center justify-center rounded-full text-xs tabular-nums">
-            {active}
-          </span>
-        )}
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="flex max-h-(--available-height) w-[min(24rem,calc(100vw-2rem))] flex-col gap-4 overflow-y-auto"
-      >
-        {fields.map((field) => (
-          <FieldFilter field={field} key={field.id} table={table} />
-        ))}
-        {active > 0 && (
-          <Button
-            className="self-start"
-            onClick={() => table.resetColumnFilters()}
-            size="sm"
-            variant="ghost"
-          >
-            Clear filters
-          </Button>
-        )}
-      </PopoverContent>
-    </Popover>
+    <FilterPopover
+      active={table.state.columnFilters.length}
+      onClear={() => table.resetColumnFilters()}
+    >
+      {fields.map((field) => (
+        <FieldFilter field={field} key={field.id} table={table} />
+      ))}
+    </FilterPopover>
   );
 }
 

@@ -57,6 +57,33 @@ export function writeStorage(key: string, value: string | null): void {
   }
 }
 
+type WeekDay = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+interface WeekInfo {
+  /** 1 for Monday through 7 for Sunday. */
+  firstDay: number;
+}
+
+/**
+ * The day weeks start on where the person is, counted as date-fns does, 0
+ * for Sunday. Browsers that can't tell start on Monday, as ISO 8601 does.
+ */
+export function firstDayOfWeek(): WeekDay {
+  try {
+    const locale: Intl.Locale & {
+      getWeekInfo?: () => WeekInfo;
+      weekInfo?: WeekInfo;
+    } = new Intl.Locale(navigator.language);
+    const first = locale.getWeekInfo?.().firstDay ?? locale.weekInfo?.firstDay;
+    if (first !== undefined && first >= 1 && first <= 7) {
+      return (first % 7) as WeekDay;
+    }
+  } catch {
+    // An unknown language tag: fall back.
+  }
+  return 1;
+}
+
 const BYTE_UNITS = ["B", "KB", "MB", "GB"] as const;
 const fineSize = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 const wholeSize = new Intl.NumberFormat(undefined, {
