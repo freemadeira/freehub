@@ -39,7 +39,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { STATUS_STYLES } from "@/features/card/card-fields";
 import { useEveryBoard } from "@/hooks/use-boards";
 import { createBoard, deleteBoard, updateBoard } from "@/lib/actions";
-import type { Board, Status } from "@/lib/model";
+import type { Board, BoardContent, Status, StatusMove } from "@/lib/model";
 import {
   canEdit,
   CODE,
@@ -47,9 +47,12 @@ import {
   isClosed,
   RESERVED_CODES,
   STATUSES,
+  statusLabel,
+  statusMoves,
   workableStatuses,
 } from "@/lib/model";
 import type { Project } from "@/lib/project";
+import { plural } from "@/lib/utils";
 
 const DIACRITICS = /\p{Diacritic}/gu;
 
@@ -181,6 +184,10 @@ function ProjectField({
   );
 }
 
+function moveHint({ cards, from, to }: StatusMove): string {
+  return `${plural(cards.length, `${statusLabel(from)} card`)} ${cards.length === 1 ? "moves" : "move"} to ${statusLabel(to)}.`;
+}
+
 /**
  * The statuses the board uses, as chips to switch on and off. The last open
  * status and the last closed one stay on: cards need somewhere to start and
@@ -188,9 +195,12 @@ function ProjectField({
  */
 function StatusesField({
   value,
+  moves,
   onChange,
 }: {
   value: Status[];
+  /** Cards that move off the statuses switched off, said under the chips. */
+  moves: StatusMove[];
   onChange: (statuses: Status[]) => void;
 }) {
   const id = useId();
@@ -202,6 +212,7 @@ function StatusesField({
         Statuses
       </span>
       <ToggleGroup
+        aria-describedby={moves.length > 0 ? `${id}-hint` : undefined}
         aria-labelledby={id}
         className="flex-wrap gap-1.5"
         multiple
@@ -237,6 +248,11 @@ function StatusesField({
           );
         })}
       </ToggleGroup>
+      {moves.length > 0 && (
+        <p className="text-muted-foreground text-xs" id={`${id}-hint`}>
+          {moves.map(moveHint).join(" ")}
+        </p>
+      )}
     </div>
   );
 }
@@ -285,6 +301,8 @@ function DeleteBoard({
 
 interface BoardFormProps {
   board?: Board;
+  /** What's on the board, whose cards move off any status it stops using. */
+  content?: BoardContent;
   boards: Board[];
   projects: Project[];
   /** Project a new board starts in. */
@@ -315,6 +333,7 @@ function initialDraft(
 
 function BoardForm({
   board,
+  content,
   boards,
   projects,
   project,
@@ -339,6 +358,11 @@ function BoardForm({
   const parent = projects.find((item) => item.address === projectAddress);
   // Includes boards the user isn't in, which teammates may still see beside theirs.
   const everyBoard = useEveryBoard();
+
+  const moves =
+    board && content
+      ? statusMoves(content.cards, board.statuses, statuses)
+      : [];
 
   const codeError = validateCode(code, [...boards, ...everyBoard], board);
   const valid =
@@ -368,7 +392,7 @@ function BoardForm({
       title: title.trim(),
     };
     if (board) {
-      updateBoard(board, draft);
+      updateBoard(board, draft, moves);
     } else {
       createBoard(pubkey, draft);
     }
@@ -422,7 +446,7 @@ function BoardForm({
         />
       )}
 
-      <StatusesField onChange={setStatuses} value={statuses} />
+      <StatusesField moves={moves} onChange={setStatuses} value={statuses} />
 
       <MembersField
         creator={board?.creator ?? pubkey}

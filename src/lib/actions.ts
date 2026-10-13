@@ -13,6 +13,7 @@ import type {
   Comment,
   Sprint,
   SprintFields,
+  StatusMove,
 } from "@/lib/model";
 import {
   boardTemplate,
@@ -62,11 +63,30 @@ export function createBoard(
   return publish(boardTemplate({ ...draft, creator, id: newId() }));
 }
 
+/** Saves the card as is, telling no one: for changes made in bulk, like ending a sprint. */
+function saveCard(
+  board: Board,
+  card: Card,
+  changes: Partial<CardFields>
+): Promise<boolean> {
+  return publish(cardTemplate(board, { ...card, ...changes }), card.event);
+}
+
+/**
+ * Saves the board's settings. Cards in statuses it stops using move as given,
+ * telling no one, so no column lingers for them.
+ */
 export function updateBoard(
   board: Board,
-  changes: Partial<BoardDraft>
-): Promise<boolean> {
-  return publish(boardTemplate({ ...board, ...changes }), board.event);
+  changes: Partial<BoardDraft>,
+  moves: readonly StatusMove[] = []
+): Promise<boolean[]> {
+  return Promise.all([
+    publish(boardTemplate({ ...board, ...changes }), board.event),
+    ...moves.flatMap(({ cards, to }) =>
+      cards.map((card) => saveCard(board, card, { status: to }))
+    ),
+  ]);
 }
 
 export function deleteBoard(board: Board): Promise<boolean> {
@@ -155,15 +175,6 @@ export async function createCard(
     ),
   ]);
   return true;
-}
-
-/** Saves the card as is, telling no one: for changes made in bulk, like ending a sprint. */
-function saveCard(
-  board: Board,
-  card: Card,
-  changes: Partial<CardFields>
-): Promise<boolean> {
-  return publish(cardTemplate(board, { ...card, ...changes }), card.event);
 }
 
 /**

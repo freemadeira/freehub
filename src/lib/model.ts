@@ -64,13 +64,11 @@ export type Priority = (typeof PRIORITIES)[number]["id"];
 export type Label = (typeof LABELS)[number];
 export type SprintStatus = (typeof SPRINT_STATUSES)[number]["id"];
 
-/** The statuses a new board uses until its creator picks others. */
-export const DEFAULT_STATUSES: readonly Status[] = [
-  "backlog",
-  "todo",
-  "progress",
-  "done",
-];
+/**
+ * The statuses a new board uses until its creator picks others. No backlog:
+ * the board's Backlog tab does that job.
+ */
+export const DEFAULT_STATUSES: readonly Status[] = ["todo", "progress", "done"];
 
 export interface Template {
   kind: number;
@@ -340,6 +338,34 @@ export function startingStatus(statuses: readonly Status[]): Status {
     open[0] ??
     "todo"
   );
+}
+
+/** Open cards in a status the board stops using, and the status they move to. */
+export interface StatusMove {
+  from: Status;
+  to: Status;
+  cards: Card[];
+}
+
+/**
+ * Where open cards go when the board stops using their status: to one it keeps
+ * of the same kind, else where new cards start. Closed cards stay as they are.
+ */
+export function statusMoves(
+  cards: readonly Card[],
+  before: readonly Status[],
+  after: readonly Status[]
+): StatusMove[] {
+  return before.flatMap((from) => {
+    if (after.includes(from) || isClosed(from)) {
+      return [];
+    }
+    const moving = cards.filter((card) => card.status === from);
+    const to =
+      after.find((status) => statusKind(status) === statusKind(from)) ??
+      startingStatus(after);
+    return moving.length > 0 ? [{ cards: moving, from, to }] : [];
+  });
 }
 
 export function cardKey(board: Board, card: Card): string {
