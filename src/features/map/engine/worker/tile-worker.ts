@@ -13,11 +13,12 @@ import { buildBuildings } from "./buildings.ts";
 import type { CoastDistance } from "./coast.ts";
 import { COAST_MARGIN, coastMap, coastOf } from "./coast.ts";
 import { paintGround } from "./ground.ts";
+import { buildPeople } from "./people.ts";
+import { buildRoadGraph } from "./road-graph.ts";
 import { buildPiers, buildRoads } from "./roads.ts";
 import { buildStreetLabels } from "./street-labels.ts";
 import type { Surface } from "./terrain.ts";
 import { buildTerrain } from "./terrain.ts";
-import { buildTraffic } from "./traffic.ts";
 import { buildTrees } from "./trees.ts";
 import type { Area, TileFeatures } from "./vector.ts";
 import { VectorSource } from "./vector.ts";
@@ -198,7 +199,13 @@ function paintCover(
   return canvas.transferToImageBitmap();
 }
 
-function centroidIn(area: Area, square: Square): boolean {
+/**
+ * Whether a building is this tile's to draw. The bake files each building
+ * under the data tile holding its centroid, so the centroid is held inside
+ * that tile's square: whatever the rounding, it lands in exactly one of the
+ * tiles drawn from it.
+ */
+function centroidIn(area: Area, square: Square, data: Square): boolean {
   const ring = area.rings[0] ?? [];
   let x = 0;
   let z = 0;
@@ -207,6 +214,9 @@ function centroidIn(area: Area, square: Square): boolean {
     x += point.x / count;
     z += point.z / count;
   }
+  const inset = 1e-6 * data.size;
+  x = Math.min(data.x + data.size - inset, Math.max(data.x, x));
+  z = Math.min(data.z + data.size - inset, Math.max(data.z, z));
   return (
     x >= square.x &&
     z >= square.z &&
@@ -215,34 +225,46 @@ function centroidIn(area: Area, square: Square): boolean {
   );
 }
 
-/** What moves on the closest tiles: traffic, and boats at their moorings. */
+/**
+ * What moves on the closest tiles: the roads cars drive, people, and boats
+ * at their moorings.
+ */
 function buildLife(
   stateNow: State,
   data: TileFeatures[],
   square: Square,
   surface: Surface,
   coast: CoastDistance | undefined
-): Pick<BuiltTile, "boats" | "traffic"> {
+): Pick<BuiltTile, "boats" | "network" | "people"> {
   const { quality } = stateNow;
-  const [detailData] = data;
+  const detailData = data.length === 1 ? data[0] : undefined;
   return {
     boats:
       coast && quality.boats > 0
         ? buildBoats({ coast, data, density: quality.boats, square, surface })
         : undefined,
-    traffic:
-      detailData && data.length === 1
-        ? buildTraffic({
-            cars: quality.cars,
+    network:
+      detailData && quality.cars > 0
+        ? buildRoadGraph({
             cover: stateNow.cover,
             coverGrid: stateNow.coverGrid,
-            data: detailData,
             field: stateNow.field,
-            people: quality.people,
+            roads: detailData.roads,
             square,
             surface,
           })
         : undefined,
+    people: detailData
+      ? buildPeople({
+          cover: stateNow.cover,
+          coverGrid: stateNow.coverGrid,
+          data: detailData,
+          field: stateNow.field,
+          people: quality.people,
+          square,
+          surface,
+        })
+      : undefined,
   };
 }
 
@@ -297,9 +319,9 @@ async function build(stateNow: State, tile: TileId): Promise<BuiltTile> {
   );
   const detail = DETAIL[Math.min(16, tile.z)];
   const buildings = detail
-    ? data
-        .flatMap((item) => item.buildings)
-        .filter((area) => centroidIn(area, square))
+    ? data.flatMap((item) =>
+        item.buildings.filter((area) => centroidIn(area, square, item.square))
+      )
     : [];
   const buildingMesh = detail
     ? buildBuildings(buildings, {
@@ -392,11 +414,18 @@ function transferables(tile: BuiltTile): Transferable[] {
       batch.matrices.buffer as ArrayBuffer,
       batch.colors.buffer as ArrayBuffer,
     ]),
-    ...(tile.traffic
+    ...(tile.people
       ? [
-          tile.traffic.paths.buffer as ArrayBuffer,
-          tile.traffic.cars.buffer as ArrayBuffer,
-          tile.traffic.people.buffer as ArrayBuffer,
+          tile.people.paths.buffer as ArrayBuffer,
+          tile.people.walkers.buffer as ArrayBuffer,
+          tile.people.standers.buffer as ArrayBuffer,
+        ]
+      : []),
+    ...(tile.network
+      ? [
+          tile.network.nodes.buffer as ArrayBuffer,
+          tile.network.edges.buffer as ArrayBuffer,
+          tile.network.samples.buffer as ArrayBuffer,
         ]
       : []),
     ...(tile.labels

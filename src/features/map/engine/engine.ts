@@ -24,6 +24,7 @@ import {
 } from "three";
 
 import { Aerialways } from "./aerialways.ts";
+import { Cars } from "./cars.ts";
 import type { View } from "./controls.ts";
 import { MapControls } from "./controls.ts";
 import { Ferries } from "./ferries.ts";
@@ -66,6 +67,8 @@ export interface MapEngineOptions {
 }
 
 const RADIANS = Math.PI / 180;
+/** Meters from the camera where tiles' roads have cars on them. */
+const CAR_RANGE = 1500;
 /** Low sun from the south-east, so shadows fall back and to the left. */
 const SUN = new Vector3(0.55, 0.78, 0.42).normalize();
 
@@ -153,6 +156,7 @@ export class MapEngine {
   private readonly aerialways: Aerialways;
   private readonly planes: Planes;
   private readonly ferries: Ferries;
+  private readonly cars: Cars;
   /** Made the first time sound is turned on. */
   private sound?: Soundscape;
   /** Moored boats', shared by every tile. */
@@ -305,7 +309,9 @@ export class MapEngine {
       manifest.aerialways,
       this.frame,
       ground,
-      this.materials
+      this.materials,
+      this.vehicles.cabin,
+      quality.shadows
     );
     this.scene.add(this.aerialways.group);
 
@@ -313,7 +319,7 @@ export class MapEngine {
       manifest.airports ?? [],
       this.frame,
       ground,
-      this.vehicles.plane,
+      [this.vehicles.plane, this.vehicles.turboprop],
       this.materials.shared,
       quality.shadows
     );
@@ -327,7 +333,13 @@ export class MapEngine {
       this.materials.shared,
       quality.shadows
     );
-    this.scene.add(this.planes.group, this.ferries.group);
+    this.cars = new Cars({
+      density: quality.cars,
+      shadows: quality.shadows,
+      shared: this.materials.shared,
+      vehicles: this.vehicles,
+    });
+    this.scene.add(this.planes.group, this.ferries.group, this.cars.group);
 
     addPlaceLabels(this.overlay, manifest.places);
     const badges = addLandmarkBadges(this.overlay, manifest.landmarks, base);
@@ -416,6 +428,13 @@ export class MapEngine {
     this.fog.near = view.distance * 1.8 + 1500;
     this.fog.far = view.distance * 7 + 25_000;
     this.tiles.update(this.camera, this.size.y);
+    this.cars.sync(this.tiles.networks(this.camera.position, CAR_RANGE));
+    this.cars.update(
+      this.options.reducedMotion ? 0 : delta,
+      this.camera,
+      this.options.reducedMotion ?? false,
+      this.night
+    );
     this.landmarks.update(this.camera.position.x, this.camera.position.z);
     this.aerialways.update(seconds, this.camera.position, this.target);
     const frozen = this.options.reducedMotion ?? false;
@@ -554,7 +573,7 @@ export class MapEngine {
     const world = new URL(this.options.world, window.location.href);
     this.sound ??= new Soundscape({
       cabins: this.aerialways.voices,
-      cars: (x, z, radius) => this.tiles.carsNear(x, z, radius),
+      cars: (x, z, radius) => this.cars.near(x, z, radius),
       cover: { ...landcover, href: new URL(landcover.url, world).href },
       ferries: this.ferries.voices,
       height: (x, z) => this.field.sample(x, z),
@@ -637,6 +656,7 @@ export class MapEngine {
     this.aerialways.dispose();
     this.planes.dispose();
     this.ferries.dispose();
+    this.cars.dispose();
     this.sound?.dispose();
     this.boatMaterial.dispose();
     this.overlay.dispose();

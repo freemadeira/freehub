@@ -4,6 +4,7 @@ import {
   DataTexture,
   LinearFilter,
   MeshBasicMaterial,
+  MeshDepthMaterial,
   MeshLambertMaterial,
   RedFormat,
   SRGBColorSpace,
@@ -146,6 +147,17 @@ export interface Materials {
   buildings: MeshLambertMaterial;
   roads: MeshLambertMaterial;
   solid: MeshLambertMaterial;
+  /**
+   * The same for instanced meshes. A material drawn both with and without
+   * instancing changes shader at every switch, which costs every frame.
+   */
+  solidInstanced: MeshLambertMaterial;
+  /**
+   * Shadows of instanced meshes, for the same reason: one for those tinted
+   * per instance, one for the rest.
+   */
+  instancedDepth: MeshDepthMaterial;
+  tintedDepth: MeshDepthMaterial;
   canopy: MeshLambertMaterial;
   trunk: MeshLambertMaterial;
   pole: MeshLambertMaterial;
@@ -263,6 +275,12 @@ export function createMaterials(sea: SeaUniforms): Materials {
     "vec3(1.0, 0.72, 0.42) * 0.07"
   );
   const solid = gradedLambert({ vertexColors: true }, "map-solid");
+  const solidInstanced = gradedLambert(
+    { vertexColors: true },
+    "map-solid-instanced"
+  );
+  const instancedDepth = new MeshDepthMaterial();
+  const tintedDepth = new MeshDepthMaterial();
   const canopy = gradedLambert({ vertexColors: true }, "map-canopy");
   const trunk = gradedLambert(
     { color: new Color(PALETTE.tree.trunk) },
@@ -281,6 +299,9 @@ export function createMaterials(sea: SeaUniforms): Materials {
         buildings,
         roads,
         solid,
+        solidInstanced,
+        instancedDepth,
+        tintedDepth,
         canopy,
         trunk,
         pole,
@@ -291,6 +312,7 @@ export function createMaterials(sea: SeaUniforms): Materials {
       }
       land.dispose();
     },
+    instancedDepth,
     label,
     landmark,
     pole,
@@ -298,7 +320,9 @@ export function createMaterials(sea: SeaUniforms): Materials {
     sea,
     shared,
     solid,
+    solidInstanced,
     terrain,
+    tintedDepth,
     trunk,
   };
 }

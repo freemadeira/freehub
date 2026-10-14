@@ -108,12 +108,21 @@ export interface Landmark extends LngLat {
   clear: number;
 }
 
+/** A station or pylon holding a cable up. */
+export interface AerialPoint extends LngLat {
+  /**
+   * Meters above sea level the cable runs at here, clear of what's under it.
+   * Packs from before it list every bend of the line, and no heights.
+   */
+  ele?: number;
+}
+
 /** Cable cars and lifts, drawn with moving cabins. */
 export interface Aerialway {
   kind: string;
   name?: string;
-  /** Stations and pylons, in order. */
-  path: LngLat[];
+  /** Stations at the ends, pylons between, in order. */
+  path: AerialPoint[];
 }
 
 /** A point along a runway or taxiway; `deck` where it stands on a bridge. */
@@ -130,6 +139,12 @@ export interface Runway {
   path: AirPoint[];
 }
 
+/** A parking stand: planes taxi in along its lead line, nose first. */
+export interface Stand {
+  /** From the taxiway into the stand, ending where the nose stops. */
+  lead: LngLat[];
+}
+
 /** An aerodrome's runways, taxiways and aprons, for the planes. */
 export interface Airport {
   name?: string;
@@ -137,6 +152,8 @@ export interface Airport {
   taxiways: AirPoint[][];
   /** Outlines of the aprons, where planes park. */
   aprons: LngLat[][];
+  /** Stands OSM maps; without them, planes park around the aprons. */
+  stands?: Stand[];
 }
 
 /** A ferry's route, port to port; it may reach far past the world. */

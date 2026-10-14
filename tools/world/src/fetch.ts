@@ -35,6 +35,7 @@ function queryFor(theme: Theme, config: WorldConfig): string {
       `way["man_made"~"^(pier|breakwater|groyne|quay)$"](${box})`,
       `way["waterway"](${box})`,
       `way["aeroway"](${box})`,
+      `node["aeroway"="parking_position"](${box})`,
       `way["tourism"~"^(zoo|theme_park)$"](${box})`,
     ].join(";"),
     buildings: [

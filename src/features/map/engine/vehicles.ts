@@ -14,6 +14,7 @@ import {
   mergeVertices,
 } from "three/addons/utils/BufferGeometryUtils.js";
 
+import { CABIN_DROP } from "./cable.ts";
 import type { SharedUniforms } from "./materials.ts";
 import { graded } from "./materials.ts";
 
@@ -27,8 +28,15 @@ export const MARK = {
   front: 2,
   /** Starboard navigation light. */
   green: 5,
+  /** People's parts, colored per person from their own palettes. */
+  hair: 11,
+  /** Turn signals, blinking amber when told to. */
+  left: 8,
+  pants: 12,
   /** Port navigation light. */
   red: 4,
+  right: 9,
+  skin: 10,
   /** Blinks white. */
   strobe: 6,
   /** Taillights: red. */
@@ -38,11 +46,31 @@ export const MARK = {
   windows: 7,
 } as const;
 
+/**
+ * Which part of a person a vertex moves with, in its `limb` attribute: the
+ * walk swings legs and arms about the hip and shoulder, and turns the head.
+ */
+export const LIMB = {
+  body: 0,
+  head: 5,
+  leftArm: 3,
+  leftLeg: 1,
+  rightArm: 4,
+  rightLeg: 2,
+} as const;
+
+/** Heights of a person's hips, shoulders and neck, which limbs swing about. */
+export const JOINTS = { hip: 0.9, neck: 1.5, shoulder: 1.42 } as const;
+
 /** Shapes for everything that moves, facing +z with +x to their left. */
 export interface Vehicles {
+  bus: BufferGeometry;
+  cabin: BufferGeometry;
   car: BufferGeometry;
+  van: BufferGeometry;
   person: BufferGeometry;
   plane: BufferGeometry;
+  turboprop: BufferGeometry;
   ferry: BufferGeometry;
   motorboat: BufferGeometry;
   sailboat: BufferGeometry;
@@ -162,6 +190,24 @@ const WHITE = 0xf7_f8_fb;
 const GLASS = 0x46_53_6b;
 const TYRE = 0x2e_34_40;
 const LAMP = 0xfd_f6_e3;
+const STEEL = 0x6b_73_85;
+
+const AMBER = 0xf2_a6_3b;
+const BRAKE = 0xd9_47_3c;
+
+/** Turn signals at a vehicle's four corners, `half` its width apart. */
+function signals(half: number, front: number, back: number, y: number) {
+  return [1, -1].flatMap((side) =>
+    [front, back].map((z) =>
+      box(
+        [0.24, 0.14, 0.12],
+        [side * half, y, z],
+        AMBER,
+        side > 0 ? MARK.left : MARK.right
+      )
+    )
+  );
+}
 
 function car(): BufferGeometry {
   return merged([
@@ -171,23 +217,110 @@ function car(): BufferGeometry {
     // Wheels in pairs, showing either side under the body.
     box([1.86, 0.56, 0.56], [0, 0.28, 1.3], TYRE),
     box([1.86, 0.56, 0.56], [0, 0.28, -1.3], TYRE),
-    box([1.4, 0.2, 0.42], [0, 0.8, 1.95], LAMP, MARK.front),
-    box([1.4, 0.18, 0.36], [0, 0.82, -1.98], 0xd9_47_3c, MARK.tail),
+    box([1.2, 0.2, 0.42], [0, 0.8, 1.95], LAMP, MARK.front),
+    box([1.2, 0.18, 0.36], [0, 0.82, -1.98], BRAKE, MARK.tail),
+    ...signals(0.78, 2.05, -2.05, 0.8),
   ]);
 }
 
-function person(): BufferGeometry {
+/** A boxy van: taller, a little longer. */
+function van(): BufferGeometry {
   return merged([
-    part(
-      new CylinderGeometry(0.13, 0.1, 0.82, 6, 1, true).translate(0, 0.41, 0),
-      0x4a_54_70
+    box([1.95, 1.55, 4.9], [0, 1.15, 0], WHITE, MARK.tint),
+    box([1.98, 0.55, 3.4], [0, 1.55, -0.45], GLASS),
+    box([1.7, 0.55, 0.08], [0, 1.45, 2.43], GLASS),
+    box([2, 0.6, 0.6], [0, 0.3, 1.6], TYRE),
+    box([2, 0.6, 0.6], [0, 0.3, -1.6], TYRE),
+    box([1.3, 0.2, 0.2], [0, 0.85, 2.42], LAMP, MARK.front),
+    box([1.4, 0.2, 0.12], [0, 0.95, -2.46], BRAKE, MARK.tail),
+    ...signals(0.86, 2.48, -2.48, 0.9),
+  ]);
+}
+
+/** A city bus, windows all round. */
+function bus(): BufferGeometry {
+  return merged([
+    box([2.5, 2.6, 11.6], [0, 1.75, 0], WHITE, MARK.tint),
+    box([2.54, 1.05, 10.6], [0, 2.15, -0.2], GLASS, MARK.windows),
+    box([2.3, 1.2, 0.08], [0, 2.05, 5.81], GLASS, MARK.windows),
+    box([2.2, 0.3, 4], [0, 3.2, -2], WHITE),
+    box([2.56, 0.9, 0.9], [0, 0.45, 3.8], TYRE),
+    box([2.56, 0.9, 0.9], [0, 0.45, -3.3], TYRE),
+    box([1.8, 0.22, 0.12], [0, 0.95, 5.82], LAMP, MARK.front),
+    box([2, 0.22, 0.12], [0, 1.1, -5.82], BRAKE, MARK.tail),
+    ...signals(1.1, 5.84, -5.84, 1.1),
+  ]);
+}
+
+/** A part of a person, moving with one limb. */
+function limbed(
+  geometry: BufferGeometry,
+  mark: number,
+  limb: number,
+  hex = WHITE
+): BufferGeometry {
+  const flat = part(geometry, hex, mark);
+  const { count } = flat.getAttribute("position");
+  flat.setAttribute(
+    "limb",
+    new BufferAttribute(new Float32Array(count).fill(limb), 1)
+  );
+  return flat;
+}
+
+/**
+ * A person a little under 1.7 m tall, facing +z: legs, hips, a torso, arms
+ * and a head with hair, each part colored per person in the shader.
+ */
+function person(): BufferGeometry {
+  const { hip, neck, shoulder } = JOINTS;
+  return merged([
+    ...[1, -1].flatMap((side) => [
+      limbed(
+        new BoxGeometry(0.13, hip - 0.04, 0.15).translate(
+          side * 0.085,
+          hip / 2 + 0.02,
+          0
+        ),
+        MARK.pants,
+        side > 0 ? LIMB.leftLeg : LIMB.rightLeg
+      ),
+      limbed(
+        new BoxGeometry(0.09, 0.56, 0.1).translate(
+          side * 0.225,
+          shoulder - 0.28,
+          0
+        ),
+        MARK.tint,
+        side > 0 ? LIMB.leftArm : LIMB.rightArm
+      ),
+    ]),
+    limbed(
+      new BoxGeometry(0.31, 0.14, 0.19).translate(0, hip + 0.03, 0),
+      MARK.pants,
+      LIMB.body
     ),
-    part(
-      new CylinderGeometry(0.2, 0.16, 0.62, 6).translate(0, 1.12, 0),
-      WHITE,
-      MARK.tint
+    limbed(
+      new BoxGeometry(0.36, shoulder - hip, 0.22).translate(
+        0,
+        (shoulder + hip) / 2 + 0.05,
+        0
+      ),
+      MARK.tint,
+      LIMB.body
     ),
-    part(new SphereGeometry(0.14, 5, 3).translate(0, 1.58, 0), 0xf0_c9_a6),
+    limbed(
+      new SphereGeometry(0.115, 6, 4).translate(0, neck + 0.12, 0.01),
+      MARK.skin,
+      LIMB.head
+    ),
+    limbed(
+      new SphereGeometry(0.125, 6, 2, 0, Math.PI * 2, 0, Math.PI / 2)
+        .scale(1, 0.75, 1)
+        .translate(0, neck + 0.15, -0.015),
+      MARK.hair,
+      LIMB.head
+    ),
   ]);
 }
 
@@ -279,6 +412,74 @@ function plane(): BufferGeometry {
   ]);
 }
 
+/** A high-winged turboprop with a T-tail, like the island hoppers. */
+function turboprop(): BufferGeometry {
+  const axis = 2.3;
+  const wing: [number, number][] = [
+    [0, 1.7],
+    [0, -1.1],
+    [13.6, -0.5],
+    [13.6, 0.8],
+  ];
+  const stabilizer: [number, number][] = [
+    [0, -11.9],
+    [0, -13.5],
+    [4.2, -13.4],
+    [4.2, -12.5],
+  ];
+  const fin = slab(
+    [
+      [0, -8.6],
+      [0, -13.6],
+      [4.4, -13.9],
+      [4.4, -12.2],
+    ],
+    -0.18,
+    0.18
+  ).rotateZ(Math.PI / 2);
+  const top = axis + 1.3;
+  return merged([
+    tube(1.35, 1.35, 17, 0, axis, WHITE),
+    tube(1.35, 0.4, 3.4, 10.2, axis - 0.1, WHITE),
+    tube(0.35, 1.35, 5.6, -11.3, axis + 0.45, WHITE),
+    box([0.05, 0.28, 15], [1.34, axis + 0.35, 0], GLASS, MARK.windows),
+    box([0.05, 0.28, 15], [-1.34, axis + 0.35, 0], GLASS, MARK.windows),
+    part(slab(wing, top, top + 0.3), 0xe3_e7_ee),
+    part(slab(mirror(wing), top, top + 0.3), 0xe3_e7_ee),
+    box([2.2, 0.5, 3.4], [0, top - 0.1, 0.2], WHITE),
+    part(fin.translate(0, top - 0.2, 0), WHITE, MARK.tint),
+    part(slab(stabilizer, top + 4.1, top + 4.3), 0xe3_e7_ee),
+    part(slab(mirror(stabilizer), top + 4.1, top + 4.3), 0xe3_e7_ee),
+    ...[-1, 1].flatMap((side) => [
+      part(
+        new CylinderGeometry(0.45, 0.6, 4.6, 8)
+          .rotateX(Math.PI / 2)
+          .translate(side * 4.1, top - 0.35, 0.9),
+        0xcf_d4_dc
+      ),
+      // Two blades crossed, a blur of a propeller.
+      box([3.9, 0.22, 0.08], [side * 4.1, top - 0.35, 3.25], 0x4a_54_70),
+      box([0.22, 3.9, 0.08], [side * 4.1, top - 0.35, 3.25], 0x4a_54_70),
+      box([0.4, 0.25, 0.25], [side * 1.2, axis - 0.9, 3], LAMP, MARK.front),
+    ]),
+    part(
+      new SphereGeometry(0.35, 6, 4).translate(13.6, top + 0.15, 0.1),
+      0xe0_4b_45,
+      MARK.red
+    ),
+    part(
+      new SphereGeometry(0.35, 6, 4).translate(-13.6, top + 0.15, 0.1),
+      0x4b_c0_6a,
+      MARK.green
+    ),
+    part(
+      new SphereGeometry(0.3, 6, 4).translate(0, top + 4.5, -13.2),
+      WHITE,
+      MARK.strobe
+    ),
+  ]);
+}
+
 function ferry(): BufferGeometry {
   const hull: [number, number][] = [
     [-10, -55],
@@ -324,6 +525,19 @@ function ferry(): BufferGeometry {
   ]);
 }
 
+/** A cable car cabin, hanging from its grip on the rope at the origin. */
+function cabin(): BufferGeometry {
+  const floor = -CABIN_DROP;
+  const hanger = CABIN_DROP - 2.3;
+  return merged([
+    box([2.1, 2.2, 2.5], [0, floor + 1.1, 0], WHITE, MARK.tint),
+    box([2.14, 0.85, 2.54], [0, floor + 1.5, 0], GLASS, MARK.windows),
+    box([1.9, 0.14, 2.3], [0, floor + 2.27, 0], WHITE),
+    box([0.14, hanger, 0.14], [0, floor + 2.3 + hanger / 2, 0], STEEL),
+    box([0.5, 0.3, 0.9], [0, -0.05, 0], STEEL),
+  ]);
+}
+
 function hullOf(length: number, beam: number): [number, number][] {
   const half = length / 2;
   return [
@@ -365,12 +579,16 @@ function sailboat(): BufferGeometry {
 
 export function createVehicles(): Vehicles {
   const shapes = {
+    bus: bus(),
+    cabin: cabin(),
     car: car(),
     ferry: ferry(),
     motorboat: motorboat(),
     person: person(),
     plane: plane(),
     sailboat: sailboat(),
+    turboprop: turboprop(),
+    van: van(),
   };
   return {
     ...shapes,
@@ -388,15 +606,17 @@ uniform float uLife;
 uniform float uTime;
 varying float vMark;
 varying float vBlink;
+varying float vSignals;
 `;
 
 /**
  * Tints only the tinted parts, and picks a phase per vehicle for its lights.
  * `tint` and `place` say where its color and transform come from.
  */
-function vehicleColor(tint: string, place: string): string {
+function vehicleColor(tint: string, place: string, lights = "0.0"): string {
   return `
 vColor = vec4(color, 1.0);
+vSignals = ${lights};
 #if defined(USE_INSTANCING_COLOR) || defined(FLEET)
 if (abs(mark - ${MARK.tint}.0) < 0.25) {
   vColor.rgb = ${tint};
@@ -418,16 +638,35 @@ transformed.y += sin(sway * 0.8 + 1.3) * 0.08;
 `;
 
 const LIGHTS = `
+uniform float uTime;
 varying float vMark;
 varying float vBlink;
+varying float vSignals;
 float isMark(float value) {
   return 1.0 - step(0.25, abs(vMark - value));
 }
+// Bits of vSignals: braking, then the left and right turn signals.
+float signal(float bit) {
+  return mod(floor(vSignals / bit), 2.0);
+}
+// Each vehicle's own phase rides in vSignals' fraction.
+float blinking() {
+  return step(0.5, fract(uTime * 1.4 + fract(vSignals)));
+}
+`;
+
+/** Brake lights and turn signals show by day as well. */
+const SIGNALS = `
+float braking = signal(1.0) * isMark(${MARK.tail}.0);
+float turning = blinking() * (signal(2.0) * isMark(${MARK.left}.0) + signal(4.0) * isMark(${MARK.right}.0));
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.18, 0.1), braking * 0.8);
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.62, 0.12), turning);
 `;
 
 const LIGHTS_GLOW = [
   `isMark(${MARK.front}.0) * vec3(1.0, 0.95, 0.85) * 2.6`,
-  `isMark(${MARK.tail}.0) * vec3(1.0, 0.12, 0.06) * 2.6`,
+  `isMark(${MARK.tail}.0) * vec3(1.0, 0.12, 0.06) * (2.6 + 3.0 * signal(1.0))`,
+  `blinking() * (signal(2.0) * isMark(${MARK.left}.0) + signal(4.0) * isMark(${MARK.right}.0)) * vec3(1.0, 0.55, 0.1) * 3.0`,
   `isMark(${MARK.red}.0) * vec3(1.0, 0.12, 0.1) * 2.8`,
   `isMark(${MARK.green}.0) * vec3(0.15, 1.0, 0.4) * 2.4`,
   `isMark(${MARK.strobe}.0) * vBlink * vec3(4.0)`,
@@ -441,6 +680,8 @@ export interface FleetShader {
   /** GLSL for this vehicle's transform and tint. */
   matrix: string;
   color: string;
+  /** GLSL for its brake light and turn signals: bits 1, 2 and 4. */
+  signals?: string;
   uniforms: Record<string, { value: unknown }>;
 }
 
@@ -456,7 +697,11 @@ export function vehicleMaterial(
   const { bob = false, fleet } = options;
   const material = new MeshLambertMaterial({ vertexColors: true });
   material.onBeforeCompile = (shader) => {
-    graded(shader, shared, { before: LIGHTS, glow: LIGHTS_GLOW });
+    graded(shader, shared, {
+      after: SIGNALS,
+      before: LIGHTS,
+      glow: LIGHTS_GLOW,
+    });
     shader.uniforms.uLife = shared.uLife;
     Object.assign(shader.uniforms, fleet?.uniforms);
     shader.vertexShader = shader.vertexShader
@@ -467,7 +712,7 @@ export function vehicleMaterial(
       .replace(
         "#include <color_vertex>",
         fleet
-          ? vehicleColor(fleet.color, fleet.matrix)
+          ? vehicleColor(fleet.color, fleet.matrix, fleet.signals)
           : vehicleColor("instanceColor.rgb", "instanceMatrix")
       );
     if (fleet) {

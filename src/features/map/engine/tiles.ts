@@ -28,9 +28,9 @@ import type { Kit } from "./kit.ts";
 import type { Materials } from "./materials.ts";
 import { coastTexture } from "./materials.ts";
 import type { MeshData } from "./mesh.ts";
+import { createPeople, disposePeople } from "./people.ts";
 import type { WorkerPool } from "./pool.ts";
-import type { BuiltTile } from "./protocol.ts";
-import { carSpots, createTraffic, disposeTraffic } from "./traffic.ts";
+import type { BuiltTile, RoadGraphData } from "./protocol.ts";
 import type { Vehicles } from "./vehicles.ts";
 import type { TreeKind } from "./worker/trees.ts";
 
@@ -48,10 +48,10 @@ interface TileNode {
   readonly box: Box3;
   state: State;
   group?: Group;
-  /** Its cars and people, drawn only while the camera is close enough. */
-  traffic?: Mesh[];
-  /** Where its cars are, in the tile, for how busy it sounds. */
-  cars?: Float32Array;
+  /** Its people, drawn only while the camera is close enough. */
+  people?: Mesh[];
+  /** Its car roads, for the cars to drive while it's close. */
+  network?: RoadGraphData;
   children?: TileNode[];
   /** The frame that last needed it, for the cache. */
   used: number;
@@ -71,9 +71,12 @@ function bytesOf(built: BuiltTile): number {
     ),
     ...Object.values(built.terrain),
     built.coast?.data,
-    built.traffic?.paths,
-    built.traffic?.cars,
-    built.traffic?.people,
+    built.people?.paths,
+    built.people?.walkers,
+    built.people?.standers,
+    built.network?.nodes,
+    built.network?.edges,
+    built.network?.samples,
     ...built.trees.flatMap((batch) => [batch.matrices, batch.colors]),
     ...(built.boats ?? []).flatMap((batch) => [batch.matrices, batch.colors]),
   ];
@@ -303,7 +306,7 @@ export class TileManager {
     }
     for (const node of shown) {
       const distance = node.box.distanceToPoint(camera.position);
-      for (const mesh of node.traffic ?? []) {
+      for (const mesh of node.people ?? []) {
         mesh.visible = distance < (mesh.userData.far as number);
       }
     }
@@ -409,6 +412,8 @@ export class TileManager {
       canopy.instanceColor = new InstancedBufferAttribute(batch.colors, 3);
       const trunk = new InstancedMesh(kit.trunk[kind], materials.trunk, count);
       trunk.instanceMatrix = matrices;
+      canopy.customDepthMaterial = materials.tintedDepth;
+      trunk.customDepthMaterial = materials.instancedDepth;
       for (const mesh of [canopy, trunk]) {
         mesh.castShadow = this.options.shadows;
         mesh.receiveShadow = this.options.shadows;
@@ -457,6 +462,7 @@ export class TileManager {
       const poles = new InstancedMesh(kit.pole, materials.pole, count);
       poles.instanceMatrix = attribute;
       poles.castShadow = this.options.shadows;
+      poles.customDepthMaterial = materials.instancedDepth;
       const bulbs = new InstancedMesh(kit.bulb, materials.bulb, count);
       bulbs.instanceMatrix = attribute;
       bulbs.name = "lamps";
@@ -472,23 +478,24 @@ export class TileManager {
       boats.instanceMatrix = new InstancedBufferAttribute(batch.matrices, 16);
       boats.instanceColor = new InstancedBufferAttribute(batch.colors, 3);
       boats.castShadow = this.options.shadows;
+      boats.customDepthMaterial = this.options.materials.tintedDepth;
       boats.receiveShadow = this.options.shadows;
       boats.name = "boats";
       group.add(boats);
     }
 
-    if (built.traffic) {
+    if (built.people) {
       const bounds = node.box.getBoundingSphere(new Sphere());
       bounds.center.sub(group.position);
-      node.traffic = createTraffic(
-        built.traffic,
-        this.options.vehicles,
+      node.people = createPeople(
+        built.people,
+        this.options.vehicles.person,
         materials.shared,
         bounds
       );
-      group.add(...node.traffic);
-      node.cars = carSpots(built.traffic);
+      group.add(...node.people);
     }
+    node.network = built.network;
 
     node.group = group;
     node.bytes = bytesOf(built);
@@ -503,8 +510,8 @@ export class TileManager {
     group.traverse((object: Object3D) => {
       if (object instanceof InstancedMesh) {
         object.dispose();
-      } else if (object instanceof Mesh && object.name.startsWith("traffic-")) {
-        disposeTraffic(object);
+      } else if (object instanceof Mesh && object.name === "people") {
+        disposePeople(object);
       } else if (object instanceof Mesh) {
         object.geometry.dispose();
         if (object.name === "terrain" || object.name === "labels") {
@@ -517,8 +524,8 @@ export class TileManager {
     });
     this.root.remove(group);
     node.group = undefined;
-    node.traffic = undefined;
-    node.cars = undefined;
+    node.people = undefined;
+    node.network = undefined;
     node.state = "empty";
   }
 
@@ -542,35 +549,17 @@ export class TileManager {
   }
 
   /**
-   * The cars drawn around a point: each within `radius` counts, 1 right at
-   * the point down to 0 at the edge.
+   * The car roads of the closest tiles built within `range` meters of a
+   * point, by tile, in view or not: the roads the cars drive.
    */
-  carsNear(x: number, z: number, radius: number): number {
-    const reach = radius * radius;
-    let sum = 0;
+  networks(point: Vector3, range: number): Map<string, RoadGraphData> {
+    const result = new Map<string, RoadGraphData>();
     for (const node of this.nodes.values()) {
-      const cars = node.traffic?.find((mesh) => mesh.name === "traffic-cars");
-      const { square } = node;
-      const dx = Math.max(square.x - x, 0, x - square.x - square.size);
-      const dz = Math.max(square.z - z, 0, z - square.z - square.size);
-      if (
-        !node.cars ||
-        !node.group?.visible ||
-        !cars?.visible ||
-        dx * dx + dz * dz > reach
-      ) {
-        continue;
-      }
-      for (let index = 0; index < node.cars.length; index += 2) {
-        const ex = (node.cars[index] ?? 0) + square.x - x;
-        const ez = (node.cars[index + 1] ?? 0) + square.z - z;
-        const d2 = ex * ex + ez * ez;
-        if (d2 < reach) {
-          sum += 1 - d2 / reach;
-        }
+      if (node.network && node.box.distanceToPoint(point) < range) {
+        result.set(node.key, node.network);
       }
     }
-    return sum;
+    return result;
   }
 
   /** Tiles still being built. */

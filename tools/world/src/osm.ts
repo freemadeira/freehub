@@ -1,13 +1,13 @@
 import { readFile } from "node:fs/promises";
 
 import type {
-  Aerialway,
   Ferry,
   LanduseKind,
   Place,
   PlaceKind,
   RoadKind,
 } from "../../../src/features/map/engine/format.ts";
+import { colorOf } from "./colors.ts";
 import type { Theme } from "./fetch.ts";
 import { osmFile } from "./fetch.ts";
 import type { Polygon, Ring, Vec } from "./geometry.ts";
@@ -63,12 +63,26 @@ export interface PointFeature {
   properties: Properties;
 }
 
+/** A cable car or lift as OSM draws it. */
+export interface AerialwayData {
+  kind: string;
+  name?: string;
+  line: Vec[];
+  /** Points of `line` that hold the cable up: both ends, and pylons. */
+  supports: number[];
+}
+
 /** An aerodrome's runways, taxiways and aprons, as OSM has them. */
 export interface AirportData {
   name?: string;
   runways: LineFeature[];
   taxiways: LineFeature[];
   aprons: Polygon[];
+  /**
+   * Where planes park, as OSM draws them: lead-in lines, outlines, or
+   * single points.
+   */
+  stands: Vec[][];
 }
 
 export interface OsmData {
@@ -81,7 +95,7 @@ export interface OsmData {
   roads: LineFeature[];
   trees: PointFeature[];
   places: Place[];
-  aerialways: Aerialway[];
+  aerialways: AerialwayData[];
   airports: AirportData[];
   ferries: Ferry[];
 }
@@ -200,6 +214,9 @@ function buildingKind(tags: Tags): string {
   return kind;
 }
 
+/** Roofs of clay or concrete tiles: pitched, nearly always. */
+const TILES = new Set(["roof_tiles", "tile", "tiles", "clay"]);
+
 function buildings(elements: RawElement[]): AreaFeature[] {
   const result: AreaFeature[] = [];
   for (const element of elements) {
@@ -216,11 +233,18 @@ function buildings(elements: RawElement[]): AreaFeature[] {
         id: element.id,
         polygon,
         properties: compact({
-          height: numeric(tags.height),
+          colour: colorOf(tags["building:colour"]),
+          height: numeric(tags.height) ?? numeric(tags["building:height"]),
           kind: buildingKind(tags),
           levels: numeric(tags["building:levels"]),
           minHeight: numeric(tags.min_height),
           roof: tags["roof:shape"],
+          roofColour: colorOf(tags["roof:colour"]),
+          roofHeight: numeric(tags["roof:height"]),
+          roofLevels: numeric(tags["roof:levels"]),
+          roofMaterial: TILES.has(tags["roof:material"] ?? "")
+            ? "tiles"
+            : undefined,
         }),
       });
     }
@@ -542,18 +566,30 @@ function places(elements: RawElement[]): Place[] {
 
 const LIFTS = new Set(["cable_car", "gondola", "chair_lift", "mixed_lift"]);
 
-function aerialways(elements: RawElement[]): Aerialway[] {
+function aerialways(elements: RawElement[]): AerialwayData[] {
+  // Pylons are nodes of their own; other bends only shape the line.
+  const pylons = new Set<string>();
+  for (const element of elements) {
+    if (element.type === "node" && element.tags?.aerialway === "pylon") {
+      pylons.add(`${element.lon},${element.lat}`);
+    }
+  }
   return elements.flatMap((element) => {
     const tags = element.tags ?? {};
     if (element.type !== "way" || !LIFTS.has(tags.aerialway ?? "")) {
       return [];
     }
+    const line = coords(element.geometry);
+    if (line.length < 2) {
+      return [];
+    }
+    const supports = line.flatMap(([lng, lat], index) =>
+      index === 0 || index === line.length - 1 || pylons.has(`${lng},${lat}`)
+        ? [index]
+        : []
+    );
     return [
-      {
-        kind: tags.aerialway ?? "cable_car",
-        name: tags.name,
-        path: coords(element.geometry).map(([lng, lat]) => ({ lat, lng })),
-      },
+      { kind: tags.aerialway ?? "cable_car", line, name: tags.name, supports },
     ];
   });
 }
@@ -566,6 +602,33 @@ const AIRWAYS: Record<string, "runways" | "taxiways"> = {
   runway: "runways",
   taxiway: "taxiways",
 };
+
+/** A runway's or taxiway's center line, if the way is one. */
+function airwayOf(
+  element: RawElement,
+  tags: Tags,
+  line: Vec[]
+): LineFeature | undefined {
+  if (element.type !== "way" || isClosed(line) || line.length < 2) {
+    return undefined;
+  }
+  return {
+    id: element.id,
+    line,
+    properties: compact({
+      bridge: tags.bridge && tags.bridge !== "no" ? 1 : undefined,
+      ref: tags.ref,
+      width: numeric(tags.width),
+    }),
+  };
+}
+
+/** A parking position's shape: its lead line or outline, or its point. */
+function standShape(element: RawElement): Vec[] {
+  return element.type === "node"
+    ? [[element.lon ?? 0, element.lat ?? 0]]
+    : coords(element.geometry);
+}
 
 /** Runways, taxiways and aprons, each with the aerodrome it lies in. */
 function airports(elements: RawElement[]): AirportData[] {
@@ -581,6 +644,7 @@ function airports(elements: RawElement[]): AirportData[] {
         name: tags.name,
         outline: polygon.outer,
         runways: [],
+        stands: [],
         taxiways: [],
       });
     }
@@ -596,19 +660,16 @@ function airports(elements: RawElement[]): AirportData[] {
       }
       continue;
     }
-    const list = AIRWAYS[tags.aeroway ?? ""];
-    if (!list || element.type !== "way" || isClosed(line) || line.length < 2) {
+    if (tags.aeroway === "parking_position") {
+      const shape = standShape(element);
+      owner(shape[0] ?? [0, 0])?.stands.push(shape);
       continue;
     }
-    owner(middleOf(line))?.[list].push({
-      id: element.id,
-      line,
-      properties: compact({
-        bridge: tags.bridge && tags.bridge !== "no" ? 1 : undefined,
-        ref: tags.ref,
-        width: numeric(tags.width),
-      }),
-    });
+    const list = AIRWAYS[tags.aeroway ?? ""];
+    const way = list && airwayOf(element, tags, line);
+    if (list && way) {
+      owner(middleOf(line))?.[list].push(way);
+    }
   }
   return found
     .filter((airport) => airport.runways.length > 0)

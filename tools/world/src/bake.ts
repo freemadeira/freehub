@@ -8,6 +8,8 @@ import type {
 } from "../../../src/features/map/engine/format.ts";
 import { WORLD_FORMAT } from "../../../src/features/map/engine/format.ts";
 import { createFrame } from "../../../src/features/map/engine/geo.ts";
+import { HeightField } from "../../../src/features/map/engine/heights.ts";
+import { liftAerialways } from "./aerialways.ts";
 import { airportsOf } from "./airports.ts";
 import { loadConfig } from "./config.ts";
 import {
@@ -158,11 +160,23 @@ async function main() {
     });
   }
 
+  // The ground as the map draws it, so cables clear what's drawn.
+  const field = new HeightField(
+    { ...heightGrid, offset: HEIGHT_OFFSET, scale: HEIGHT_SCALE, url: "" },
+    heightGrid.data
+  );
+  const aerialways = liftAerialways(
+    osm.aerialways,
+    osm.buildings,
+    frame,
+    (x, z) => field.sample(x, z)
+  );
+
   const [west, south, east, north] = config.bounds;
   const within = (lat: number, lng: number) =>
     lat >= south && lat <= north && lng >= west && lng <= east;
   const manifest: WorldManifest = {
-    aerialways: osm.aerialways,
+    aerialways,
     airports: airportsOf(osm.airports, elevation),
     attribution: ATTRIBUTION,
     bounds: config.bounds,

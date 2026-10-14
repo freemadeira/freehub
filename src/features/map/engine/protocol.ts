@@ -18,24 +18,49 @@ export interface Quality {
 export const PATH_WIDTH = 512;
 
 /**
- * Floats per traffic slot, read as four attributes:
+ * Floats per walker slot, read as four attributes:
  * - route loop: period, spacing, phase and speed;
  * - slot: first `u` it covers, its index, direction (±1) and meters right;
  * - stretch: first path sample, its first and last `s`, route length;
  * - ends: the gap at the route's end, a code for its ends and flags, and
  *   the lane's seed.
  */
-export const TRAFFIC_STRIDE = 15;
+export const WALKER_STRIDE = 15;
+/** Floats per person standing about: x, y and z in the tile, heading, id. */
+export const STANDER_STRIDE = 5;
 
 /**
- * Cars and people on a tile, moved on the GPU. Paths are sampled every two
- * meters, four floats each: x, y and z in the tile, and heading.
+ * People on a tile: walkers moved on the GPU along paths sampled every two
+ * meters, four floats each (x, y and z in the tile, and heading), and people
+ * standing about.
  */
-export interface TrafficData {
+export interface PeopleData {
   paths: Float32Array;
   rows: number;
-  cars: Float32Array;
-  people: Float32Array;
+  walkers: Float32Array;
+  standers: Float32Array;
+}
+
+/** Floats per edge of a road graph; see `RoadGraphData`. */
+export const EDGE_STRIDE = 10;
+/** Node flags: where a road leaves the tile, and where it enters a tunnel. */
+export const NODE_EDGE = 1;
+export const NODE_PORTAL = 2;
+
+/**
+ * A tile's car roads as a graph for the cars to drive, joined to the next
+ * tile's where roads cross the edge.
+ * - nodes: x, z and flags, three floats each;
+ * - edges: start and end node, first sample and how many, length, kind (its
+ *   index in `ROAD_KINDS`), lanes forward and back, width, and the share of
+ *   built-up land along it; `EDGE_STRIDE` floats each;
+ * - samples: x, y and z where cars ride, evenly spaced from start to end, and
+ *   the speed in meters a second the bend there allows.
+ */
+export interface RoadGraphData {
+  nodes: Float32Array;
+  edges: Float32Array;
+  samples: Float32Array;
 }
 
 /** Moored boats of one kind: 4×4 matrices and hull tints. */
@@ -81,7 +106,9 @@ export interface BuiltTile {
   trees: TreeBatchData[];
   /** x, y, z and heading per lamp. */
   lamps?: Float32Array;
-  traffic?: TrafficData;
+  people?: PeopleData;
+  /** The car roads, for the cars; closest tiles only. */
+  network?: RoadGraphData;
   boats?: BoatBatch[];
   /** Street names painted on the road, closest tiles only. */
   labels?: {

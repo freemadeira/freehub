@@ -5,54 +5,16 @@ import type { MeshData, Rgb } from "../mesh.ts";
 import { MeshBuilder } from "../mesh.ts";
 import { linear, PALETTE } from "../palette.ts";
 import { generator, hash, pick } from "../random.ts";
+import type { BuildingPlan } from "./building-plan.ts";
+import { isIndustrial, planOf } from "./building-plan.ts";
 import type { Surface } from "./terrain.ts";
 import type { Area } from "./vector.ts";
 
 export type Detail = "full" | "medium" | "simple";
 
-const STOREY = 3.1;
 const PARAPET = 0.6;
 const UP = [0, 1, 0] as const;
 const DOWN = [0, -1, 0] as const;
-
-const HOUSES = new Set([
-  "house",
-  "detached",
-  "semidetached_house",
-  "bungalow",
-  "terrace",
-  "farm",
-  "cabin",
-  "residential",
-  "yes",
-]);
-const SHEDS = new Set([
-  "garage",
-  "garages",
-  "shed",
-  "hut",
-  "kiosk",
-  "toilets",
-  "roof",
-  "carport",
-  "greenhouse",
-  "service",
-  "storage_tank",
-  "container",
-]);
-const PITCHED = new Set([
-  "gabled",
-  "hipped",
-  "pyramidal",
-  "half-hipped",
-  "side_hipped",
-]);
-
-function numberOf(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value
-    : undefined;
-}
 
 function signedArea(ring: Point[]): number {
   let sum = 0;
@@ -212,90 +174,6 @@ function boxCorners(box: Box, grow = 0): Point[] {
   });
   const corners = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
   return signedArea(corners) < 0 ? corners.toReversed() : corners;
-}
-
-interface Plan {
-  levels: number;
-  /** Wall height from the highest ground to the eaves. */
-  walls: number;
-  roof: "flat" | "hipped" | "gabled";
-  windows: boolean;
-}
-
-const INDUSTRY = new Set(["industrial", "warehouse", "manufacture"]);
-const WORSHIP = new Set(["church", "chapel", "cathedral"]);
-
-/** Storeys from the footprint and kind, when OSM doesn't say. */
-function guessLevels(
-  kind: string,
-  footprint: number,
-  random: () => number
-): number {
-  if (INDUSTRY.has(kind)) {
-    return 2;
-  }
-  if (WORSHIP.has(kind)) {
-    return kind === "chapel" ? 2 : 4;
-  }
-  if (kind === "apartments" || kind === "hotel") {
-    return 3 + Math.floor(random() * (footprint > 500 ? 6 : 3));
-  }
-  if (footprint < 45) {
-    return 1;
-  }
-  if (footprint < 140) {
-    return 1 + Math.round(random() * 1.2);
-  }
-  if (footprint < 450) {
-    return 2 + Math.floor(random() * 2);
-  }
-  return 3 + Math.floor(random() * (footprint < 1500 ? 3 : 4));
-}
-
-/** OSM's roof shape, or a hipped roof on many small houses, as Madeira has. */
-function roofOf(
-  tag: string,
-  kind: string,
-  footprint: number,
-  levels: number,
-  random: () => number
-): Plan["roof"] {
-  if (PITCHED.has(tag)) {
-    return tag === "gabled" ? "gabled" : "hipped";
-  }
-  const house =
-    tag === "" && HOUSES.has(kind) && footprint < 260 && levels <= 3;
-  return house && random() < 0.62 ? "hipped" : "flat";
-}
-
-function plan(building: Area, footprint: number, random: () => number): Plan {
-  const kind = String(building.properties.kind ?? "yes");
-  const height = numberOf(building.properties.height);
-  if (SHEDS.has(kind)) {
-    return {
-      levels: 1,
-      roof: "flat",
-      walls: height ?? 2.8 + random() * 0.8,
-      windows: false,
-    };
-  }
-  const tagged = numberOf(building.properties.levels);
-  const levels = Math.max(
-    1,
-    Math.min(40, Math.round(tagged ?? guessLevels(kind, footprint, random)))
-  );
-  const roof = roofOf(
-    String(building.properties.roof ?? ""),
-    kind,
-    footprint,
-    levels,
-    random
-  );
-  let walls = height ?? levels * STOREY + 0.4;
-  if (roof !== "flat" && height !== undefined) {
-    walls = Math.max(2.6, height - 2);
-  }
-  return { levels, roof, walls, windows: walls > 3.4 };
 }
 
 interface Context {
@@ -520,14 +398,18 @@ function addRoofFace(mesh: MeshBuilder, points: Vec3[], tint: Rgb) {
   }
 }
 
-/** Hipped or gabled roof over a box, with a little overhang. */
+/**
+ * Hipped or gabled roof over a box, with a little overhang; `rise` is the
+ * ridge's height over the eaves when OSM gives it.
+ */
 function addPitchedRoof(
   context: Context,
   box: Box,
   eaves: number,
   shape: "hipped" | "gabled",
   color: Rgb,
-  wall: Rgb
+  wall: Rgb,
+  rise?: number
 ) {
   const { mesh, originX, originZ } = context;
   const overhang = 0.35;
@@ -536,7 +418,7 @@ function addPitchedRoof(
   const hw = box.width / 2 + overhang;
   const ridge = shape === "gabled" ? hl : Math.max(0, hl - hw);
   const y = eaves - 0.15;
-  const top = y + Math.min(4.5, box.width * 0.3);
+  const top = y + (rise ?? Math.min(4.5, box.width * 0.3));
   const at = (u: number, v: number, height: number): Vec3 => [
     box.center.x + ux * u - uz * v - originX,
     height,
@@ -605,17 +487,70 @@ interface Shell {
   holes: Point[][];
   footprint: number;
   box: Box;
-  roof: Plan["roof"];
-  layout: Plan;
+  roof: BuildingPlan["roof"];
+  layout: BuildingPlan;
   seed: number;
   random: () => number;
   /** Bottom of the walls: a little under the lowest ground they stand on. */
   base: number;
   eaves: number;
   wall: Rgb;
+  roofColor: Rgb;
 }
 
 const INDUSTRY_WALLS = [0xe8_e9_ee, 0xdf_e7_ef, 0xf1_f1_ec];
+
+/**
+ * A color OSM gives, made a pastel to sit with the palette's: its hue kept,
+ * at least `light` lightness and at most `vivid` saturation. The palette's
+ * pick when OSM gives none.
+ */
+function tinted(
+  tag: unknown,
+  light: number,
+  vivid: number,
+  fallback: number
+): Rgb {
+  if (typeof tag !== "number") {
+    return linear(fallback);
+  }
+  const r = (Math.floor(tag / 65_536) % 256) / 255;
+  const g = (Math.floor(tag / 256) % 256) / 255;
+  const b = (tag % 256) / 255;
+  const high = Math.max(r, g, b);
+  const low = Math.min(r, g, b);
+  let lightness = (high + low) / 2;
+  const chroma = high - low;
+  let saturation =
+    chroma === 0 ? 0 : chroma / (1 - Math.abs(2 * lightness - 1));
+  let hue = 0;
+  if (chroma > 0) {
+    if (high === r) {
+      hue = ((g - b) / chroma + 6) % 6;
+    } else if (high === g) {
+      hue = (b - r) / chroma + 2;
+    } else {
+      hue = (r - g) / chroma + 4;
+    }
+  }
+  saturation = Math.min(saturation, vivid);
+  lightness = Math.min(0.95, Math.max(lightness, light));
+  // Back to RGB.
+  const c = (1 - Math.abs(2 * lightness - 1)) * saturation;
+  const x = c * (1 - Math.abs((hue % 2) - 1));
+  const m = lightness - c / 2;
+  const sector = Math.floor(hue);
+  const [rr, gg, bb] = [
+    [c, x, 0],
+    [x, c, 0],
+    [0, c, x],
+    [0, x, c],
+    [x, 0, c],
+    [c, 0, x],
+  ][sector % 6] as [number, number, number];
+  const byte = (value: number) => Math.round((value + m) * 255);
+  return linear(byte(rr) * 65_536 + byte(gg) * 256 + byte(bb));
+}
 
 function centerOf(ring: Point[]): Point {
   let x = 0;
@@ -662,7 +597,7 @@ function shellOf(building: Area, options: BuildingOptions): Shell | undefined {
     .map((ring) => (signedArea(ring) > 0 ? ring.toReversed() : ring));
   const seed = hash(building.id, Math.round(center.x), Math.round(center.z));
   const random = generator(seed);
-  const layout = plan(building, footprint, random);
+  const layout = planOf(building.properties, footprint, random);
   // Pitched roofs only sit well on near-rectangles, which become exact ones.
   const box = orientedBox(outer);
   const pitched =
@@ -671,7 +606,9 @@ function shellOf(building: Area, options: BuildingOptions): Shell | undefined {
     outer = boxCorners(box);
   }
   const [low, high] = groundRange(outer, options.surface);
-  const industrial = INDUSTRY.has(String(building.properties.kind));
+  const { properties } = building;
+  const walls = isIndustrial(properties) ? INDUSTRY_WALLS : PALETTE.walls;
+  const roofs = pitched ? PALETTE.roofTile : [PALETTE.roofFlat];
   return {
     base: low - 0.6,
     box,
@@ -682,8 +619,9 @@ function shellOf(building: Area, options: BuildingOptions): Shell | undefined {
     outer,
     random,
     roof: pitched ? layout.roof : "flat",
+    roofColor: tinted(properties.roofColour, 0.66, 0.75, pick(roofs, random())),
     seed,
-    wall: linear(pick(industrial ? INDUSTRY_WALLS : PALETTE.walls, random())),
+    wall: tinted(properties.colour, 0.82, 0.7, pick(walls, random())),
   };
 }
 
@@ -693,7 +631,7 @@ function addFlatBuilding(
   detail: Detail,
   windows: boolean
 ) {
-  const { outer, holes, base, eaves, wall, seed } = shell;
+  const { outer, holes, base, eaves, wall, roofColor, seed } = shell;
   const trim = linear(PALETTE.trim);
   const inset =
     detail === "simple" || holes.length > 0 ? undefined : offset(outer, -0.35);
@@ -702,7 +640,7 @@ function addFlatBuilding(
     for (const ring of [outer, ...holes]) {
       addWalls(context, ring, base, eaves, wall, seed, windows, shaded);
     }
-    addCap(context, [outer, ...holes], eaves, linear(PALETTE.roofFlat));
+    addCap(context, [outer, ...holes], eaves, roofColor);
     return;
   }
   // Walls rise past the roof into a parapet, capped in white.
@@ -710,7 +648,7 @@ function addFlatBuilding(
   addWalls(context, outer, base, top, wall, seed, windows, true);
   addRingBand(context, outer, inset, top, top, trim, UP);
   addWalls(context, inset.toReversed(), eaves, top, trim, 0, false, false);
-  addCap(context, [inset], eaves, linear(PALETTE.roofFlat));
+  addCap(context, [inset], eaves, roofColor);
   if (detail !== "full") {
     return;
   }
@@ -764,8 +702,9 @@ export function buildBuildings(
       shell.box,
       shell.eaves,
       shell.roof,
-      linear(pick(PALETTE.roofTile, shell.random())),
-      shell.wall
+      shell.roofColor,
+      shell.wall,
+      shell.layout.ridge
     );
   }
   return mesh.build();

@@ -15,13 +15,18 @@ export interface Box {
   maxY: number;
 }
 
-/** Twice the signed area: positive when counterclockwise with y up. */
+/**
+ * The signed area: positive when counterclockwise with y up. Measured from
+ * the first corner: mercator coordinates are near 0.5 while a building spans
+ * a millionth of that, so cross products of the raw ones cancel to noise.
+ */
 export function signedArea(ring: Ring): number {
+  const [ox, oy] = ring[0] ?? [0, 0];
   let sum = 0;
   for (let index = 0; index < ring.length - 1; index += 1) {
     const [x1, y1] = ring[index] ?? [0, 0];
     const [x2, y2] = ring[index + 1] ?? [0, 0];
-    sum += x1 * y2 - x2 * y1;
+    sum += (x1 - ox) * (y2 - oy) - (x2 - ox) * (y1 - oy);
   }
   return sum / 2;
 }
@@ -59,23 +64,29 @@ export function boxOf(points: Iterable<Vec>): Box {
   return box;
 }
 
+/** The area's center of mass, measured from the first corner as above. */
 export function centroid(ring: Ring): Vec {
+  const [ox, oy] = ring[0] ?? [0, 0];
   let area = 0;
   let cx = 0;
   let cy = 0;
   for (let index = 0; index < ring.length - 1; index += 1) {
     const [x1, y1] = ring[index] ?? [0, 0];
     const [x2, y2] = ring[index + 1] ?? [0, 0];
-    const cross = x1 * y2 - x2 * y1;
+    const ax = x1 - ox;
+    const ay = y1 - oy;
+    const bx = x2 - ox;
+    const by = y2 - oy;
+    const cross = ax * by - bx * ay;
     area += cross;
-    cx += (x1 + x2) * cross;
-    cy += (y1 + y2) * cross;
+    cx += (ax + bx) * cross;
+    cy += (ay + by) * cross;
   }
-  if (Math.abs(area) < 1e-18) {
+  if (area === 0) {
     const box = boxOf(ring);
     return [(box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2];
   }
-  return [cx / (3 * area), cy / (3 * area)];
+  return [ox + cx / (3 * area), oy + cy / (3 * area)];
 }
 
 export function pointInRing([x, y]: Vec, ring: Ring): boolean {

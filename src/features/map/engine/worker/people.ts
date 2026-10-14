@@ -2,10 +2,12 @@ import type { Grid, RoadKind } from "../format.ts";
 import { COVER } from "../format.ts";
 import type { Point, Square } from "../geo.ts";
 import type { HeightField } from "../heights.ts";
-import type { TrafficData } from "../protocol.ts";
+import type { PeopleData } from "../protocol.ts";
 import { PATH_WIDTH } from "../protocol.ts";
 import { hash } from "../random.ts";
+import { busyAt, buildCrowds, inRing } from "./crowds.ts";
 import { ROAD_WIDTH } from "./ground.ts";
+import { CAR_ROADS } from "./road-graph.ts";
 import type { End, Route } from "./routes.ts";
 import { buildRoutes, clipRoute, END, routeAt } from "./routes.ts";
 import type { Surface } from "./terrain.ts";
@@ -13,6 +15,11 @@ import type { Area, Line, TileFeatures } from "./vector.ts";
 
 /** Meters between path samples. */
 const SAMPLE = 2;
+/**
+ * Seconds a walker can fall behind a steady pace when they stop a while;
+ * slots reach that much further, so a stopped one is still drawn.
+ */
+const DAWDLE = 5.8;
 /** Roads sit this far above the ground; bridge decks this far above theirs. */
 const ROAD_LIFT = 0.15;
 const DECK_LIFT = 0.3;
@@ -26,20 +33,10 @@ interface Flow {
   fill: number;
 }
 
-/** Meters between one car and the next, on average. */
+/** Meters between one person and the next, on average. */
 function gapOf(flow: Flow): number {
   return flow.spacing / Math.max(0.05, flow.fill);
 }
-
-const CARS: Partial<Record<RoadKind, Flow>> = {
-  motorway: { fill: 0.8, spacing: 34, speed: 21 },
-  primary: { fill: 0.75, spacing: 40, speed: 13 },
-  residential: { fill: 0.55, spacing: 80, speed: 7 },
-  secondary: { fill: 0.7, spacing: 46, speed: 12 },
-  service: { fill: 0.45, spacing: 150, speed: 5 },
-  tertiary: { fill: 0.65, spacing: 58, speed: 10 },
-  trunk: { fill: 0.8, spacing: 36, speed: 17 },
-};
 
 const WALKS: Partial<Record<RoadKind, Flow>> = {
   footway: { fill: 0.5, spacing: 14, speed: 1.3 },
@@ -59,7 +56,7 @@ const SIDEWALK: Flow = { fill: 0.45, spacing: 12, speed: 1.3 };
 /** Land use that draws a crowd. */
 const BUSY = new Set(["commercial", "pedestrian", "marina"]);
 
-export interface TrafficOptions {
+export interface PeopleOptions {
   /** The data tile's own square, where its routes are whole. */
   data: TileFeatures;
   square: Square;
@@ -67,12 +64,11 @@ export interface TrafficOptions {
   field: HeightField;
   cover: Uint8Array;
   coverGrid: Grid;
-  /** Multiplies how many cars and people there are; 0 leaves them out. */
-  cars: number;
+  /** Multiplies how many people there are; 0 leaves them out. */
   people: number;
 }
 
-/** A lane traffic loops around: forward along a route, maybe back again. */
+/** A lane people loop around: forward along a route, maybe back again. */
 interface Lane {
   route: Route;
   /** Meters right of the direction of travel. */
@@ -86,7 +82,7 @@ interface Lane {
 }
 
 /** Share of built-up land along a route, from the land cover. */
-function builtAlong(route: Route, options: TrafficOptions): number {
+function builtAlong(route: Route, options: PeopleOptions): number {
   const { cover, coverGrid } = options;
   const total = route.along.at(-1) ?? 0;
   const count = Math.max(1, Math.ceil(total / 25));
@@ -107,69 +103,11 @@ function builtAlong(route: Route, options: TrafficOptions): number {
   return built / count;
 }
 
-function inRing(point: Point, ring: Point[]): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
-    const a = ring[i] ?? point;
-    const b = ring[j] ?? point;
-    if (
-      a.z > point.z !== b.z > point.z &&
-      point.x < ((b.x - a.x) * (point.z - a.z)) / (b.z - a.z) + a.x
-    ) {
-      inside = !inside;
-    }
-  }
-  return inside;
-}
-
-function busyAt(point: Point, busy: Area[]): boolean {
-  return busy.some((area) => inRing(point, area.rings[0] ?? []));
-}
-
 function widthOf(line: { properties: Route["properties"] }): number {
   const kind = String(line.properties.kind) as RoadKind;
   return typeof line.properties.width === "number"
     ? line.properties.width
     : ROAD_WIDTH[kind];
-}
-
-/** Car lanes, rightmost first in each direction. */
-function carLanes(route: Route, built: number, scale: number): Lane[] {
-  const kind = String(route.properties.kind) as RoadKind;
-  const base = CARS[kind];
-  if (!base) {
-    return [];
-  }
-  const oneway = route.properties.oneway === 1;
-  const big = kind === "motorway" || kind === "trunk";
-  const lanes =
-    typeof route.properties.lanes === "number"
-      ? Math.max(1, route.properties.lanes)
-      : (oneway ? 1 : 2) * (big ? 2 : 1);
-  const perSide = oneway ? lanes : Math.max(1, Math.floor(lanes / 2));
-  const width = widthOf(route);
-  const laneWidth = width / (oneway ? perSide : perSide * 2);
-  const seed = hash(
-    route.points[0]?.x ?? 0,
-    route.points[0]?.z ?? 0,
-    route.along.at(-1) ?? 0
-  );
-  const fill = base.fill * (0.4 + 0.6 * built);
-  return Array.from({ length: perSide }, (_, index) => ({
-    flow: {
-      fill,
-      spacing: base.spacing * scale,
-      // Lanes further from the right run a little faster.
-      speed: base.speed * (1 + 0.12 * index) * (0.9 + 0.2 * hash(seed, index)),
-    },
-    reverse: false,
-    right: oneway
-      ? width / 2 - (index + 0.5) * laneWidth
-      : (perSide - index - 0.5) * laneWidth,
-    route,
-    seed: hash(seed, index, 7),
-    twoWay: !oneway,
-  }));
 }
 
 /** A closed route has no ends to turn at: each way round is its own lane. */
@@ -283,7 +221,7 @@ function squareRoutes(area: Area): Route[] {
 }
 
 /**
- * How a lane's traffic loops, as distances `u` round the loop: forward along
+ * How a lane's people loop, as distances `u` round the loop: forward along
  * the route, through a hidden gap where it can't be seen (in a tunnel, off the
  * data), back along the other side, through the start's gap. A turn at a dead
  * end needs no gap. One-way lanes and closed routes have just forward and gap.
@@ -390,10 +328,10 @@ function onEdge(point: Point, square: Square): boolean {
   );
 }
 
-/** Slots for the lanes' traffic in each stretch inside the tile. */
+/** Slots for the lanes' people in each stretch inside the tile. */
 function writeLanes(
   lanes: Lane[],
-  options: TrafficOptions,
+  options: PeopleOptions,
   paths: PathWriter
 ): number[] {
   const values: number[] = [];
@@ -404,7 +342,7 @@ function writeLanes(
     const phase = hash(lane.seed, 3) * loop.period;
     const seed = Math.floor(hash(lane.seed, 5) * 65_536);
     for (const span of paths.spansOf(route)) {
-      // Where the stretch meets another data tile, traffic can't carry on.
+      // Where the stretch meets another data tile, people can't carry on.
       const seams =
         (span.s0 > 0.01 && onEdge(routeAt(route, span.s0), options.data.square)
           ? 64
@@ -422,7 +360,9 @@ function writeLanes(
       }
       for (const [a, b, direction] of windows) {
         const start = a - jitter;
-        const slots = Math.ceil((b - a + 2 * jitter) / loop.spacing) + 1;
+        const behind = DAWDLE * lane.flow.speed;
+        const slots =
+          Math.ceil((b - a + 2 * jitter + behind) / loop.spacing) + 1;
         for (let slot = 0; slot < slots; slot += 1) {
           values.push(
             loop.period,
@@ -459,7 +399,7 @@ function slotsOf(lanes: Lane[]): number {
 }
 
 /** Most slots a data tile's lanes may need; denser places space out. */
-const BUDGET = { cars: 7000, people: 6000 };
+const BUDGET = 6000;
 
 function spread(lanes: Lane[], budget: number): Lane[] {
   const slots = slotsOf(lanes);
@@ -474,22 +414,22 @@ function spread(lanes: Lane[], budget: number): Lane[] {
 }
 
 /**
- * Cars along the roads and people along paths, squares and sidewalks, as
- * routes sampled into a path texture and slots that move along them on the
- * GPU. Routes are chained over the whole data tile, the same for every tile
- * drawn from it, so traffic carries on across their edges.
+ * People along paths, squares and sidewalks, as routes sampled into a path
+ * texture and slots that move along them on the GPU. Routes are chained over
+ * the whole data tile, the same for every tile drawn from it, so people
+ * carry on across their edges.
  */
-export function buildTraffic(options: TrafficOptions): TrafficData | undefined {
+export function buildPeople(options: PeopleOptions): PeopleData | undefined {
   const { data } = options;
-  if (options.cars <= 0 && options.people <= 0) {
+  if (options.people <= 0) {
     return undefined;
   }
   const routeOptions = {
     field: options.field,
     square: data.square,
   };
-  const roads = data.roads.filter(
-    (line) => CARS[String(line.properties.kind) as RoadKind]
+  const roads = data.roads.filter((line) =>
+    CAR_ROADS.has(String(line.properties.kind) as RoadKind)
   );
   const carRoutes = buildRoutes(roads, {
     ...routeOptions,
@@ -527,17 +467,6 @@ export function buildTraffic(options: TrafficOptions): TrafficData | undefined {
     built.set(route, value);
     return value;
   };
-  const cars =
-    options.cars > 0
-      ? spread(
-          splitClosed(
-            carRoutes.flatMap((route) =>
-              carLanes(route, builtOf(route), 1 / options.cars)
-            )
-          ),
-          BUDGET.cars
-        )
-      : [];
   const sidewalks = carRoutes
     .filter((route) => SIDEWALKS.has(String(route.properties.kind) as RoadKind))
     .map((route) => ({
@@ -561,23 +490,30 @@ export function buildTraffic(options: TrafficOptions): TrafficData | undefined {
               );
             })
           ),
-          BUDGET.people
+          BUDGET
         )
       : [];
 
   const paths = new PathWriter(options.square, options.surface);
-  const carSlots = writeLanes(cars, options, paths);
-  const peopleSlots = writeLanes(people, options, paths);
-  if (paths.count === 0) {
+  const walkers = writeLanes(people, options, paths);
+  const standers = buildCrowds({
+    data,
+    share: options.people,
+    sidewalks,
+    square: options.square,
+    surface: options.surface,
+    walks: walkRoutes,
+  });
+  if (paths.count === 0 && standers.length === 0) {
     return undefined;
   }
-  const rows = Math.ceil(paths.count / PATH_WIDTH);
+  const rows = Math.max(1, Math.ceil(paths.count / PATH_WIDTH));
   const samples = new Float32Array(rows * PATH_WIDTH * 4);
   samples.set(paths.samples);
   return {
-    cars: Float32Array.from(carSlots),
     paths: samples,
-    people: Float32Array.from(peopleSlots),
     rows,
+    standers: Float32Array.from(standers),
+    walkers: Float32Array.from(walkers),
   };
 }
