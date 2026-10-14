@@ -47,6 +47,8 @@
     "cn": "^0.4.0",
     "date-fns": "^4.4.0",
     "earcut": "^3.2.4",
+    "emojibase-data": "^17.0.0",
+    "frimousse": "^0.4.0",
     "lucide-react": "^1.52.0",
     "marked": "^17.0.6",
     "motion": "^14.0.0",

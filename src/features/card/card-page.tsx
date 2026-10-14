@@ -24,11 +24,16 @@ import { useBoard } from "@/features/board/board-context";
 import { CardActivitySection } from "@/features/card/card-activity";
 import { STATUS_STYLES } from "@/features/card/card-fields";
 import { CardProperties } from "@/features/card/card-properties";
+import { AddReaction, Reactions } from "@/features/card/reactions";
 import { SubscribeButton } from "@/features/card/subscribe-button";
+import { useCardThread } from "@/hooks/use-comments";
+import { useCardReactions } from "@/hooks/use-reactions";
 import { deleteCard, updateCard } from "@/lib/actions";
 import type { Card } from "@/lib/model";
 import { cardKey } from "@/lib/model";
 import { cardPath } from "@/lib/paths";
+import type { Reaction } from "@/lib/reactions";
+import { cardReactionTarget, NO_REACTIONS } from "@/lib/reactions";
 
 // The text and comments read down a column in the middle, beside a panel of
 // properties. Narrower screens stack them, with the properties between the two.
@@ -178,6 +183,32 @@ function CardText({ card }: { card: Card }) {
   );
 }
 
+/** Reactions to the card, under its text, and the smiley that adds one. */
+function CardReactions({
+  card,
+  reactions = NO_REACTIONS,
+}: {
+  card: Card;
+  reactions?: Reaction[];
+}) {
+  const { board, canEdit } = useBoard();
+  if (!canEdit && reactions.length === 0) {
+    return null;
+  }
+  const target = cardReactionTarget(board, card);
+  return (
+    // Set back so a leading smiley lines up with the text above, unless pills
+    // lead instead. Not keyed to the first button: an open popover puts a
+    // hidden focus guard before its trigger.
+    <div className="-ml-2 flex flex-wrap items-center gap-1 pt-2 has-[>ul:first-child]:ml-0">
+      <FluidTooltip.Group>
+        <Reactions reactions={reactions} target={target} />
+        {canEdit && <AddReaction reactions={reactions} target={target} />}
+      </FluidTooltip.Group>
+    </div>
+  );
+}
+
 /**
  * Escape leaves the card, as long as nothing on it has focus to give up first:
  * a field blurs, and a menu closes, before the next Escape leaves.
@@ -223,6 +254,8 @@ interface CardPageProps {
 export function CardPage({ card, crumbs, onLeave }: CardPageProps) {
   const id = useId();
   const { board, boardQuery, canEdit } = useBoard();
+  const thread = useCardThread(board, card);
+  const reactions = useCardReactions(board, card, thread.comments);
   useEscapeToLeave(onLeave);
   return (
     <>
@@ -252,6 +285,7 @@ export function CardPage({ card, crumbs, onLeave }: CardPageProps) {
           ) : (
             <CardText card={card} />
           )}
+          <CardReactions card={card} reactions={reactions.get(card.id)} />
         </div>
         <aside aria-labelledby={id} className={ASIDE}>
           <div className="flex flex-col gap-3 lg:sticky lg:top-20">
@@ -262,7 +296,12 @@ export function CardPage({ card, crumbs, onLeave }: CardPageProps) {
           </div>
         </aside>
         <div className={cn(COLUMN, "pb-10")}>
-          <CardActivitySection card={card} className="border-t pt-6" />
+          <CardActivitySection
+            card={card}
+            className="border-t pt-6"
+            reactions={reactions}
+            thread={thread}
+          />
         </div>
       </main>
     </>

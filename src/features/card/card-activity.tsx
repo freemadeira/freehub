@@ -18,12 +18,13 @@ import { useBoard } from "@/features/board/board-context";
 import { PRIORITY_STYLES, STATUS_STYLES } from "@/features/card/card-fields";
 import { CommentEntry, Composer } from "@/features/card/comments";
 import { useReadSubject } from "@/features/inbox/inbox-context";
-import { useCardThread } from "@/hooks/use-comments";
+import type { CardThread } from "@/hooks/use-comments";
 import { useProfile } from "@/hooks/use-profile";
 import type { CardActivity, CardChange, ChangeOf } from "@/lib/card-activity";
 import { foldChanges } from "@/lib/card-activity";
 import type { Card, Comment } from "@/lib/model";
 import { priorityLabel, statusLabel } from "@/lib/model";
+import type { Reaction } from "@/lib/reactions";
 import { cardSubject } from "@/lib/subscriptions";
 
 /** Someone's changes this close together are told as one entry. */
@@ -305,14 +306,18 @@ function entriesOf(
 /** What's happened to the card, with its comments, and where to add one. */
 export function CardActivitySection({
   card,
+  thread: { activity, comments },
+  reactions,
   className,
 }: {
   card: Card;
+  thread: CardThread;
+  /** By comment id. */
+  reactions: ReadonlyMap<string, Reaction[]>;
   className?: string;
 }) {
   const id = useId();
-  const { board, canEdit, pubkey } = useBoard();
-  const { activity, comments } = useCardThread(board, card);
+  const { canEdit, pubkey } = useBoard();
   useReadSubject(cardSubject(card));
   const entries = entriesOf(card, activity, comments);
 
@@ -345,6 +350,7 @@ export function CardActivitySection({
                 comment={entry.comment}
                 key={entry.comment.id}
                 own={entry.comment.author === pubkey}
+                reactions={reactions.get(entry.comment.id)}
               />
             )
           )}

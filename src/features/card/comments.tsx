@@ -18,8 +18,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { UserAvatar } from "@/components/user-avatar";
 import { useBoard } from "@/features/board/board-context";
+import { AddReaction, Reactions } from "@/features/card/reactions";
 import { useLocalDraft } from "@/hooks/use-local-draft";
 import { useProfile } from "@/hooks/use-profile";
 import { addComment, deleteComment } from "@/lib/actions";
@@ -27,13 +29,14 @@ import { draftFields, draftKey, draftText } from "@/lib/drafts";
 import type { Mention } from "@/lib/mentions";
 import { encodeMentions } from "@/lib/mentions";
 import type { Card, Comment } from "@/lib/model";
+import type { Reaction } from "@/lib/reactions";
+import { commentReactionTarget, NO_REACTIONS } from "@/lib/reactions";
 
 function DeleteComment({ comment }: { comment: Comment }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <IconButton
-        className="ml-auto opacity-0 transition-opacity duration-150 group-hover/comment:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
         label="Delete comment"
         onClick={() => setOpen(true)}
         size="icon-xs"
@@ -63,16 +66,20 @@ function DeleteComment({ comment }: { comment: Comment }) {
   );
 }
 
-/** A comment on the card's timeline: who wrote it, when, and what. */
+/** A comment on the card's timeline: who wrote it, when, what, and the reactions to it. */
 export function CommentEntry({
   comment,
   own,
+  reactions = NO_REACTIONS,
 }: {
   comment: Comment;
   own: boolean;
+  reactions?: Reaction[];
 }) {
+  const { canEdit } = useBoard();
   const { name } = useProfile(comment.author);
   const signed = comment.event.sig !== "";
+  const target = commentReactionTarget(comment);
   return (
     <li
       className={cn(
@@ -87,11 +94,24 @@ export function CommentEntry({
         <div className="flex min-h-6 items-center gap-2">
           <span className="truncate text-sm font-medium">{name}</span>
           <TimelineTime at={comment.createdAt} />
-          {own && signed && <DeleteComment comment={comment} />}
+          {canEdit && signed && (
+            // Shown on hover, and kept while the emoji picker is open.
+            <div className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/comment:opacity-100 focus-within:opacity-100 has-data-popup-open:opacity-100 pointer-coarse:opacity-100">
+              <AddReaction
+                reactions={reactions}
+                size="icon-xs"
+                target={target}
+              />
+              {own && <DeleteComment comment={comment} />}
+            </div>
+          )}
         </div>
         <p className="bg-card shadow-surface rounded-xl p-3 text-sm wrap-break-word whitespace-pre-wrap">
           <MentionText content={comment.content} />
         </p>
+        <FluidTooltip.Group>
+          <Reactions reactions={reactions} target={target} />
+        </FluidTooltip.Group>
       </div>
     </li>
   );

@@ -29,10 +29,16 @@ import {
   tombstoneTemplate,
   upcomingSprint,
 } from "@/lib/model";
-import { accounts } from "@/lib/nostr";
+import { accounts, eventStore } from "@/lib/nostr";
 import type { Project, ProjectFields } from "@/lib/project";
 import { deleteProjectTemplate, projectTemplate } from "@/lib/project";
 import { publish } from "@/lib/publish";
+import type { ReactionTarget } from "@/lib/reactions";
+import {
+  deleteReactionsTemplate,
+  reactionEmoji,
+  reactionTemplate,
+} from "@/lib/reactions";
 import { setSubscribed, subscriptionsOf } from "@/lib/subscribe";
 import { cardSubscribers, isSubscribed } from "@/lib/subscriptions";
 
@@ -319,4 +325,57 @@ export async function addComment(
 
 export function deleteComment(comment: Comment): Promise<boolean> {
   return publish(deleteCommentTemplate(comment));
+}
+
+/** Changes to one emoji on one card or comment, by `id:emoji`. */
+const reactionChanges = new Map<string, Promise<boolean>>();
+
+function changeReaction(
+  target: ReactionTarget,
+  emoji: string,
+  reacted: boolean,
+  me: string
+): Promise<boolean> {
+  const mine = eventStore
+    .getByFilters({ ...target.filter, authors: [me] })
+    .filter((event) => reactionEmoji(event) === emoji);
+  if (reacted) {
+    return mine.length > 0
+      ? Promise.resolve(true)
+      : publish(reactionTemplate(target.event, emoji));
+  }
+  const signed = mine.filter((event) => event.sig);
+  return signed.length > 0
+    ? publish(deleteReactionsTemplate(signed))
+    : Promise.resolve(true);
+}
+
+/**
+ * Reacts to a card or a comment with an emoji, or takes yours back. Changes
+ * to the same emoji wait for the one before, so taking a reaction back right
+ * away finds it signed.
+ */
+export async function setReaction(
+  target: ReactionTarget,
+  emoji: string,
+  reacted: boolean
+): Promise<boolean> {
+  const me = accounts.active?.pubkey;
+  if (!me) {
+    return false;
+  }
+  const key = `${target.id}:${emoji}`;
+  const before = reactionChanges.get(key);
+  const done = (async () => {
+    await before;
+    return changeReaction(target, emoji, reacted, me);
+  })();
+  reactionChanges.set(key, done);
+  try {
+    return await done;
+  } finally {
+    if (reactionChanges.get(key) === done) {
+      reactionChanges.delete(key);
+    }
+  }
 }

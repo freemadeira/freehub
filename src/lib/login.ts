@@ -21,6 +21,7 @@ import {
   DRIVE_FILE_KIND,
   DRIVE_FOLDER_KIND,
   PROJECT_KIND,
+  REACTION_KIND,
   SPRINT_KIND,
 } from "@/lib/model";
 import { accounts } from "@/lib/nostr";
@@ -40,6 +41,7 @@ const PERMISSIONS = [
     DRIVE_FILE_KIND,
     APP_DATA_KIND,
     COMMENT_KIND,
+    REACTION_KIND,
     5,
     // Blossom's authorization for uploading and deleting files.
     24_242,

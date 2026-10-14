@@ -1,6 +1,6 @@
 import type { EventTemplate, NostrEvent } from "applesauce-core/helpers/event";
 import { getTagValue, isReplaceable } from "applesauce-core/helpers/event";
-import { BehaviorSubject, combineLatest, filter, map, noop } from "rxjs";
+import { BehaviorSubject, combineLatest, filter, map } from "rxjs";
 import { toast } from "sonner";
 
 import { getConfig } from "@/config";
@@ -183,7 +183,22 @@ interface Staged {
 // Shows the change right away and restores the previous version if it never lands.
 function stage(event: EventTemplate, pubkey: string): Staged {
   if (event.kind === DELETE_KIND) {
-    return { commit: (signed) => eventStore.add(signed), discard: noop };
+    // What it deletes goes at once, and comes back if the deletion never lands.
+    const deleted = event.tags.flatMap(([name, id]) => {
+      const target = name === "e" && id ? eventStore.getEvent(id) : undefined;
+      return target ? [target] : [];
+    });
+    for (const target of deleted) {
+      eventStore.remove(target);
+    }
+    return {
+      commit: (signed) => eventStore.add(signed),
+      discard() {
+        for (const target of deleted) {
+          eventStore.add(target);
+        }
+      },
+    };
   }
   const replaced = isReplaceable(event.kind)
     ? eventStore.getReplaceable(event.kind, pubkey, getTagValue(event, "d"))

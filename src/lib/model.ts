@@ -18,6 +18,8 @@ export const DRIVE_FILE_KIND = 30_310;
 /** NIP-78 app data: each person's own inbox marks, follows and devices. */
 export const APP_DATA_KIND = 30_078;
 export const COMMENT_KIND = 1111;
+/** NIP-25: an emoji someone reacted to a card or a comment with. */
+export const REACTION_KIND = 7;
 export const DELETE_KIND = 5;
 
 /**
