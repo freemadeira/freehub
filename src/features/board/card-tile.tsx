@@ -52,9 +52,10 @@ function CardTitle({
   title: string;
   className?: string;
 }) {
+  // A typed "->" reads as an arrow; the title itself keeps what was typed.
   return (
     <span className={cn(!title && "text-muted-foreground", className)}>
-      {title || "Untitled"}
+      {title.replaceAll("->", "→") || "Untitled"}
     </span>
   );
 }
