@@ -2,6 +2,7 @@ import {
   ChevronRightIcon,
   HouseIcon,
   InboxIcon,
+  KanbanIcon,
   MapIcon,
   PlusIcon,
   SquareArrowOutUpRightIcon,
@@ -47,6 +48,7 @@ import { UserMenu } from "@/components/user-menu";
 import { getConfig } from "@/config";
 import { boardPath } from "@/features/board/board-context";
 import { findBoard, parseSlug } from "@/features/board/board-route";
+import { BOARDS_PATH } from "@/features/boards/boards-page";
 import { TableIcon } from "@/features/crm/table-icon";
 import { SidebarDocs } from "@/features/docs/sidebar-docs";
 import { SidebarDrive } from "@/features/drive/sidebar-drive";
@@ -319,6 +321,15 @@ export function AppSidebar({
                 >
                   <HouseIcon />
                   <span>Home</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location === BOARDS_PATH}
+                  render={<NavLink href={BOARDS_PATH} />}
+                >
+                  <KanbanIcon />
+                  <span>Boards</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               {getConfig().map && (

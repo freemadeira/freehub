@@ -25,7 +25,7 @@ function counted<T>(items: T[], key: (item: T) => string): Map<string, number> {
 }
 
 /** Options that match a card, or are picked, so a picked one can be let go. */
-function shown(
+export function shown(
   options: FilterOption[],
   picked: readonly string[]
 ): FilterOption[] {
@@ -49,7 +49,10 @@ function Labelled({
   );
 }
 
-function projectOptions(cards: MyCard[], projects: Project[]): FilterOption[] {
+export function projectOptions(
+  cards: Pick<MyCard, "board">[],
+  projects: Project[]
+): FilterOption[] {
   return projects.map((project) => ({
     count: cards.filter((item) => inProject(item.board, project)).length,
     label: (
@@ -61,7 +64,10 @@ function projectOptions(cards: MyCard[], projects: Project[]): FilterOption[] {
   }));
 }
 
-function boardOptions(cards: MyCard[], boards: Board[]): FilterOption[] {
+export function boardOptions(
+  cards: Pick<MyCard, "board">[],
+  boards: Board[]
+): FilterOption[] {
   const counts = counted(cards, (item) => item.board.address);
   return boards.map((board) => ({
     count: counts.get(board.address) ?? 0,

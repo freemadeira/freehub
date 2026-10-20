@@ -1,19 +1,6 @@
-import type { NostrEvent } from "applesauce-core/helpers/event";
-import { map } from "rxjs";
-
-import { useObservableValue } from "@/hooks/use-observable-value";
+import { useBoardContents } from "@/hooks/use-board-contents";
 import type { Board, BoardContent, Card } from "@/lib/model";
-import {
-  addressOf,
-  BOARD_KIND,
-  CARD_KIND,
-  isClosed,
-  resolveBoard,
-} from "@/lib/model";
-import { eventStore } from "@/lib/nostr";
-import { addressFilters, sync, whileLoading } from "@/lib/relays";
-
-const KINDS = [CARD_KIND];
+import { isClosed } from "@/lib/model";
 
 /** An open card of the person's, with the board it's on. */
 export interface MyCard {
@@ -22,25 +9,6 @@ export interface MyCard {
   content: BoardContent;
   assigned: boolean;
   created: boolean;
-}
-
-function resolveBoards(
-  boards: Board[],
-  events: NostrEvent[]
-): Map<string, BoardContent> {
-  const byBoard = new Map<string, NostrEvent[]>();
-  for (const event of events) {
-    const address = addressOf(event, BOARD_KIND);
-    if (address) {
-      byBoard.set(address, [...(byBoard.get(address) ?? []), event]);
-    }
-  }
-  return new Map(
-    boards.map((board) => [
-      board.address,
-      resolveBoard(board, byBoard.get(board.address) ?? []),
-    ])
-  );
 }
 
 /**
@@ -52,23 +20,7 @@ export function useMyCards(
   boards: Board[],
   pubkey: string
 ): { cards: MyCard[]; loaded: boolean } {
-  const addresses = boards.map((board) => board.address).toSorted();
-  const authors = [...new Set(boards.flatMap((board) => board.members))];
-  const key = `${addresses.join(",")}|${authors.toSorted().join(",")}`;
-  const feed = () =>
-    sync(addressFilters("#a", addresses, { kinds: KINDS }, authors));
-  const loaded = useObservableValue(feed, [key]);
-  const contents = useObservableValue(
-    () =>
-      addresses.length > 0
-        ? whileLoading(
-            eventStore.timeline([{ "#a": addresses, kinds: KINDS }]),
-            feed()
-          ).pipe(map((events) => resolveBoards(boards, events)))
-        : undefined,
-    [key, boards.map((board) => board.event.id).join(",")]
-  );
-
+  const { contents, loaded } = useBoardContents(boards);
   const cards = boards.flatMap((board) => {
     const content = contents?.get(board.address);
     if (!content) {
@@ -82,5 +34,5 @@ export function useMyCards(
         : [];
     });
   });
-  return { cards, loaded: (loaded ?? false) || addresses.length === 0 };
+  return { cards, loaded };
 }

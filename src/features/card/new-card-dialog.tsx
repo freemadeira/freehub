@@ -12,7 +12,7 @@ import {
   XIcon,
 } from "lucide-react";
 import type { FormEvent, KeyboardEvent, ReactNode, RefObject } from "react";
-import { useRef, useState } from "react";
+import { use, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { IconButton } from "@/components/icon-button";
@@ -33,8 +33,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import type { CardPlacement } from "@/features/board/board-context";
-import { useBoard } from "@/features/board/board-context";
+import type { BoardScope, CardPlacement } from "@/features/board/board-context";
+import { BoardContext } from "@/features/board/board-context";
 import {
   assignable,
   inOfferedOrder,
@@ -53,13 +53,42 @@ import { LabelDot, People, Person } from "@/features/card/card-parts";
 import { useLocalDraft } from "@/hooks/use-local-draft";
 import { createCard } from "@/lib/actions";
 import { draftFields, draftKey, draftText } from "@/lib/drafts";
-import type { CardFields, Label } from "@/lib/model";
-import { LABELS, rankBetween } from "@/lib/model";
+import type { Board, CardFields, Label } from "@/lib/model";
+import { activeSprint, LABELS, nearestStatus, rankBetween } from "@/lib/model";
 
-export type NewCardDefaults = CardPlacement & Pick<CardFields, "assignees">;
+export type NewCardDefaults = CardPlacement &
+  Pick<CardFields, "assignees"> & {
+    /** The board picked at first, by address, when the dialog offers several. */
+    board?: string;
+  };
 
-type Properties = NewCardDefaults &
-  Pick<CardFields, "priority" | "due" | "labels">;
+/** The boards a card made outside any one board can go on. */
+export interface BoardChoice {
+  scopes: BoardScope[];
+  /** Called with the board picked, so the next card can start there. */
+  onPick: (board: Board) => void;
+}
+
+type Properties = CardPlacement &
+  Pick<CardFields, "assignees" | "priority" | "due" | "labels">;
+
+/**
+ * The properties as they carry over to another board: a status it uses, only
+ * its people, and its active sprint.
+ */
+function onBoard(
+  properties: Properties,
+  { board, content }: BoardScope
+): Properties {
+  return {
+    ...properties,
+    assignees: properties.assignees.filter((pubkey) =>
+      board.members.includes(pubkey)
+    ),
+    sprint: activeSprint(content)?.id,
+    status: nearestStatus(board.statuses, properties.status),
+  };
+}
 
 const PILL =
   "h-7 w-auto max-w-56 gap-1.5 rounded-full border-transparent bg-foreground/5 px-2.5 text-xs font-medium hover:bg-foreground/10 data-popup-open:bg-foreground/10 dark:bg-foreground/5 dark:hover:bg-foreground/10 [&_svg:not([class*='size-'])]:size-3.5";
@@ -258,6 +287,53 @@ function DuePill({
   );
 }
 
+const BADGE =
+  "bg-foreground/5 text-muted-foreground flex h-6 items-center rounded-md px-2 text-xs font-medium";
+
+/** The board's code, which picks another board when the dialog offers several. */
+function BoardBadge({
+  board,
+  scopes,
+  onChange,
+}: {
+  board: Board;
+  scopes: BoardScope[];
+  onChange: (scope: BoardScope) => void;
+}) {
+  if (scopes.length < 2) {
+    return <span className={BADGE}>{board.code}</span>;
+  }
+  return (
+    <Select
+      onValueChange={(address: string | null) => {
+        const scope = scopes.find((item) => item.board.address === address);
+        if (scope && scope.board !== board) {
+          onChange(scope);
+        }
+      }}
+      value={board.address}
+    >
+      <SelectTrigger
+        aria-label="Board"
+        className={cn(
+          BADGE,
+          "hover:bg-foreground/10 data-popup-open:bg-foreground/10 dark:bg-foreground/5 dark:hover:bg-foreground/10 w-auto gap-1 border-transparent pr-1.5 [&_svg:not([class*='size-'])]:size-3"
+        )}
+      >
+        <SelectValue>{() => board.code}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {scopes.map(({ board: option }) => (
+          <SelectItem key={option.address} value={option.address}>
+            <span className="truncate">{option.title}</span>
+            <span className="text-muted-foreground text-xs">{option.code}</span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 interface Draft {
   title: string;
   description: string;
@@ -281,26 +357,36 @@ function isEnter(event: KeyboardEvent): boolean {
 
 function NewCardForm({
   defaults,
+  start,
+  choice,
   titleField,
   onClose,
 }: {
   defaults: NewCardDefaults;
+  /** The board the card starts on. */
+  start: BoardScope;
+  choice?: BoardChoice;
   titleField: RefObject<HTMLTextAreaElement | null>;
   onClose: () => void;
 }) {
-  const { board, content, pubkey } = useBoard();
+  const [picked, setPicked] = useState(start.board.address);
+  // Looked up again each time, so the content stays current as cards come in.
+  const scope =
+    choice?.scopes.find((item) => item.board.address === picked) ?? start;
+  const { board, content, pubkey } = scope;
   // Closing the dialog keeps what was typed for next time; properties start
-  // from where the card is added.
+  // from where the card is added. Picking another board keeps both.
   const [{ title, description }, setDraft] = useLocalDraft(
-    draftKey(pubkey, "new-card", board.id),
+    draftKey(pubkey, "new-card", choice ? "boards" : board.id),
     parseDraft,
     isEmptyDraft
   );
   // Counts the cards created here, so each next one starts with a fresh editor.
   const [created, setCreated] = useState(0);
-  const [properties, setProperties] = useState<Properties>({
-    ...defaults,
-    labels: [],
+  const [properties, setProperties] = useState<Properties>(() => {
+    const { assignees, sprint, status } = defaults;
+    const placed = { assignees, labels: [], sprint, status };
+    return choice ? onBoard(placed, start) : placed;
   });
   const [createMore, setCreateMore] = useState(false);
   const ready = title.trim() !== "";
@@ -308,6 +394,12 @@ function NewCardForm({
 
   const set = (changes: Partial<Properties>) =>
     setProperties((current) => ({ ...current, ...changes }));
+
+  const pick = (next: BoardScope) => {
+    setPicked(next.board.address);
+    setProperties((current) => onBoard(current, next));
+    choice?.onPick(next.board);
+  };
 
   // Mod+Enter in the description passes its text, since the state it just
   // committed only updates on the next render.
@@ -342,9 +434,11 @@ function NewCardForm({
   return (
     <form className="flex flex-col" onSubmit={submit}>
       <div className="flex items-center gap-1.5 py-3 pr-3 pl-5">
-        <span className="bg-foreground/5 text-muted-foreground flex h-6 items-center rounded-md px-2 text-xs font-medium">
-          {board.code}
-        </span>
+        <BoardBadge
+          board={board}
+          onChange={pick}
+          scopes={choice?.scopes ?? []}
+        />
         <ChevronRightIcon
           aria-hidden
           className="text-muted-foreground size-3.5"
@@ -448,14 +542,22 @@ interface NewCardDialogProps {
   defaults: NewCardDefaults;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The boards to pick from; the card goes on the board in context otherwise. */
+  choice?: BoardChoice;
 }
 
 export function NewCardDialog({
   defaults,
   open,
   onOpenChange,
+  choice,
 }: NewCardDialogProps) {
   const titleField = useRef<HTMLTextAreaElement>(null);
+  const here = use(BoardContext);
+  const start = choice
+    ? (choice.scopes.find((scope) => scope.board.address === defaults.board) ??
+      choice.scopes[0])
+    : here;
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent
@@ -463,11 +565,15 @@ export function NewCardDialog({
         initialFocus={titleField}
         showCloseButton={false}
       >
-        <NewCardForm
-          defaults={defaults}
-          onClose={() => onOpenChange(false)}
-          titleField={titleField}
-        />
+        {start && (
+          <NewCardForm
+            choice={choice}
+            defaults={defaults}
+            onClose={() => onOpenChange(false)}
+            start={start}
+            titleField={titleField}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );

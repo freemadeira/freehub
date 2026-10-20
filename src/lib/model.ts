@@ -164,7 +164,11 @@ const VIEWER = "viewer";
 const SUBSCRIBER = "subscriber";
 export const CODE = /^[A-Z][A-Z0-9]{0,9}$/u;
 /** Codes taken by app pages, which share the top-level path with boards. */
-export const RESERVED_CODES: ReadonlySet<string> = new Set(["INBOX", "MAP"]);
+export const RESERVED_CODES: ReadonlySet<string> = new Set([
+  "BOARDS",
+  "INBOX",
+  "MAP",
+]);
 
 /**
  * A random `d` tag. Relays built on fiatjaf/eventstore (Haven, most khatru
@@ -342,6 +346,20 @@ export function startingStatus(statuses: readonly Status[]): Status {
   );
 }
 
+/**
+ * The status a card takes on a board using these statuses: its own if the
+ * board uses it, else one of the same kind, else where new cards start.
+ */
+export function nearestStatus(
+  statuses: readonly Status[],
+  status: Status
+): Status {
+  return statuses.includes(status)
+    ? status
+    : (statuses.find((other) => statusKind(other) === statusKind(status)) ??
+        startingStatus(statuses));
+}
+
 /** Open cards in a status the board stops using, and the status they move to. */
 export interface StatusMove {
   from: Status;
@@ -363,10 +381,9 @@ export function statusMoves(
       return [];
     }
     const moving = cards.filter((card) => card.status === from);
-    const to =
-      after.find((status) => statusKind(status) === statusKind(from)) ??
-      startingStatus(after);
-    return moving.length > 0 ? [{ cards: moving, from, to }] : [];
+    return moving.length > 0
+      ? [{ cards: moving, from, to: nearestStatus(after, from) }]
+      : [];
   });
 }
 

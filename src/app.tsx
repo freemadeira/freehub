@@ -12,6 +12,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getConfig } from "@/config";
 import { BoardRoute, findBoard, parseSlug } from "@/features/board/board-route";
+import { BOARDS_PATH, BoardsPage } from "@/features/boards/boards-page";
 import { UploadTray } from "@/features/drive/upload-tray";
 import { HomeContext, useHomeSettings } from "@/features/home/home-context";
 import { HomePage } from "@/features/home/home-page";
@@ -169,6 +170,14 @@ function Workspace({ pubkey }: { pubkey: string }) {
                     />
                   </Suspense>
                 )}
+              </Route>
+              <Route path={BOARDS_PATH}>
+                <BoardsPage
+                  boards={boards}
+                  loaded={boardsLoaded && projectsLoaded}
+                  projects={projects}
+                  pubkey={pubkey}
+                />
               </Route>
               <Route path={INBOX_PATH}>
                 <InboxPage inbox={inbox} pubkey={pubkey} />

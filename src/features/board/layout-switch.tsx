@@ -15,25 +15,28 @@ export type BoardLayout = (typeof LAYOUTS)[number]["value"];
 
 const DEFAULT_LAYOUT: BoardLayout = "kanban";
 
-function layoutKey(board: Pick<Board, "address">): string {
-  return `board:${board.address}:layout`;
-}
-
-/** The board's layout, remembered on this device. */
-export function useBoardLayout(
-  board: Pick<Board, "address">
+/** A layout remembered on this device under the key given. */
+export function useLayout(
+  key: string
 ): [BoardLayout, (value: BoardLayout) => void] {
   const [value, setValue] = useState(() => {
-    const stored = readStorage(layoutKey(board));
+    const stored = readStorage(key);
     return (
       LAYOUTS.find((item) => item.value === stored)?.value ?? DEFAULT_LAYOUT
     );
   });
   const change = (next: BoardLayout) => {
     setValue(next);
-    writeStorage(layoutKey(board), next === DEFAULT_LAYOUT ? null : next);
+    writeStorage(key, next === DEFAULT_LAYOUT ? null : next);
   };
   return [value, change];
+}
+
+/** The board's layout, remembered on this device. */
+export function useBoardLayout(
+  board: Pick<Board, "address">
+): [BoardLayout, (value: BoardLayout) => void] {
+  return useLayout(`board:${board.address}:layout`);
 }
 
 interface LayoutSwitchProps {

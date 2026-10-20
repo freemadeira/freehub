@@ -64,15 +64,17 @@ interface SortableCardProps {
   card: Card;
   index: number;
   group: string;
+  /** Tells the card apart among several boards' cards; its own id otherwise. */
+  id?: string;
 }
 
-function useSortableCard({ card, index, group }: SortableCardProps) {
+function useSortableCard({ card, index, group, id }: SortableCardProps) {
   const { canEdit } = useBoard();
   return useSortable({
     accept: "card",
     disabled: !canEdit,
     group,
-    id: card.id,
+    id: id ?? card.id,
     index,
     type: "card",
   }).ref;

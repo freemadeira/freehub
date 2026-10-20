@@ -37,17 +37,33 @@ export const SENSORS = [
   }),
 ];
 
+/** Which items share an order, and which groups an item may go into. */
+export interface DragRules<K extends string, T extends Ranked> {
+  /** Whether two items are ranked against each other; by default all of a group's are. */
+  peers?: (a: T, b: T) => boolean;
+  /** Whether the item may be dropped in the group; by default in any. */
+  accepts?: (item: T, group: K) => boolean;
+}
+
+function everyone(): boolean {
+  return true;
+}
+
 function rerank<K extends string, T extends Ranked>(
   cards: T[],
   index: number,
-  group: K
+  group: K,
+  peers: (a: T, b: T) => boolean
 ): CardMove<K, T>[] {
   const card = cards[index];
   if (!card) {
     return [];
   }
-  const before = cards[index - 1]?.rank;
-  const after = cards[index + 1]?.rank;
+  // Placed between its peers only, so the others keep their own order.
+  const ranked = cards.filter((item) => item === card || peers(item, card));
+  const at = ranked.indexOf(card);
+  const before = ranked[at - 1]?.rank;
+  const after = ranked[at + 1]?.rank;
   const rank = rankBetween(before, after);
   if (
     (before === undefined || before < rank) &&
@@ -56,11 +72,25 @@ function rerank<K extends string, T extends Ranked>(
     return [{ card, group, rank }];
   }
   // Tied or exhausted ranks leave no room in between, so space the group out again.
-  return cards.flatMap((item, position) =>
+  return ranked.flatMap((item, position) =>
     item === card || item.rank !== position + 1
       ? [{ card: item, group, rank: position + 1 }]
       : []
   );
+}
+
+/** The group an item is in, and where in it. */
+function locate<K extends string, T extends Ranked>(
+  groups: Groups<K, T>,
+  id: unknown
+): { group: K; index: number } | undefined {
+  for (const group of Object.keys(groups) as K[]) {
+    const index = groups[group].findIndex((card) => card.id === id);
+    if (index !== -1) {
+      return { group, index };
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -69,7 +99,8 @@ function rerank<K extends string, T extends Ranked>(
  */
 export function useCardDrag<K extends string, T extends Ranked = Card>(
   groups: Groups<K, T>,
-  onMove: (moves: CardMove<K, T>[]) => void
+  onMove: (moves: CardMove<K, T>[]) => void,
+  { peers = everyone, accepts }: DragRules<K, T> = {}
 ) {
   const [dragGroups, setDragGroups] = useState<Groups<K, T> | null>(null);
   const latest = useRef<Groups<K, T> | null>(null);
@@ -98,15 +129,24 @@ export function useCardDrag<K extends string, T extends Ranked = Card>(
     if (event.canceled || !final || id === undefined) {
       return;
     }
-    for (const group of Object.keys(final) as K[]) {
-      const index = final[group].findIndex((card) => card.id === id);
-      if (index !== -1) {
-        if (groups[group][index]?.id !== id) {
-          onMove(rerank(final[group], index, group));
-        }
-        return;
-      }
+    const place = locate(final, id);
+    if (place && groups[place.group][place.index]?.id !== id) {
+      onMove(rerank(final[place.group], place.index, place.group, peers));
     }
+  };
+
+  const over = (event: DragOverEvent) => {
+    const next = move(latest.current ?? groups, event);
+    const place = locate(next, event.operation.source?.id);
+    const item = place && next[place.group][place.index];
+    // Over a group it can't go to, it shows back where it started, so letting
+    // go there changes nothing. The sortable mustn't make room for it either.
+    if (accepts && item && !accepts(item, place.group)) {
+      event.preventDefault();
+      update(groups);
+      return;
+    }
+    update(next);
   };
 
   return {
@@ -115,8 +155,7 @@ export function useCardDrag<K extends string, T extends Ranked = Card>(
       onDragEnd: drop,
       onDragMove: ({ operation }: DragMoveEvent) =>
         tilt.move(operation.source?.element, operation.position.current),
-      onDragOver: (event: DragOverEvent) =>
-        update(move(latest.current ?? groups, event)),
+      onDragOver: over,
       onDragStart: start,
       sensors: SENSORS,
     },

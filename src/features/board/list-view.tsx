@@ -2,6 +2,7 @@ import { CollisionPriority } from "@dnd-kit/abstract";
 import { DragDropProvider, useDroppable } from "@dnd-kit/react";
 import { cn } from "cn";
 import { ChevronRightIcon, PlusIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { useState } from "react";
 
 import { IconButton } from "@/components/icon-button";
@@ -16,20 +17,19 @@ import { useBoard } from "@/features/board/board-context";
 import { SortableCardRow } from "@/features/board/card-tile";
 import { useStatusDrag } from "@/features/board/kanban";
 import { STATUS_STYLES } from "@/features/card/card-fields";
-import type { Board, Card, Sprint, Status } from "@/lib/model";
+import type { Card, Sprint, Status } from "@/lib/model";
 import { isClosed, STATUSES, startingStatus } from "@/lib/model";
 import { readStorage, writeStorage } from "@/lib/utils";
 
-function foldedKey(board: Pick<Board, "address">): string {
-  return `board:${board.address}:folded`;
-}
-
-/** The statuses folded away in the list, remembered on this device. */
-function useFolded(
-  board: Pick<Board, "address">
+/**
+ * The statuses folded away in a list, remembered on this device under the
+ * key given, such as `board:<address>:folded`.
+ */
+export function useFolded(
+  key: string
 ): [Set<Status>, (status: Status, open: boolean) => void] {
   const [folded, setFolded] = useState(() => {
-    const stored = readStorage(foldedKey(board))?.split(",") ?? [];
+    const stored = readStorage(key)?.split(",") ?? [];
     return new Set(
       STATUSES.flatMap(({ id }) => (stored.includes(id) ? [id] : []))
     );
@@ -42,7 +42,7 @@ function useFolded(
       next.add(status);
     }
     setFolded(next);
-    writeStorage(foldedKey(board), next.size > 0 ? [...next].join(",") : null);
+    writeStorage(key, next.size > 0 ? [...next].join(",") : null);
   };
   return [folded, change];
 }
@@ -50,20 +50,23 @@ function useFolded(
 interface GroupProps {
   status: Status;
   label: string;
-  cards: Card[];
+  count: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAdd?: () => void;
+  /** The group's cards. */
+  children: ReactNode;
 }
 
 /** A status's cards, under a header that stays in sight while they scroll by. */
-function Group({
+export function Group({
   status,
   label,
-  cards,
+  count,
   open,
   onOpenChange,
   onAdd,
+  children,
 }: GroupProps) {
   // A folded group takes no drops: the card would vanish into it mid-drag.
   const { ref } = useDroppable({
@@ -88,7 +91,7 @@ function Group({
               <Icon aria-hidden className={cn("size-4 shrink-0", className)} />
               <span className="truncate">{label}</span>
               <span className="text-muted-foreground tabular-nums">
-                {cards.length}
+                {count}
               </span>
             </CollapsibleTrigger>
           </h3>
@@ -105,14 +108,7 @@ function Group({
         {/* Reaches into the tray's padding so the cards' edges aren't clipped. */}
         <CollapsibleContent className="-mx-1.5 -mb-1.5">
           <div className="flex flex-col gap-1 px-1.5 pt-1 pb-1.5">
-            {cards.map((card, index) => (
-              <SortableCardRow
-                card={card}
-                group={status}
-                index={index}
-                key={card.id}
-              />
-            ))}
+            {children}
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -129,7 +125,7 @@ interface CardListProps {
 /** Cards in a row each, grouped by status; statuses without cards stay out. */
 export function CardList({ cards, sprint }: CardListProps) {
   const { board, canEdit, newCard } = useBoard();
-  const [folded, setOpen] = useFolded(board);
+  const [folded, setOpen] = useFolded(`board:${board.address}:folded`);
   const drag = useStatusDrag(cards);
   // Which groups show goes by the cards before the drag, so a group emptied
   // by it stays put until the drop.
@@ -161,7 +157,7 @@ export function CardList({ cards, sprint }: CardListProps) {
       <div className="flex flex-col gap-3">
         {shown.map(({ id, label }) => (
           <Group
-            cards={drag.groups[id]}
+            count={drag.groups[id].length}
             key={id}
             label={label}
             onAdd={
@@ -172,7 +168,16 @@ export function CardList({ cards, sprint }: CardListProps) {
             onOpenChange={(open) => setOpen(id, open)}
             open={!folded.has(id)}
             status={id}
-          />
+          >
+            {drag.groups[id].map((card, index) => (
+              <SortableCardRow
+                card={card}
+                group={id}
+                index={index}
+                key={card.id}
+              />
+            ))}
+          </Group>
         ))}
       </div>
     </DragDropProvider>

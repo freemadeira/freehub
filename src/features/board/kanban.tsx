@@ -1,6 +1,7 @@
 import { CollisionPriority } from "@dnd-kit/abstract";
 import { DragDropProvider, useDroppable } from "@dnd-kit/react";
 import { cn } from "cn";
+import type { ReactNode } from "react";
 
 import { useBoard } from "@/features/board/board-context";
 import { CardTile } from "@/features/board/card-tile";
@@ -14,11 +15,13 @@ import { isClosed, STATUSES } from "@/lib/model";
 interface ColumnProps {
   status: Status;
   label: string;
-  cards: Card[];
+  count: number;
   onAdd?: () => void;
+  /** The column's cards. */
+  children: ReactNode;
 }
 
-function Column({ status, label, cards, onAdd }: ColumnProps) {
+export function Column({ status, label, count, onAdd, children }: ColumnProps) {
   const { ref } = useDroppable({
     accept: "card",
     collisionPriority: CollisionPriority.Low,
@@ -34,18 +37,23 @@ function Column({ status, label, cards, onAdd }: ColumnProps) {
       <h3 className="flex h-10 shrink-0 items-center gap-2 px-3.5 pt-2 text-sm font-medium">
         <Icon aria-hidden className={cn("size-4 shrink-0", className)} />
         {label}
-        <span className="text-muted-foreground tabular-nums">
-          {cards.length}
-        </span>
+        <span className="text-muted-foreground tabular-nums">{count}</span>
       </h3>
       {/* Scrolls on its own under the header, so the page stays put. */}
       <div className="flex min-h-0 flex-col gap-2 overflow-y-auto overscroll-contain p-2">
-        {cards.map((card, index) => (
-          <CardTile card={card} group={status} index={index} key={card.id} />
-        ))}
+        {children}
         {onAdd && <AddButton label="Add card" onClick={onAdd} />}
       </div>
     </section>
+  );
+}
+
+/** The columns side by side, scrolling sideways when they don't fit. */
+export function Columns({ children }: { children: ReactNode }) {
+  return (
+    <div className="-mx-4 grid min-h-0 grow auto-cols-[minmax(17rem,1fr)] grid-flow-col grid-rows-1 gap-3 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6">
+      {children}
+    </div>
   );
 }
 
@@ -90,10 +98,10 @@ export function Kanban({ cards, sprint }: KanbanProps) {
 
   return (
     <DragDropProvider {...drag.props}>
-      <div className="-mx-4 grid min-h-0 grow auto-cols-[minmax(17rem,1fr)] grid-flow-col grid-rows-1 gap-3 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6">
+      <Columns>
         {shown.map(({ id, label }) => (
           <Column
-            cards={drag.groups[id]}
+            count={drag.groups[id].length}
             key={id}
             label={label}
             onAdd={
@@ -102,9 +110,13 @@ export function Kanban({ cards, sprint }: KanbanProps) {
                 : undefined
             }
             status={id}
-          />
+          >
+            {drag.groups[id].map((card, index) => (
+              <CardTile card={card} group={id} index={index} key={card.id} />
+            ))}
+          </Column>
         ))}
-      </div>
+      </Columns>
     </DragDropProvider>
   );
 }
