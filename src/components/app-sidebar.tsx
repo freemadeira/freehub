@@ -46,8 +46,11 @@ import {
 } from "@/components/ui/sidebar";
 import { UserMenu } from "@/components/user-menu";
 import { getConfig } from "@/config";
-import { boardPath } from "@/features/board/board-context";
-import { findBoard, parseSlug } from "@/features/board/board-route";
+import {
+  boardPath,
+  findBoard,
+  parseSlug,
+} from "@/features/board/board-context";
 import { BOARDS_PATH } from "@/features/boards/boards-page";
 import { TableIcon } from "@/features/crm/table-icon";
 import { SidebarDocs } from "@/features/docs/sidebar-docs";

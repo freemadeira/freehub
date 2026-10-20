@@ -12,6 +12,7 @@ import {
   useRef,
 } from "react";
 
+import { InternalLinks } from "@/components/markdown-editor/app-link";
 import { replaceMarkdown } from "@/components/markdown-editor/apply";
 import { MoveBlock } from "@/components/markdown-editor/block-actions";
 import { BlockHandle } from "@/components/markdown-editor/block-handle";
@@ -115,6 +116,7 @@ export function PageEditor({
     () => [
       ...CONTENT,
       MarkdownClipboard,
+      InternalLinks,
       LinkTarget,
       MoveBlock,
       SlashCommand.configure({ store: slash }),

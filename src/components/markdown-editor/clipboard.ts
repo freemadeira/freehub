@@ -3,6 +3,7 @@ import type { Node, ResolvedPos, Schema } from "@tiptap/pm/model";
 import { Fragment, Slice } from "@tiptap/pm/model";
 import { Plugin } from "@tiptap/pm/state";
 
+import { AppLink, appLinkText } from "@/components/markdown-editor/app-link";
 import {
   parseMarkdown,
   serializeMarkdown,
@@ -70,6 +71,9 @@ function textWithin(slice: Slice): Fragment | undefined {
 function leafText(node: Node): string {
   if (node.type.name === "hardBreak") {
     return "\n";
+  }
+  if (node.type.name === AppLink.name) {
+    return appLinkText(node);
   }
   return node.type.name === Mention.name ? mentionText(node) : "";
 }

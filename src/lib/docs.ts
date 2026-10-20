@@ -25,7 +25,7 @@ const EXCERPT_LENGTH = 160;
 /** Words kept before a mention in its excerpt, in characters. */
 const MENTION_LEAD = 40;
 const MARKDOWN_SYNTAX =
-  /!?\[(?<text>[^\]]*)\]\([^)]*\)|^\s{0,3}(?:#{1,6}|>|[-+*]|\d{1,9}[.)])\s+|\[[ x]\]\s|[*_~`]+|\\(?=\S)|&nbsp;/gmu;
+  /!?\[(?<text>[^\]]*)\]\([^)]*\)|<(?<address>https?:\/\/[^\s<>]+)>|^\s{0,3}(?:#{1,6}|>|[-+*]|\d{1,9}[.)])\s+|\[[ x]\]\s|[*_~`]+|\\(?=\S)|&nbsp;/gmu;
 
 /**
  * Someone the page mentions: who mentioned them, and when. It's kept from
@@ -95,7 +95,11 @@ export function isSigned(event: NostrEvent): boolean {
 
 function plainText(markdown: string): string {
   return markdown
-    .replace(MARKDOWN_SYNTAX, (_, link: string | undefined) => link ?? "")
+    .replace(
+      MARKDOWN_SYNTAX,
+      (_, text: string | undefined, address: string | undefined) =>
+        text ?? address ?? ""
+    )
     .replaceAll(/\s+/gu, " ")
     .trim();
 }

@@ -229,7 +229,7 @@ function Said({ item, pubkey }: { item: InboxItem; pubkey: string }) {
       {actor ? `${name(actor)} ${words}` : words}
       {quote && (
         <>
-          : <MentionText content={quote} />
+          : <MentionText content={quote} interactive={false} />
         </>
       )}
     </span>

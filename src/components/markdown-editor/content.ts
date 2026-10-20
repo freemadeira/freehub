@@ -9,6 +9,7 @@ import { StarterKit } from "@tiptap/starter-kit";
 import type { marked, TokenizerExtension } from "marked";
 import { Lexer, Marked } from "marked";
 
+import { AppLink } from "@/components/markdown-editor/app-link";
 import { Mention } from "@/components/markdown-editor/mention";
 
 const SCHEME = /^(?<scheme>[a-z][a-z\d+.-]*):/iu;
@@ -169,6 +170,7 @@ export const CONTENT = [
   TableKit.configure({ table: { resizable: false } }),
   WebImage.configure({ inline: true }),
   Mention,
+  AppLink,
 ];
 
 // Raw HTML stays text, as written: an HTML block reads as a paragraph and a

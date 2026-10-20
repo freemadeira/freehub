@@ -3,10 +3,11 @@ import { cn } from "cn";
 import { useEffect, useRef } from "react";
 
 import type { MarkdownViewProps } from "@/components/markdown-editor";
+import { InternalLinks } from "@/components/markdown-editor/app-link";
 import { MarkdownClipboard } from "@/components/markdown-editor/clipboard";
 import { CONTENT, parseMarkdown } from "@/components/markdown-editor/content";
 
-const EXTENSIONS = [...CONTENT, MarkdownClipboard];
+const EXTENSIONS = [...CONTENT, MarkdownClipboard, InternalLinks];
 
 export function MarkdownViewer({ value, className }: MarkdownViewProps) {
   const editor = useEditor({

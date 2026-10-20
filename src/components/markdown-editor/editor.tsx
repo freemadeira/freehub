@@ -5,6 +5,7 @@ import { cn } from "cn";
 import { useEffect, useEffectEvent, useMemo, useRef } from "react";
 
 import type { MarkdownEditorProps } from "@/components/markdown-editor";
+import { InternalLinks } from "@/components/markdown-editor/app-link";
 import { MarkdownClipboard } from "@/components/markdown-editor/clipboard";
 import {
   CONTENT,
@@ -51,6 +52,7 @@ export function MarkdownEditorView({
     () => [
       ...CONTENT,
       MarkdownClipboard,
+      InternalLinks,
       LinkTarget,
       MentionCommand.configure({ store: mentioning ? mentionMenu : null }),
       Placeholder.configure({ placeholder }),

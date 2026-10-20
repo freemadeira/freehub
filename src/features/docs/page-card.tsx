@@ -34,7 +34,7 @@ export function PageCard({
       </div>
       {excerpt && (
         <p className="text-muted-foreground line-clamp-2 text-sm">
-          <MentionText content={excerpt} />
+          <MentionText content={excerpt} interactive={false} />
         </p>
       )}
     </Link>
