@@ -107,7 +107,7 @@ Checked on this branch on 2026-10-20.
 **FreeHub:**
 
 - Merchants pack Journey stages (before this PR): Lead, Contacted, Interested, Onboarding, Accepting bitcoin (`won`), Not interested (`lost`). Stage kinds are `open`, `won`, `lost` (`src/lib/crm.ts`).
-- Changing the template only shapes **new** projects. The live Merchant adoption table needs the **Closed** (kind Lost) and **Relocated** (kind Open) options added once by a project admin in the stage options editor. The sync reads each stage's kind: `won` = accepting, `lost` = take it off BTC Map, `open` = leave it alone. The one label it reads is "Closed", exactly, which is what makes a `lost` merchant's listing get deleted rather than only lose its Bitcoin tags.
+- Changing the template only shapes **new** projects. On the live Merchant adoption table, Visitas makes sure the **Closed** (kind Lost) and **Relocated** (kind Open) options exist; the field checks that lead to a stage change (closed, moved, accepting) all happen in Visitas, and the sync only acts on the stage it finds. The sync reads each stage's kind: `won` = accepting, `lost` = take it off BTC Map, `open` = leave it alone. The one label it reads is "Closed", exactly, which is what makes a `lost` merchant's listing get deleted rather than only lose its Bitcoin tags.
 - `On BTC Map` is a checkbox on the pack. `Accepting since` and `Next follow-up` are dates.
 - The insights view counts `lost` stages as ended deals, so Closed will count there with Not interested.
 
