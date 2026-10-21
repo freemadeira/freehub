@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "connector:build": "vite build --config connector/vite.config.ts",
     "notifier:build": "vite build --config notifier/vite.config.ts",
+    "btcmap:build": "vite build --config btcmap/vite.config.ts",
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "check": "ultracite check",
