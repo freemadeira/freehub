@@ -5,6 +5,7 @@ import { PrivateKeySigner } from "applesauce-signers";
 
 import type { CrmRecord, CrmTable, Field } from "@/lib/crm";
 import { resolveProject } from "@/lib/crm";
+import { readLocation } from "@/lib/location";
 import {
   addressOf,
   COMMENT_KIND,
@@ -31,7 +32,7 @@ import {
   refKey,
 } from "./osm";
 import type { Merchant, TagChange } from "./plan";
-import { plan } from "./plan";
+import { plan, relocation } from "./plan";
 
 const TIME_ZONE = "Europe/Lisbon";
 const NIGHTLY_HOUR = 23;
@@ -174,6 +175,7 @@ async function nightly(relay: TeamRelay, config: BtcmapConfig): Promise<void> {
   const stage = table.fields.find((field) => field.type === "stage");
   const fields = {
     address: fieldNamed(table, "Address"),
+    location: table.fields.find((field) => field.type === "location"),
     onBtcMap: fieldNamed(table, "On BTC Map"),
     osm: fieldNamed(table, "OSM link"),
     website: fieldNamed(table, "Website"),
@@ -189,6 +191,8 @@ async function nightly(relay: TeamRelay, config: BtcmapConfig): Promise<void> {
   const unsplit: string[] = [];
   const checkbox: string[] = [];
   const deleted: string[] = [];
+  const moves: string[] = [];
+  const byHand: string[] = [];
   let changed = 0;
   let unchanged = 0;
   let failed = 0;
@@ -221,28 +225,46 @@ async function nightly(relay: TeamRelay, config: BtcmapConfig): Promise<void> {
     const option = stage.options.find(
       ({ id }) => id === record.values[stage.id]?.[0]
     );
+    const stageLabel = option?.label.trim().toLowerCase();
+    const pinned = readLocation(valueOf(record, fields.location));
     const merchant: Merchant = {
       address: valueOf(record, fields.address),
-      // Deleting a listing needs the stage to say exactly "Closed": a moved business is never deleted.
-      closed:
-        option?.kind === "lost" && option.label.trim().toLowerCase() === "closed",
+      // Only these exact labels delete or move a listing, so a renamed stage can't do it by accident.
+      closed: option?.kind === "lost" && stageLabel === "closed",
       lastVisit: lastVisit.get(record.id),
+      location: pinned && { lat: pinned.lat, lon: pinned.lng },
       name: record.title,
+      relocated: stageLabel === "relocated",
       stage: option?.kind,
       website: valueOf(record, fields.website),
     };
-    let deletable = false;
-    if (merchant.closed && ref.type === "node") {
+    // Deleting or moving a node is only safe when no way or relation uses it.
+    let standalone = false;
+    if (
+      ref.type === "node" &&
+      (merchant.closed || relocation(merchant, element, true)?.kind === "move")
+    ) {
       try {
         // oxlint-disable-next-line no-await-in-loop -- one OSM read at a time, per its usage policy
-        deletable = !(await nodeInUse(config.osmApi, ref));
+        standalone = !(await nodeInUse(config.osmApi, ref));
       } catch (error) {
         failed += 1;
         console.error(`${label}: ${errorMessage(error)}`);
         continue;
       }
     }
-    const result = plan(merchant, element.tags, deletable);
+    const move = relocation(merchant, element, standalone);
+    if (move?.kind === "move") {
+      const from = element.position;
+      moves.push(
+        `${label}: ${osmUrl(ref)} ${from?.lat.toFixed(6)},${from?.lon.toFixed(6)} → ${move.to.lat.toFixed(6)},${move.to.lon.toFixed(6)} (${Math.round(move.metres)} m)${move.changes.map((change) => `\n  ${describe(change)}`).join("")}`
+      );
+    } else if (move?.kind === "by hand") {
+      byHand.push(
+        `${label}: ${osmUrl(ref)}${move.metres === undefined ? " (building outline)" : ` (${Math.round(move.metres)} m away, shared node)`}`
+      );
+    }
+    const result = plan(merchant, element.tags, standalone);
     if (result.unsplitAddress) {
       unsplit.push(label);
     }
@@ -273,13 +295,15 @@ async function nightly(relay: TeamRelay, config: BtcmapConfig): Promise<void> {
     }
   };
   list("Closed: would be deleted from OSM", deleted);
+  list("Relocated: would move to the pinned location", moves);
+  list("Relocated: move by hand on OSM", byHand);
   list("No OSM link, skipped", noLink);
   list("OSM link not understood", badLink);
   list("Deleted on OSM", gone);
   list("Address not split, left alone", unsplit);
   list('"On BTC Map" would change', checkbox);
   console.log(
-    `\n${deleted.length} would be deleted, ${changed} would change, ${unchanged} already match, ${failed} failed to load.`
+    `\n${deleted.length} would be deleted, ${moves.length} would move, ${changed} would change, ${unchanged} already match, ${failed} failed to load.`
   );
 }
 

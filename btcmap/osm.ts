@@ -10,6 +10,8 @@ export interface ElementRef {
 export interface OsmElement extends ElementRef {
   version: number;
   tags: Record<string, string>;
+  /** A node's position; ways and relations have none of their own. */
+  position?: { lat: number; lon: number };
 }
 
 export interface Candidate extends ElementRef {
@@ -57,13 +59,24 @@ export async function fetchElement(
     throw new Error(`OSM ${refKey(ref)}: HTTP ${response.status}`);
   }
   const body = (await response.json()) as {
-    elements?: { version?: number; tags?: Record<string, string> }[];
+    elements?: {
+      version?: number;
+      tags?: Record<string, string>;
+      lat?: number;
+      lon?: number;
+    }[];
   };
   const element = body.elements?.[0];
   if (!element || typeof element.version !== "number") {
     throw new Error(`OSM ${refKey(ref)}: unexpected answer`);
   }
-  return { ...ref, tags: element.tags ?? {}, version: element.version };
+  const { lat, lon } = element;
+  return {
+    ...ref,
+    position: lat !== undefined && lon !== undefined ? { lat, lon } : undefined,
+    tags: element.tags ?? {},
+    version: element.version,
+  };
 }
 
 /** Whether a way or relation uses the node, in which case OSM won't let it be deleted. */

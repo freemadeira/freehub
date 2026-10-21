@@ -4,13 +4,21 @@ import type { StageKind } from "@/lib/crm";
 export interface Merchant {
   /** `won` takes bitcoin, `lost` doesn't (not interested, or closed), `open` is still being worked on. */
   stage: StageKind | undefined;
-  /** The business is gone from this address: closed or moved away. */
+  /** The business no longer exists: its listing comes off OSM. */
   closed: boolean;
+  /** The business moved: its listing follows the record's Location once the new spot is pinned. */
+  relocated: boolean;
+  location: Position | undefined;
   name: string;
   address: string;
   website: string;
   /** YYYY-MM-DD of the newest visit, Lisbon time. */
   lastVisit: string | undefined;
+}
+
+export interface Position {
+  lat: number;
+  lon: number;
 }
 
 export interface TagChange {
@@ -113,14 +121,66 @@ export function plan(
   }
   set("name", merchant.name.trim());
   set("website", merchant.website.trim());
-  const address = merchant.address.trim() ? splitAddress(merchant.address) : undefined;
-  for (const [key, value] of Object.entries(address ?? {})) {
-    set(key, value);
-  }
+  changes.push(...addressChanges(merchant.address, tags));
   return {
     ...result,
     changes,
     onBtcMap: true,
-    unsplitAddress: merchant.address.trim() !== "" && !address,
+    unsplitAddress: merchant.address.trim() !== "" && !splitAddress(merchant.address),
   };
+}
+
+/** The addr:* changes the record's Address asks for, when it splits cleanly. */
+export function addressChanges(address: string, tags: Record<string, string>): TagChange[] {
+  const parts = address.trim() ? splitAddress(address) : undefined;
+  return Object.entries(parts ?? {})
+    .filter(([key, value]) => tags[key] !== value)
+    .map(([key, value]) => ({ from: tags[key], key, to: value }));
+}
+
+/** Closer than this, the record's Location and the OSM pin are the same spot: nothing was re-pinned. */
+export const MOVE_THRESHOLD = 25;
+
+export function metresBetween(a: Position, b: Position): number {
+  const rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad;
+  const dLon = (b.lon - a.lon) * rad;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * 6_371_000 * Math.asin(Math.sqrt(h));
+}
+
+export type Move =
+  | { kind: "move"; to: Position; metres: number; changes: TagChange[] }
+  | { kind: "by hand"; metres?: number };
+
+/**
+ * Where a Relocated merchant's listing goes. Nothing until the new spot is pinned in the record
+ * (until then its Location is still the OSM pin's). Only a node nothing else uses is moved; a
+ * building outline or a shared node is left for a mapper.
+ */
+export function relocation(
+  merchant: Merchant,
+  element: { tags: Record<string, string>; position?: Position },
+  movable: boolean
+): Move | undefined {
+  if (!(merchant.relocated && merchant.location)) {
+    return undefined;
+  }
+  if (!element.position) {
+    return { kind: "by hand" };
+  }
+  const metres = metresBetween(element.position, merchant.location);
+  if (metres <= MOVE_THRESHOLD) {
+    return undefined;
+  }
+  return movable
+    ? {
+        changes: addressChanges(merchant.address, element.tags),
+        kind: "move",
+        metres,
+        to: merchant.location,
+      }
+    : { kind: "by hand", metres };
 }
