@@ -114,7 +114,7 @@ Checked on this branch on 2026-10-20.
 **Visitas** ([freemadeira/visits](https://github.com/freemadeira/visits)):
 
 - Its visit sheet writes the Journey stage when a visit is saved. A cycling button walks Lead → Contacted → Accepting bitcoin → Not interested; a separate ❌ button marks "Closed/relocated".
-- Until FreeHub has the stage, that ❌ button writes **Not interested** (`JOURNEY_LABEL.closed` in `src/lib/freehub.ts`). Once this PR is in and the live table has the option, a Visitas PR (separate repo) does two things together:
+- Until FreeHub has the stage, that ❌ button writes **Not interested** (`JOURNEY_LABEL.closed` in `src/lib/freehub.ts`). Once this PR is in and the live table has the options, Visitas (a separate repo, maintained by FREE Madeira's merchant support) changes three things together:
   1. The ❌ button splits into **Closed** and **Relocated**, writing the new FreeHub stages.
   2. Tapping **Closed** asks for confirmation first — "This removes the place from OpenStreetMap and BTC Map" — because from then on that tap leads to the listing being deleted in that night's run.
   3. **Relocated** keeps the merchant visible; the operator pins the new location and Visitas moves the OSM listing there. That's Visitas's work, not this sync's.
