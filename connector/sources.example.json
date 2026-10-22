@@ -2,7 +2,7 @@
   {
     "id": "shop",
     "type": "shopify",
-    "name": "FREE Madeira store",
+    "name": "Our store",
     "shop": "your-store.myshopify.com",
     "clientId": "${SHOPIFY_CLIENT_ID}",
     "clientSecret": "${SHOPIFY_CLIENT_SECRET}"
