@@ -195,19 +195,20 @@ It runs next to the app as its own container, built from this repository with `b
    | `RELAY_URL` | The team relay. |
    | `BTCMAP_AREA` | Where discovery looks: south, west, north and east in degrees, such as `32.55,-17.35,33.15,-16.25`. Without it, there's no discovery. |
    | `ADDRESS_FORMAT` | How records write addresses, so they can go to OpenStreetMap: `pt` reads `Rua da Carreira 12, 9000-042 Funchal`. Without it, no address goes. Other countries' formats go in `btcmap/addresses.ts`. |
-   | `TZ` | The time zone of the nightly run at 23:00 and of discovery at 9:00, such as `Atlantic/Madeira`. Defaults to UTC. |
+   | `TZ` | The time zone of the nightly run from 23:00 and of discovery from 9:00, such as `Atlantic/Madeira`. Defaults to UTC. A run that fails is tried again every 15 minutes that day. |
+   | `OSM_CONTACT` | An email or web address where OpenStreetMap can reach whoever runs the sync, sent with every request. |
    | `OSM_API`, `OVERPASS_URL` | Default to OpenStreetMap's own API and to overpass-api.de. |
 
-3. Add its npub to `connectors` in `config.json`. Once it has started, **OpenStreetMap** shows under **Connections** in each table's settings. Switch it on, then pick the fields that hold the OSM link, the stage, a relocated business's new location, the address, the website and the "On BTC Map" checkbox, and which of the stage's options mean Accepting bitcoin, Not interested, Closed and Relocated. Options left out change nothing.
+3. Add its npub to `connectors` in `config.json`. Once it has started, **OpenStreetMap** shows under **Connections** in each table's settings. Switch it on, then pick the fields that hold the OSM link, the stage, the location, a relocated business's new location, the address, the website and the "On BTC Map" checkbox, and which of the stage's options mean Accepting bitcoin, Not interested, Closed and Relocated. Options left out, or picked for two meanings, change nothing.
 
 | Stage | On OpenStreetMap |
 | --- | --- |
-| Accepting bitcoin | Adds `currency:XBT=yes`, and `check_date:currency:XBT` from the newest visit logged on the record. Fills in the website and the address when OpenStreetMap has none. |
-| Not interested | Takes off `currency:XBT`, `payment:bitcoin`, `payment:lightning`, `payment:onchain`, `payment:lightning_contactless` and the check date. |
+| Accepting bitcoin | Adds `currency:XBT=yes`, and `check_date:currency:XBT` from the newest visit logged since the record took the stage. Fills in the website and the address when OpenStreetMap has none. |
+| Not interested | Takes off `currency:XBT`, `payment:bitcoin`, `payment:lightning`, `payment:onchain` and `payment:lightning_contactless` where they say yes, with the check date. One that says no stays. |
 | Closed | Deletes the node. |
-| Relocated | Once the new location is pinned, moves the node there, with the new address. |
+| Relocated | Once the new location is pinned, moves the node there with the new address, if the node is still at the record's location. |
 
-The sync never changes a business's name, never replaces a website or address OpenStreetMap already has, and never clears a tag because a field is empty. What it can't do safely, such as deleting or moving a business drawn as an area or on a node a way uses, or moving one whose new address it can't read, it lists for a mapper to do by hand. A record whose OSM link it can't read, or that links to the same element as another record, is skipped and listed. It reads OpenStreetMap one request a second, as its usage policy asks, and the only thing it writes to the team relay is its source.
+Before changing anything, the sync checks that the element is still the record's business: its OpenStreetMap name, alone or with its branch, must be the record's title. It never changes a business's name, never replaces a website or address OpenStreetMap already has (other than a relocated business's address), and never clears a tag because a field is empty. What it can't do safely it lists for a mapper to do by hand: a business whose name doesn't match, one drawn as an area or on a node a way uses, a relocated node that isn't where the record had it, or a move whose new address it can't read. A record whose OSM link it can't read, or that links to the same element as another record in any table, is skipped and listed. It reads OpenStreetMap one request a second, as its usage policy asks, and the only thing it writes to the team relay is its source.
 
 Run `node btcmap.js nightly` or `node btcmap.js discover` inside the container to run one now. On Coolify, create it from the repository with the **Dockerfile** build pack and `btcmap/Dockerfile`, with no domain.
 
