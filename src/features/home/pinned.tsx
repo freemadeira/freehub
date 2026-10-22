@@ -1,6 +1,7 @@
 import { Combobox } from "@base-ui/react/combobox";
 import { cn } from "cn";
 import {
+  BookmarkIcon,
   PinOffIcon,
   PlusIcon,
   SearchIcon,
@@ -18,10 +19,12 @@ import { ProjectAvatar } from "@/components/project-avatar";
 import { FIELD } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { boardPath } from "@/features/board/board-context";
+import { catalogPath } from "@/features/catalogs/catalogs-context";
 import { TableIcon } from "@/features/crm/table-icon";
 import { pagePath } from "@/features/docs/docs-context";
 import { PageIcon } from "@/features/docs/page-icon";
 import { useHome } from "@/features/home/home-context";
+import type { CatalogsContent } from "@/lib/catalogs";
 import type { CrmTable } from "@/lib/crm";
 import type { DocsContent } from "@/lib/docs";
 import { pageTitle } from "@/lib/docs";
@@ -39,7 +42,7 @@ const ICON = "text-muted-foreground size-4 shrink-0";
 interface PinTarget {
   pin: Pin;
   key: string;
-  kind: "Projects" | "Boards" | "Tables" | "Pages";
+  kind: "Projects" | "Boards" | "Tables" | "Pages" | "Catalogs";
   title: string;
   /** The project it's in, if it isn't one. */
   place?: string;
@@ -54,6 +57,8 @@ interface Places {
   tables: Map<string, CrmTable[]>;
   /** Every project's pages, by project address. */
   docs: Map<string, DocsContent>;
+  /** Every project's catalogs, by project address. */
+  catalogs: Map<string, CatalogsContent>;
 }
 
 function target(fields: Omit<PinTarget, "key">): PinTarget {
@@ -61,7 +66,13 @@ function target(fields: Omit<PinTarget, "key">): PinTarget {
 }
 
 /** Everything the person could pin, projects first. */
-function pinTargets({ projects, boards, tables, docs }: Places): PinTarget[] {
+function pinTargets({
+  projects,
+  boards,
+  tables,
+  docs,
+  catalogs,
+}: Places): PinTarget[] {
   return [
     ...projects.map((project) =>
       target({
@@ -103,6 +114,18 @@ function pinTargets({ projects, boards, tables, docs }: Places): PinTarget[] {
           pin: { id: page.id, project: project.address, type: "page" },
           place: project.title,
           title: pageTitle(page),
+        })
+      )
+    ),
+    ...projects.flatMap((project) =>
+      (catalogs.get(project.address)?.catalogs ?? []).map((catalog) =>
+        target({
+          href: catalogPath(project, catalog),
+          icon: <BookmarkIcon className={ICON} />,
+          kind: "Catalogs",
+          pin: { id: catalog.id, project: project.address, type: "catalog" },
+          place: project.title,
+          title: catalog.title,
         })
       )
     ),
@@ -170,7 +193,7 @@ function PinPicker({
 }) {
   const [query, setQuery] = useState("");
   const groups: PickGroup[] = (
-    ["Projects", "Boards", "Tables", "Pages"] as const
+    ["Projects", "Boards", "Tables", "Pages", "Catalogs"] as const
   ).flatMap((kind) => {
     const items = targets.filter((item) => item.kind === kind);
     return items.length > 0 ? [{ items, value: kind }] : [];
@@ -216,7 +239,7 @@ function PinPicker({
                 autoCapitalize="off"
                 autoCorrect="off"
                 className={cn(FIELD, "h-9 pl-9")}
-                placeholder="Find a project, board, table or page…"
+                placeholder="Find a project, board, table, page or catalog…"
                 spellCheck={false}
               />
             </div>

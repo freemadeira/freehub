@@ -1,4 +1,5 @@
 import {
+  BookmarkIcon,
   BookOpenTextIcon,
   HardDriveIcon,
   HouseIcon,
@@ -13,6 +14,7 @@ import { ProjectAvatar } from "@/components/project-avatar";
 import { getConfig } from "@/config";
 import { boardPath } from "@/features/board/board-context";
 import { BOARDS_PATH } from "@/features/boards/boards-page";
+import { catalogPath } from "@/features/catalogs/catalogs-context";
 import { TableIcon } from "@/features/crm/table-icon";
 import { docsPath } from "@/features/docs/docs-context";
 import { drivePath } from "@/features/drive/drive-context";
@@ -20,14 +22,13 @@ import { FolderIcon } from "@/features/drive/file-icon";
 import { INBOX_PATH } from "@/features/inbox/inbox-page";
 import { MAP_PATH } from "@/features/map/map-path";
 import type { SearchItem } from "@/features/search/search-item";
+import { ICON } from "@/features/search/search-item";
 import type { Board } from "@/lib/model";
 import { tablePath } from "@/lib/paths";
 import type { Project } from "@/lib/project";
 import { inProject, outsideProjects } from "@/lib/project";
 import { matchScore } from "@/lib/search";
 import { SHORTCUTS } from "@/lib/shortcuts";
-
-export const ICON = "text-muted-foreground size-4 shrink-0";
 
 function boardItem(board: Board, boards: Board[], where?: string): SearchItem {
   return {
@@ -42,7 +43,7 @@ function boardItem(board: Board, boards: Board[], where?: string): SearchItem {
 
 /** The app's own pages, then every project and the places in it, as the sidebar lists them. */
 export function usePlaceItems(): SearchItem[] {
-  const { boards, drive, projects, tables } = usePlaces();
+  const { boards, catalogs, drive, projects, tables } = usePlaces();
   const pages: SearchItem[] = [
     {
       href: "/",
@@ -102,6 +103,17 @@ export function usePlaceItems(): SearchItem[] {
       if (inProject(board, project)) {
         items.push(boardItem(board, boards, where));
       }
+    }
+    for (const catalog of catalogs.get(address)?.catalogs ?? []) {
+      items.push({
+        context: where,
+        href: catalogPath(project, catalog),
+        icon: <BookmarkIcon className={ICON} />,
+        key: `catalog:${address}/${catalog.id}`,
+        keywords: "links catalog bookmarks",
+        project: address,
+        title: catalog.title,
+      });
     }
     items.push({
       context: where,

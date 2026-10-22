@@ -19,6 +19,8 @@ import {
   MemberAvatars,
 } from "@/features/boards/board-card";
 import { BoardDialog } from "@/features/boards/board-dialog";
+import { CatalogGrid } from "@/features/catalogs/catalog-card";
+import { CatalogDialog } from "@/features/catalogs/catalog-dialog";
 import { NewTableDialog } from "@/features/crm/new-table-dialog";
 import { TableIcon } from "@/features/crm/table-icon";
 import { PageGrid, useNewPage } from "@/features/docs/docs-page";
@@ -29,6 +31,7 @@ import { PinButton } from "@/features/home/pin-controls";
 import { ProjectDialog } from "@/features/projects/project-dialog";
 import { useDriveContent, useDriveMarks } from "@/hooks/use-drive";
 import { hasBlossom } from "@/lib/blossom";
+import type { CatalogsContent } from "@/lib/catalogs";
 import type { CrmRecord, CrmTable, ProjectContent } from "@/lib/crm";
 import { firstValue, stageField } from "@/lib/crm";
 import type { DocsContent } from "@/lib/docs";
@@ -210,6 +213,8 @@ function DriveSection({
 interface ProjectPageProps {
   project: Project;
   docs: DocsContent;
+  /** The project's catalogs and links. */
+  catalogs: CatalogsContent;
   projects: Project[];
   boards: Board[];
   content?: ProjectContent;
@@ -220,18 +225,21 @@ interface ProjectPageProps {
 export function ProjectPage({
   project,
   docs,
+  catalogs,
   projects,
   boards,
   content,
   loaded,
   pubkey,
 }: ProjectPageProps) {
-  const [dialog, setDialog] = useState<"settings" | "board" | "table">();
+  const [dialog, setDialog] = useState<
+    "settings" | "board" | "table" | "catalog"
+  >();
   const newPage = useNewPage(project, docs);
   const editable = canEdit(project, pubkey);
   const projectBoards = boards.filter((board) => inProject(board, project));
   const tables = content?.tables ?? [];
-  const dialogProps = (name: "settings" | "board" | "table") => ({
+  const dialogProps = (name: "settings" | "board" | "table" | "catalog") => ({
     onOpenChange: (open: boolean) => setDialog(open ? name : undefined),
     open: dialog === name,
   });
@@ -368,6 +376,25 @@ export function ProjectPage({
             </p>
           )}
         </Section>
+        <Section
+          action={
+            editable && (
+              <Button onClick={() => setDialog("catalog")} variant="outline">
+                <PlusIcon />
+                New catalog
+              </Button>
+            )
+          }
+          title="Catalogs"
+        >
+          {catalogs.catalogs.length > 0 ? (
+            <CatalogGrid content={catalogs} project={project} pubkey={pubkey} />
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              No catalogs in this project yet.
+            </p>
+          )}
+        </Section>
         {hasBlossom() && (
           <DriveSection editable={editable} project={project} pubkey={pubkey} />
         )}
@@ -385,6 +412,7 @@ export function ProjectPage({
         projects={projects}
         pubkey={pubkey}
       />
+      <CatalogDialog {...dialogProps("catalog")} project={project} />
       <NewTableDialog
         {...dialogProps("table")}
         project={project}

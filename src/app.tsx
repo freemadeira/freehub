@@ -32,6 +32,7 @@ import { SearchPage } from "@/features/search/search-page";
 import { SEARCH_PATH } from "@/features/search/search-path";
 import { AppCommandsProvider } from "@/features/shortcuts/app-commands";
 import { useBoards } from "@/hooks/use-boards";
+import { useCatalogs } from "@/hooks/use-catalogs";
 import { useDocs } from "@/hooks/use-docs";
 import { useDriveTrees } from "@/hooks/use-drive";
 import { useInbox } from "@/hooks/use-inbox";
@@ -106,6 +107,7 @@ function Workspace({ pubkey }: { pubkey: string }) {
   const { projects, loaded: projectsLoaded } = useProjects(pubkey);
   const tables = useProjectTables(projects);
   const { docs, loaded: docsLoaded } = useDocs(projects);
+  const { catalogs, loaded: catalogsLoaded } = useCatalogs(projects);
   // Only teams with somewhere to keep files have a Drive.
   const drive = hasBlossom();
   const trees = useDriveTrees(drive ? projects : []);
@@ -134,6 +136,7 @@ function Workspace({ pubkey }: { pubkey: string }) {
   const newProject = () => setCreatingProject(true);
   const places: Places = {
     boards,
+    catalogs,
     docs,
     drive: drive ? trees : undefined,
     projects,
@@ -148,6 +151,7 @@ function Workspace({ pubkey }: { pubkey: string }) {
             <AppCommandsProvider onNewProject={newProject} pubkey={pubkey}>
               <AppSidebar
                 boards={boards}
+                catalogs={catalogs}
                 docs={docs}
                 drive={drive ? trees : undefined}
                 onNewProject={newProject}
@@ -161,6 +165,7 @@ function Workspace({ pubkey }: { pubkey: string }) {
                   <Route path="/">
                     <HomePage
                       boards={boards}
+                      catalogs={catalogs}
                       docs={docs}
                       loaded={boardsLoaded && projectsLoaded}
                       onNewProject={newProject}
@@ -174,6 +179,8 @@ function Workspace({ pubkey }: { pubkey: string }) {
                       <Suspense fallback={<RouteFallback />}>
                         <ProjectRoute
                           boards={boards}
+                          catalogs={catalogs}
+                          catalogsLoaded={projectsLoaded && catalogsLoaded}
                           docs={docs}
                           docsLoaded={projectsLoaded && docsLoaded}
                           loaded={projectsLoaded}

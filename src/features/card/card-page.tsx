@@ -124,6 +124,7 @@ function DescriptionField({ card }: { card: Card }) {
       people={[...board.members, ...board.viewers].filter(
         (person) => person !== pubkey
       )}
+      refs={{ project: board.project }}
       placeholder="Add a description…"
       value={card.description}
     />
@@ -193,7 +194,7 @@ function CardReactions({
   card: Card;
   reactions?: Reaction[];
 }) {
-  const { board, canEdit } = useBoard();
+  const { board, canEdit, pubkey } = useBoard();
   if (!canEdit && reactions.length === 0) {
     return null;
   }
@@ -204,7 +205,12 @@ function CardReactions({
     // hidden focus guard before its trigger.
     <div className="-ml-2 flex flex-wrap items-center gap-1 pt-2 has-[>ul:first-child]:ml-0">
       <FluidTooltip.Group>
-        <Reactions reactions={reactions} target={target} />
+        <Reactions
+          canEdit={canEdit}
+          me={pubkey}
+          reactions={reactions}
+          target={target}
+        />
         {canEdit && <AddReaction reactions={reactions} target={target} />}
       </FluidTooltip.Group>
     </div>

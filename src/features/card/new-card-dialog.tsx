@@ -496,6 +496,7 @@ function NewCardForm({
             (person) => person !== pubkey
           )}
           placeholder="Add a description…"
+          refs={{ project: board.project }}
           value={description}
         />
       </div>

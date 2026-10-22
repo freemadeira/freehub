@@ -19,6 +19,7 @@ export const HOME_SECTIONS = [
   { id: "pinned", label: "Pinned" },
   { id: "tasks", label: "My tasks" },
   { id: "mentions", label: "Mentions" },
+  { id: "links", label: "Links" },
   { id: "projects", label: "Projects" },
 ] as const;
 
@@ -29,10 +30,10 @@ export interface SectionSetting {
   hidden: boolean;
 }
 
-/** Something pinned: a project, board or table by its address, or a doc page. */
+/** Something pinned: a project, board or table by its address, or a doc page or catalog in a project. */
 export type Pin =
   | { type: "project" | "board" | "table"; address: string }
-  | { type: "page"; project: string; id: string };
+  | { type: "page" | "catalog"; project: string; id: string };
 
 export type TaskView = "list" | "calendar";
 
@@ -97,9 +98,9 @@ const DEFAULTS: Omit<HomePrefs, "pins"> = {
 };
 
 export function pinKey(pin: Pin): string {
-  return pin.type === "page"
-    ? `page:${pin.project}:${pin.id}`
-    : `${pin.type}:${pin.address}`;
+  return "address" in pin
+    ? `${pin.type}:${pin.address}`
+    : `${pin.type}:${pin.project}:${pin.id}`;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -116,7 +117,7 @@ function strings(value: unknown): string[] {
 
 function parsePin(value: unknown): Pin | undefined {
   const { type, address, project, id } = record(value);
-  if (type === "page") {
+  if (type === "page" || type === "catalog") {
     return typeof project === "string" && typeof id === "string"
       ? { id, project, type }
       : undefined;

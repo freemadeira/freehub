@@ -7,6 +7,13 @@
  */
 import type { NostrEvent } from "applesauce-core/helpers/event";
 
+import type { Catalog, Link } from "@/lib/catalogs";
+import {
+  linkView,
+  resolveCatalogList,
+  resolveLink,
+  resolveReading,
+} from "@/lib/catalogs";
 import type { CrmRecord, CrmTable } from "@/lib/crm";
 import { resolveRecord } from "@/lib/crm";
 import type { DocPage } from "@/lib/docs";
@@ -18,16 +25,20 @@ import type { Board, Card, Membership } from "@/lib/model";
 import {
   addressedId,
   CARD_KIND,
+  CATALOG_KIND,
   CRM_RECORD_KIND,
   CRM_TABLE_KIND,
   DOC_PAGE_KIND,
   DRIVE_FILE_KIND,
   isClosed,
+  LINK_KIND,
+  READING_KIND,
   resolveCard,
 } from "@/lib/model";
 import type {
   CardNotification,
   FileNotification,
+  LinkNotification,
   Notification,
   PageNotification,
   RecordNotification,
@@ -43,12 +54,20 @@ export interface NotificationScope {
   versions: (kind: number, id: string) => NostrEvent[];
   /** A project's CRM tables. */
   tables: (project: Project) => CrmTable[];
+  /** Whose readings of links are trusted, for their titles. */
+  readers: ReadonlySet<string>;
 }
 
 export type NotificationTarget =
   | { notification: CardNotification; board: Board; card: Card }
   | { notification: PageNotification; project: Project; page: DocPage }
   | { notification: FileNotification; project: Project; file: DriveFile }
+  | {
+      notification: LinkNotification;
+      project: Project;
+      catalog: Catalog;
+      link: Link;
+    }
   | {
       notification: RecordNotification;
       project: Project;
@@ -151,6 +170,38 @@ function locateFile(
   return undefined;
 }
 
+/** The link, in its catalog, as it shows now. */
+function locateLink(
+  notification: LinkNotification,
+  recipient: string,
+  scope: NotificationScope
+): NotificationTarget | undefined {
+  const versions = scope.versions(LINK_KIND, notification.linkId);
+  for (const project of places(scope.projects, notification, recipient)) {
+    const saved = resolveLink(project, versions, notification.linkId);
+    const catalog =
+      saved &&
+      resolveCatalogList(
+        project,
+        scope.versions(CATALOG_KIND, saved.catalog)
+      ).find((item) => item.id === saved.catalog);
+    if (saved && catalog) {
+      const reading = resolveReading(
+        project,
+        scope.versions(READING_KIND, notification.linkId),
+        scope.readers
+      );
+      return {
+        catalog,
+        link: linkView(catalog, saved, reading, scope.readers.size > 0),
+        notification,
+        project,
+      };
+    }
+  }
+  return undefined;
+}
+
 function locateRecord(
   notification: RecordNotification,
   recipient: string,
@@ -195,6 +246,9 @@ export function locateNotification(
     }
     case "file": {
       return locateFile(notification, recipient, scope);
+    }
+    case "link": {
+      return locateLink(notification, recipient, scope);
     }
     default: {
       return locateRecord(notification, recipient, scope);

@@ -15,6 +15,12 @@ export const DOC_PAGE_KIND = 30_307;
 export const SOURCE_KIND = 30_308;
 export const DRIVE_FOLDER_KIND = 30_309;
 export const DRIVE_FILE_KIND = 30_310;
+/** A project's catalog of links. 30311–30313 are NIP-53's, so catalogs start at 30320. */
+export const CATALOG_KIND = 30_320;
+/** A link saved to a catalog, with what people changed about it by hand. */
+export const LINK_KIND = 30_321;
+/** What the reader service made of a link, or how sorting a catalog went. */
+export const READING_KIND = 30_322;
 /** NIP-78 app data: each person's own inbox marks, follows and devices. */
 export const APP_DATA_KIND = 30_078;
 export const COMMENT_KIND = 1111;

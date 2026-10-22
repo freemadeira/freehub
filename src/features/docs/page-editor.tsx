@@ -30,6 +30,11 @@ import {
   MentionMenuStore,
 } from "@/components/markdown-editor/mention-menu";
 import {
+  RefCommand,
+  RefMenu,
+  RefMenuStore,
+} from "@/components/markdown-editor/ref-menu";
+import {
   SlashCommand,
   SlashMenu,
   SlashMenuStore,
@@ -61,6 +66,8 @@ interface PageEditorProps {
   pubkey: string;
   /** People who can be mentioned. */
   people: string[];
+  /** Address of the project whose things "#" offers to reference. */
+  project: string;
   /**
    * Saves the text as a new version of the page, edited from `prev`.
    * `picked` are the people picked from the "@" list since the last save.
@@ -101,12 +108,14 @@ export function PageEditor({
   versions,
   pubkey,
   people,
+  project,
   onPublish,
   commands = NO_COMMANDS,
   ref,
 }: PageEditorProps) {
   const slash = useMemo(() => new SlashMenuStore(), []);
   const mentionMenu = useMemo(() => new MentionMenuStore(), []);
+  const refMenu = useMemo(() => new RefMenuStore(), []);
   const profileNames = useProfileNames(people);
   const names = mentionNames(people, profileNames);
   const toolbar = useRef<HTMLDivElement>(null);
@@ -121,9 +130,10 @@ export function PageEditor({
       MoveBlock,
       SlashCommand.configure({ store: slash }),
       MentionCommand.configure({ store: mentionMenu }),
+      RefCommand.configure({ store: refMenu }),
       Placeholder.configure({ includeChildren: true, placeholder }),
     ],
-    [slash, mentionMenu]
+    [slash, mentionMenu, refMenu]
   );
 
   const editor = useEditor({
@@ -258,6 +268,7 @@ export function PageEditor({
           <BlockHandle editor={editor} />
           <SlashMenu editor={editor} store={slash} />
           <MentionMenu editor={editor} names={names} store={mentionMenu} />
+          <RefMenu editor={editor} project={project} store={refMenu} />
           <SelectionToolbar
             editor={editor}
             onLeave={() => {

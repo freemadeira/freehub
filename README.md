@@ -5,7 +5,7 @@
 <p>Nostr-first project management, CRM, docs, files and maps</p>
 </div>
 
-Freehub is a team workspace with boards, CRM tables, docs, a Drive and a 3D map, and no backend or database. The app is a static site: every change is a signed Nostr event sent to your team's private relay, and the relay's whitelist decides who gets in.
+Freehub is a team workspace with boards, CRM tables, docs, a Drive, catalogs of links and a 3D map, and no backend or database. The app is a static site: every change is a signed Nostr event sent to your team's private relay, and the relay's whitelist decides who gets in.
 
 ## Screenshots
 
@@ -79,6 +79,7 @@ Running Freehub for your team, and how it works inside, are in the [guide](GUIDE
 - [Connectors](GUIDE.md#connectors) — feeding a store's orders into CRM tables
 - [BTC Map sync](GUIDE.md#btc-map-sync) — keeping BTC Map in line with a merchants table
 - [Notifications](GUIDE.md#notifications) — installing the app, and pushes through the notifier
+- [Reader](GUIDE.md#reader) — reading, titling and filing the links saved to catalogs
 - [How it works](GUIDE.md#how-it-works) — projects, boards, CRM, docs, saving and loading
 - [Events](GUIDE.md#events) — the Nostr kinds and tags
 - [Project layout](GUIDE.md#project-layout) — where things live in the code

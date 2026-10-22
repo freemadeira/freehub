@@ -231,6 +231,7 @@ function EditablePage({ project, docs, page, pubkey }: PageViewProps) {
           people={[...project.members, ...project.viewers].filter(
             (person) => person !== pubkey
           )}
+          project={project.address}
           pubkey={pubkey}
           ref={editor}
           versions={versions}

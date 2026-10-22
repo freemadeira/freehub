@@ -33,6 +33,7 @@ import {
   APP_DATA_KIND,
   BOARD_KIND,
   CARD_KIND,
+  CATALOG_KIND,
   COMMENT_KIND,
   CRM_RECORD_KIND,
   CRM_TABLE_KIND,
@@ -40,8 +41,10 @@ import {
   DOC_PAGE_KIND,
   DRIVE_FILE_KIND,
   isPubkey,
+  LINK_KIND,
   parseBoard,
   PROJECT_KIND,
+  READING_KIND,
 } from "@/lib/model";
 import type {
   NotificationScope,
@@ -93,6 +96,9 @@ const POINTED_AT = [
   CRM_RECORD_KIND,
   DOC_PAGE_KIND,
   DRIVE_FILE_KIND,
+  CATALOG_KIND,
+  LINK_KIND,
+  READING_KIND,
 ];
 
 interface Pending {
@@ -395,6 +401,7 @@ class Notifier {
       projects: distinctSlugs(
         theirs(PROJECT_KIND).flatMap((event) => parseProject(event) ?? [])
       ),
+      readers: new Set(this.config.reader ? [this.config.reader] : []),
       tables: (project) =>
         resolveTables(
           project,

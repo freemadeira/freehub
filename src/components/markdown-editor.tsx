@@ -24,6 +24,12 @@ export interface MarkdownEditorProps {
   onValueCommitted: (markdown: string, picked: ReadonlySet<string>) => void;
   /** People who can be mentioned with "@". Without them, "@" is just text. */
   people?: string[];
+  /**
+   * With it, "#" offers what there is to reference: catalog links, cards,
+   * doc pages, Drive files and CRM records, in the project given if any.
+   * Without it, "#" is just text.
+   */
+  refs?: { project?: string };
   /** Mod+Enter, with the markdown as it stands. */
   onSubmit?: (markdown: string) => void;
   onKeyDown?: KeyboardEventHandler<HTMLDivElement>;

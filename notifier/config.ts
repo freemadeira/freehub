@@ -1,3 +1,4 @@
+import { normalizeToPubkey } from "applesauce-core/helpers/pointers";
 import { PrivateKeySigner } from "applesauce-signers";
 
 export interface NotifierConfig {
@@ -10,6 +11,8 @@ export interface NotifierConfig {
   delay: number;
   /** Where sent notifications are remembered, so a restart doesn't repeat them. */
   stateFile: string;
+  /** The reader service, whose titles of links pushes use; none without one. */
+  reader?: string;
   port: number;
 }
 
@@ -60,12 +63,18 @@ export function loadConfig(): NotifierConfig {
     throw new ConfigError("PORT must be a port number.");
   }
   const lookup = process.env.LOOKUP_RELAYS?.trim();
+  const reader = process.env.READER_PUBKEY?.trim();
+  const readerPubkey = reader ? normalizeToPubkey(reader) : undefined;
+  if (reader && !readerPubkey) {
+    throw new ConfigError("READER_PUBKEY must be the reader's npub.");
+  }
   return {
     delay: seconds("DELAY", 30),
     lookupRelays: lookup
       ? lookup.split(/[\s,]+/u).filter(Boolean)
       : DEFAULT_LOOKUP_RELAYS,
     port,
+    reader: readerPubkey ?? undefined,
     relay: required("RELAY_URL"),
     signer,
     stateFile: process.env.STATE_FILE?.trim() || "/app/data/state.json",

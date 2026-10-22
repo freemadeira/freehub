@@ -6,6 +6,11 @@ import { TopBar } from "@/components/top-bar";
 import { buttonVariants } from "@/components/ui/button";
 import { Empty, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  CATALOGS_SEGMENT,
+  parseCatalogParam,
+} from "@/features/catalogs/catalogs-context";
+import { CatalogsView } from "@/features/catalogs/catalogs-view";
 import { TablePage } from "@/features/crm/table-page";
 import {
   DOCS_SEGMENT,
@@ -25,6 +30,8 @@ import { useProjectContent } from "@/hooks/use-project-content";
 import { useSources } from "@/hooks/use-sources";
 import { useVisit } from "@/hooks/use-visit";
 import { hasBlossom } from "@/lib/blossom";
+import type { CatalogsContent } from "@/lib/catalogs";
+import { EMPTY_CATALOGS } from "@/lib/catalogs";
 import type { DocsContent } from "@/lib/docs";
 import { EMPTY_DOCS } from "@/lib/docs";
 import type { Board } from "@/lib/model";
@@ -53,6 +60,9 @@ function usePlaceAt(
     }
     case DRIVE_SEGMENT: {
       return inside("folder", param && parseFolderParam(param));
+    }
+    case CATALOGS_SEGMENT: {
+      return inside("catalog", param && parseCatalogParam(param));
     }
     default: {
       if (param) {
@@ -98,6 +108,8 @@ interface ProjectViewProps {
   project: Project;
   /** The project's doc pages. */
   docs: DocsContent;
+  /** The project's catalogs and links. */
+  catalogs: CatalogsContent;
   projects: Project[];
   boards: Board[];
   tableSlug?: string;
@@ -208,12 +220,18 @@ function DocsView({ project, docs, loaded, pageParam, pubkey }: DocsViewProps) {
   );
 }
 
-interface ProjectRouteProps extends Omit<ProjectViewProps, "project" | "docs"> {
+interface ProjectRouteProps extends Omit<
+  ProjectViewProps,
+  "project" | "docs" | "catalogs"
+> {
   slug: string;
   loaded: boolean;
   /** Every project's doc pages, by project address. */
   docs: Map<string, DocsContent>;
   docsLoaded: boolean;
+  /** Every project's catalogs and links, by project address. */
+  catalogs: Map<string, CatalogsContent>;
+  catalogsLoaded: boolean;
 }
 
 export function ProjectRoute({
@@ -222,6 +240,8 @@ export function ProjectRoute({
   projects,
   docs,
   docsLoaded,
+  catalogs,
+  catalogsLoaded,
   ...props
 }: ProjectRouteProps) {
   const project = projects.find((item) => item.slug === slug.toLowerCase());
@@ -240,6 +260,18 @@ export function ProjectRoute({
       <Redirect replace to={`/p/${project.slug}`} />
     );
   }
+  if (project && segment === CATALOGS_SEGMENT) {
+    return (
+      <CatalogsView
+        catalogParam={props.recordId}
+        content={catalogs.get(project.address) ?? EMPTY_CATALOGS}
+        key={project.address}
+        loaded={catalogsLoaded}
+        project={project}
+        pubkey={props.pubkey}
+      />
+    );
+  }
   if (project && segment === DOCS_SEGMENT) {
     return (
       <DocsView
@@ -255,6 +287,7 @@ export function ProjectRoute({
   if (project) {
     return (
       <ProjectView
+        catalogs={catalogs.get(project.address) ?? EMPTY_CATALOGS}
         docs={docs.get(project.address) ?? EMPTY_DOCS}
         key={project.address}
         project={project}

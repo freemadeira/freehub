@@ -81,7 +81,11 @@ export type Currency = (typeof CURRENCIES)[number];
 export type ActivityType = (typeof ACTIVITY_TYPES)[number]["id"];
 
 /** Table links that project pages use for themselves, like `/p/:project/docs`. */
-export const RESERVED_TABLE_SLUGS: readonly string[] = ["docs", "drive"];
+export const RESERVED_TABLE_SLUGS: readonly string[] = [
+  "docs",
+  "drive",
+  "catalogs",
+];
 /** Every table has exactly one title field, always first. */
 export const TITLE_FIELD = "title";
 /** Stage history kept on each record, oldest dropped first. */

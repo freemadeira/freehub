@@ -26,4 +26,4 @@ jobs:
       - name: Type-check and build the app
         run: pnpm build
       - name: Build the services
-        run: pnpm connector:build && pnpm notifier:build && pnpm btcmap:build
+        run: pnpm connector:build && pnpm notifier:build && pnpm btcmap:build && pnpm reader:build

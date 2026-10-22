@@ -7,6 +7,10 @@ import { usePlaces } from "@/components/app-link";
 import { ConfirmLogout } from "@/components/user-menu";
 import { getConfig } from "@/config";
 import { editableBoards, QuickCard } from "@/features/card/quick-card";
+import {
+  SaveLinkDialog,
+  useSavableCatalogs,
+} from "@/features/catalogs/save-link-dialog";
 import { docsPath } from "@/features/docs/docs-context";
 import { drivePath } from "@/features/drive/drive-context";
 import { INBOX_PATH } from "@/features/inbox/inbox-page";
@@ -66,6 +70,7 @@ export function AppCommandsProvider({
   const [, navigate] = useLocation();
   const pending = useObservableValue(unsynced$) ?? 0;
   const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [helping, setHelping] = useState(false);
   const [leaving, setLeaving] = useState(false);
   // What had focus as a dialog opened, to give it back to as it closes. One
@@ -79,6 +84,7 @@ export function AppCommandsProvider({
   // Docs and Drive go to the project in view.
   const here = useProjectInView();
   const canAddCards = editableBoards(boards, pubkey).length > 0;
+  const canSaveLinks = useSavableCatalogs(pubkey).length > 0;
 
   const commands = useMemo<AppCommands>(() => {
     const keepOpener = () => {
@@ -176,6 +182,12 @@ export function AppCommandsProvider({
         open={creating}
         pubkey={pubkey}
       />
+      <SaveLinkDialog
+        finalFocus={returnFocus(opener)}
+        onOpenChange={setSaving}
+        open={saving}
+        pubkey={pubkey}
+      />
       <ShortcutsDialog
         finalFocus={returnFocus(opener)}
         onOpenChange={setHelping}
@@ -190,6 +202,14 @@ export function AppCommandsProvider({
           newCard: commands.newCard,
           newProject: onNewProject,
           pubkey,
+          saveLink: canSaveLinks
+            ? () => {
+                if (!palette.open) {
+                  setOpener(focusedElement());
+                }
+                setSaving(true);
+              }
+            : undefined,
           showShortcuts: commands.showShortcuts,
         }}
         finalFocus={returnFocus(opener)}

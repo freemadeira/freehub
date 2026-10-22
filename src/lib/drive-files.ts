@@ -1,9 +1,10 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { noop } from "rxjs";
 
-import { CanceledError, downloadBlob, open } from "@/lib/blossom";
+import { CanceledError, downloadBlob } from "@/lib/blossom";
 import type { DriveFile, SealedBlob } from "@/lib/drive";
 import { mimeOf } from "@/lib/drive";
+import { open } from "@/lib/sealing";
 import { errorMessage } from "@/lib/utils";
 
 /**

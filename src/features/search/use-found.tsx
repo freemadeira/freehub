@@ -8,19 +8,23 @@ import type { Places } from "@/components/app-link";
 import { usePlaces } from "@/components/app-link";
 import { boardQuery } from "@/features/board/board-context";
 import { STATUS_STYLES } from "@/features/card/card-fields";
+import { linkPath } from "@/features/catalogs/catalogs-context";
+import { PlatformIcon } from "@/features/catalogs/platform-icon";
 import { TableIcon } from "@/features/crm/table-icon";
 import { pagePath } from "@/features/docs/docs-context";
 import { PageIcon } from "@/features/docs/page-icon";
 import { fileHref } from "@/features/drive/drive-context";
 import { FileIcon } from "@/features/drive/file-icon";
-import { ICON } from "@/features/search/items";
 import type { SearchItem } from "@/features/search/search-item";
+import { ICON } from "@/features/search/search-item";
 import { useBoardContents } from "@/hooks/use-board-contents";
 import { useCardComments } from "@/hooks/use-comments";
 import { useCrmContents } from "@/hooks/use-crm-contents";
 import { useDriveContents } from "@/hooks/use-drive";
 import { useProfileNames } from "@/hooks/use-profile-names";
 import { hasBlossom } from "@/lib/blossom";
+import type { CatalogsContent } from "@/lib/catalogs";
+import { hostOf } from "@/lib/catalogs";
 import type { ProjectContent } from "@/lib/crm";
 import { recordTitle } from "@/lib/crm";
 import { plainValue } from "@/lib/crm-values";
@@ -227,6 +231,46 @@ function fileEntries(
   });
 }
 
+function linkEntries(
+  projects: Project[],
+  contents: Map<string, CatalogsContent>
+): Entry[] {
+  return projects.flatMap((project) => {
+    const content = contents.get(project.address);
+    return (content?.links ?? []).flatMap((link) => {
+      const catalog = content?.byId.get(link.catalog);
+      if (!catalog) {
+        return [];
+      }
+      // Its site as words, so `youtube` finds youtube.com.
+      const text = [
+        link.summary,
+        link.note,
+        link.byline?.name ?? "",
+        hostOf(link.url).replaceAll(".", " "),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return [
+        {
+          at: link.savedAt,
+          item: {
+            context: `${catalog.title} · ${project.title}`,
+            href: linkPath(project, catalog, link.id),
+            icon: <PlatformIcon platform={link.platform} />,
+            key: `link:${project.address}/${link.id}`,
+            project: project.address,
+            title: link.title,
+          },
+          text,
+          title: searchable(link.title),
+          words: searchable(text),
+        },
+      ];
+    });
+  });
+}
+
 /** Comments name their card by address; these find it on the boards it's on. */
 function commentEntries(
   comments: Comment[],
@@ -271,10 +315,14 @@ function commentEntries(
 
 /**
  * Everything search looks through, from what the team relays hold: every
- * card, doc page, CRM record, Drive file and card comment the user can see.
- * Comments and files load only once something searches.
+ * card, doc page, CRM record, Drive file, catalog link and card comment the
+ * user can see.
+ * Comments and files load only once something searches; `comments` false
+ * leaves comments out.
  */
-export function useSearchIndex(): { index: SearchIndex; loading: boolean } {
+export function useSearchIndex({
+  comments: withComments = true,
+}: { comments?: boolean } = {}): { index: SearchIndex; loading: boolean } {
   const places = usePlaces();
   const { boards, projects } = places;
   const { contents: cards, loaded: cardsLoaded } = useBoardContents(boards);
@@ -282,7 +330,9 @@ export function useSearchIndex(): { index: SearchIndex; loading: boolean } {
   const { contents: drive, loaded: driveLoaded } = useDriveContents(
     hasBlossom() ? projects : []
   );
-  const { comments, loaded: commentsLoaded } = useCardComments(boards);
+  const { comments, loaded: commentsLoaded } = useCardComments(
+    withComments ? boards : []
+  );
   const index = useMemo((): SearchIndex => {
     const onCards = cardPlaces(places, cards);
     const entries: Record<SearchKind, Entry[]> = {
@@ -290,6 +340,7 @@ export function useSearchIndex(): { index: SearchIndex; loading: boolean } {
       comment: commentEntries(comments, onCards, boards),
       doc: docEntries(places),
       file: fileEntries(projects, drive),
+      link: linkEntries(projects, places.catalogs),
       record: recordEntries(projects, crm),
     };
     const byCardKey = new Map<string, Entry[]>();
@@ -385,6 +436,7 @@ export function useFound(
     })),
     doc: look("doc").map((entry) => entry.item),
     file: look("file").map((entry) => entry.item),
+    link: look("link").map((entry) => entry.item),
     record: look("record").map((entry) => entry.item),
   };
 }
