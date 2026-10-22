@@ -1,6 +1,5 @@
 import { npubEncode, nsecEncode } from "applesauce-core/helpers/pointers";
 import { PrivateKeySigner } from "applesauce-signers";
-import { format } from "date-fns";
 
 import { CRM_TABLE_KIND, latest, SOURCE_KIND } from "@/lib/model";
 import { sourceTemplate } from "@/lib/sources";
@@ -9,14 +8,17 @@ import { errorMessage } from "@/lib/utils";
 
 import type { BtcmapConfig } from "./config";
 import { loadConfig } from "./config";
+import type { Run } from "./schedule";
+import { DISCOVERY_HOUR, dueRuns, NIGHTLY_HOUR } from "./schedule";
 import { SOURCE } from "./source";
 import { discover, nightly } from "./sync";
 
 type Job = (relay: TeamRelay, config: BtcmapConfig) => Promise<void>;
 
-const NIGHTLY_HOUR = 23;
-const DISCOVERY_HOUR = 9;
+const JOBS: Record<Run["job"], Job> = { discover, nightly };
 const TICK = 60_000;
+/** A run that failed is tried again this much later, while it's still due that day. */
+const RETRY = 15 * 60_000;
 
 /** Publishes the source when it changed, so tables can switch the sync on. */
 async function describe(relay: TeamRelay): Promise<void> {
@@ -55,39 +57,31 @@ async function once(job: Job): Promise<void> {
   }
 }
 
-/** The jobs due now, in the process's time zone (`TZ`). */
-function due(config: BtcmapConfig, now: Date): [string, Job][] {
-  const today = format(now, "yyyy-MM-dd");
-  const jobs: [string, Job][] = [];
-  if (now.getHours() === NIGHTLY_HOUR) {
-    jobs.push([`nightly ${today}`, nightly]);
-  }
-  const firstMonday = now.getDay() === 1 && now.getDate() <= 7;
-  if (config.area && firstMonday && now.getHours() === DISCOVERY_HOUR) {
-    jobs.push([`discover ${today}`, discover]);
-  }
-  return jobs;
-}
-
 /** Nightly, and on the first Monday of each month when there's an area to look in. */
 async function serve(): Promise<void> {
   const config = loadConfig();
   const relay = await connect(config);
   const done = new Set<string>();
+  /** Run key to when it last failed. */
+  const failed = new Map<string, number>();
   let running = false;
   const tick = async () => {
-    const jobs = due(config, new Date()).filter(([name]) => !done.has(name));
-    if (running || jobs.length === 0) {
+    const now = Date.now();
+    const runs = dueRuns(new Date(now), config.area !== undefined).filter(
+      ({ key }) => !done.has(key) && now - (failed.get(key) ?? 0) >= RETRY
+    );
+    if (running || runs.length === 0) {
       return;
     }
     running = true;
-    for (const [name, job] of jobs) {
-      done.add(name);
+    for (const { job, key } of runs) {
       try {
         // oxlint-disable-next-line no-await-in-loop -- jobs share the relay and OSM's rate limit
-        await job(relay, config);
+        await JOBS[job](relay, config);
+        done.add(key);
       } catch (error) {
-        console.error(`${name} failed: ${errorMessage(error)}`);
+        failed.set(key, Date.now());
+        console.error(`${key} failed: ${errorMessage(error)}`);
       }
     }
     running = false;

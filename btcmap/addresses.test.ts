@@ -26,6 +26,10 @@ describe("Portuguese addresses", () => {
       "Rua 5 de Outubro, 9000-123 Funchal",
       "Edifício X, Rua Y 12, 9000-123 Funchal",
       "Rua da Carreira 12, Funchal",
+      "Rua da Carreira nº 12, 9000-042 Funchal",
+      "Rua da Carreira n.º 12, 9000-042 Funchal",
+      "Avenida do Infante Loja 12, 9000-015 Funchal",
+      "Rua do Aljube Piso 2, 9000-067 Funchal",
     ]) {
       expect(read?.(text)).toBeUndefined();
     }

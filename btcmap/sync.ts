@@ -1,5 +1,4 @@
 import { getTagValue } from "applesauce-core/helpers/event";
-import { format } from "date-fns";
 
 import type { Target } from "@/lib/connected-tables";
 import { fetchRecords, findTargets } from "@/lib/connected-tables";
@@ -32,6 +31,14 @@ import {
   SOURCE,
 } from "./source";
 
+/** A table that switched the sync on, with its records. */
+interface Table {
+  target: Target;
+  mapping: Mapping;
+  /** Empty when no field holds the OSM link. */
+  records: CrmRecord[];
+}
+
 /** What a dry run found in one table, printed at its end. */
 interface Report {
   edits: string[];
@@ -51,8 +58,8 @@ interface Report {
 interface Run {
   config: BtcmapConfig;
   mapping: Mapping;
-  /** Record id to the YYYY-MM-DD of its newest visit. */
-  visits: Map<string, string>;
+  /** Record id to when each of its visits was logged, in seconds. */
+  visits: Map<string, number[]>;
   report: Report;
 }
 
@@ -86,23 +93,47 @@ function refOf(record: CrmRecord, mapping: Mapping): ElementRef | undefined {
   return parseOsmLink(osmLinkOf(record, mapping));
 }
 
-/** The tables that switched the sync on. */
-async function osmTargets(relay: TeamRelay): Promise<Target[]> {
+/** The tables that switched the sync on, with their records. */
+async function loadTables(relay: TeamRelay): Promise<Table[]> {
   const targets = await findTargets(relay);
-  return targets.filter(({ connection }) => connection.source === SOURCE.id);
+  return Promise.all(
+    targets
+      .filter(({ connection }) => connection.source === SOURCE.id)
+      .map(async (target) => {
+        const mapping = mappingOf(target.table, target.connection);
+        const records = linksOsm(mapping)
+          ? await fetchRecords(relay, target)
+          : [];
+        return { mapping, records, target };
+      })
+  );
 }
 
-/** Record id to the YYYY-MM-DD of its newest visit, from the visits logged in the project. */
-async function lastVisits(
+/** Every element the tables' records link to, with how many records link to it. */
+function linkCounts(tables: Table[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const { mapping, records } of tables) {
+    for (const record of records) {
+      const ref = refOf(record, mapping);
+      if (ref) {
+        counts.set(refKey(ref), (counts.get(refKey(ref)) ?? 0) + 1);
+      }
+    }
+  }
+  return counts;
+}
+
+/** Record id to when each visit logged in the project was, in seconds. */
+async function visitTimes(
   relay: TeamRelay,
   project: Project
-): Promise<Map<string, string>> {
+): Promise<Map<string, number[]>> {
   const comments = await relay.fetch({
     "#k": [String(CRM_RECORD_KIND)],
     authors: project.members,
     kinds: [COMMENT_KIND],
   });
-  const newest = new Map<string, number>();
+  const visits = new Map<string, number[]>();
   for (const event of comments) {
     const [kind, , id] = (getTagValue(event, "A") ?? "").split(":");
     if (
@@ -110,12 +141,10 @@ async function lastVisits(
       kind === String(CRM_RECORD_KIND) &&
       id
     ) {
-      newest.set(id, Math.max(newest.get(id) ?? 0, event.created_at));
+      visits.set(id, [...(visits.get(id) ?? []), event.created_at]);
     }
   }
-  return new Map(
-    [...newest].map(([id, at]) => [id, format(at * 1000, "yyyy-MM-dd")])
-  );
+  return visits;
 }
 
 /** Adds what the action does to the element to the report. */
@@ -164,9 +193,9 @@ async function compare(
   let element: OsmElement | "gone";
   let standalone = false;
   try {
-    element = await fetchElement(config.osmApi, ref);
+    element = await fetchElement(config.osm, ref);
     if (element !== "gone" && mayDeleteOrMove(merchant, element)) {
-      standalone = !(await nodeInUse(config.osmApi, ref));
+      standalone = !(await nodeInUse(config.osm, ref));
     }
   } catch (error) {
     report.failed += 1;
@@ -220,20 +249,22 @@ function printReport(report: Report): void {
 async function nightlyTable(
   relay: TeamRelay,
   config: BtcmapConfig,
-  target: Target
+  { mapping, records, target }: Table,
+  links: Map<string, number>
 ): Promise<void> {
-  const { table } = target;
-  const mapping = mappingOf(table, target.connection);
+  const { title } = target.table;
   if (!linksOsm(mapping)) {
     console.log(
-      `\n"${table.title}": pick its OSM link field under Connections, in the table's settings.`
+      `\n"${title}": pick its OSM link field under Connections, in the table's settings.`
     );
     return;
   }
-  const [records, visits] = await Promise.all([
-    fetchRecords(relay, target),
-    lastVisits(relay, target.project),
-  ]);
+  console.log(`\n"${title}": ${plural(records.length, "record")}.`);
+  if (mapping.conflicts.length > 0) {
+    console.log(
+      `Stage options mapped to more than one meaning, so they change nothing: ${mapping.conflicts.join(", ")}.`
+    );
+  }
   const report: Report = {
     badLink: [],
     byHand: [],
@@ -248,13 +279,8 @@ async function nightlyTable(
     unchanged: 0,
     unreadAddress: [],
   };
+  const visits = await visitTimes(relay, target.project);
   const run: Run = { config, mapping, report, visits };
-  // Records sharing an element would ask different things of it, so none of them is applied.
-  const linked = Map.groupBy(records, (record) => {
-    const ref = refOf(record, mapping);
-    return ref ? refKey(ref) : "";
-  });
-  console.log(`\n"${table.title}": ${plural(records.length, "record")}.`);
   for (const record of records) {
     const link = osmLinkOf(record, mapping);
     const ref = refOf(record, mapping);
@@ -262,7 +288,7 @@ async function nightlyTable(
       report.noLink.push(labelOf(record));
     } else if (!ref) {
       report.badLink.push(`${labelOf(record)}: ${link}`);
-    } else if ((linked.get(refKey(ref))?.length ?? 0) > 1) {
+    } else if ((links.get(refKey(ref)) ?? 0) > 1) {
       report.shared.push(`${labelOf(record)}: ${osmUrl(ref)}`);
     } else {
       // oxlint-disable-next-line no-await-in-loop -- one OSM read at a time, per its usage policy
@@ -277,26 +303,16 @@ export async function nightly(
   relay: TeamRelay,
   config: BtcmapConfig
 ): Promise<void> {
-  const targets = await osmTargets(relay);
+  const tables = await loadTables(relay);
   console.log(
-    `Dry run, nothing is written to OSM. Tables with OpenStreetMap switched on: ${targets.length}.`
+    `Dry run, nothing is written to OSM. Tables with OpenStreetMap switched on: ${tables.length}.`
   );
-  for (const target of targets) {
+  // Records sharing an element, in one table or across tables, would ask different things of it, so none of them is applied.
+  const links = linkCounts(tables);
+  for (const table of tables) {
     // oxlint-disable-next-line no-await-in-loop -- one table at a time keeps OSM reads paced and reports apart
-    await nightlyTable(relay, config, target);
+    await nightlyTable(relay, config, table, links);
   }
-}
-
-async function linkedElements(
-  relay: TeamRelay,
-  target: Target
-): Promise<string[]> {
-  const mapping = mappingOf(target.table, target.connection);
-  const records = await fetchRecords(relay, target);
-  return records.flatMap((record) => {
-    const ref = refOf(record, mapping);
-    return ref ? [refKey(ref)] : [];
-  });
 }
 
 /** Lists the merchants OSM says take bitcoin in the area that no record links to. Writes nothing. */
@@ -308,15 +324,12 @@ export async function discover(
   if (!area) {
     throw new Error("Set BTCMAP_AREA to look for merchants.");
   }
-  const [targets, elements] = await Promise.all([
-    osmTargets(relay),
-    bitcoinElements(config.overpass, area),
+  const [tables, elements] = await Promise.all([
+    loadTables(relay),
+    bitcoinElements(config.osm, area),
   ]);
-  const linked = await Promise.all(
-    targets.map((target) => linkedElements(relay, target))
-  );
-  const known = new Set(linked.flat());
-  const fresh = elements.filter((element) => !known.has(refKey(element)));
+  const links = linkCounts(tables);
+  const fresh = elements.filter((element) => !links.has(refKey(element)));
   console.log(
     `${elements.length} bitcoin merchants on OSM in the area, ${fresh.length} that no record links to.`
   );

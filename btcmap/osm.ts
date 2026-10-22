@@ -20,7 +20,13 @@ export interface Candidate extends ElementRef {
   lon: number;
 }
 
-const USER_AGENT = "Freehub-btcmap (https://github.com/freemadeira/freehub)";
+/** Where OpenStreetMap's API and Overpass are, and how the sync introduces itself to them. */
+export interface Osm {
+  api: string;
+  overpass: string;
+  userAgent: string;
+}
+
 /** Gap between OSM API reads, to stay well inside its usage policy. */
 const READ_INTERVAL = 1000;
 
@@ -41,15 +47,20 @@ export function osmUrl(ref: ElementRef): string {
   return `https://www.openstreetmap.org/${refKey(ref)}`;
 }
 
+/** One read of the OSM API, paced. */
+async function read(osm: Osm, path: string): Promise<Response> {
+  await sleep(READ_INTERVAL);
+  return fetch(`${osm.api}/api/0.6/${path}`, {
+    headers: { "User-Agent": osm.userAgent },
+  });
+}
+
 /** The element as OSM has it now, or "gone" when it was deleted. */
 export async function fetchElement(
-  api: string,
+  osm: Osm,
   ref: ElementRef
 ): Promise<OsmElement | "gone"> {
-  await sleep(READ_INTERVAL);
-  const response = await fetch(`${api}/api/0.6/${refKey(ref)}.json`, {
-    headers: { "User-Agent": USER_AGENT },
-  });
+  const response = await read(osm, `${refKey(ref)}.json`);
   if (response.status === 404 || response.status === 410) {
     return "gone";
   }
@@ -78,23 +89,13 @@ export async function fetchElement(
 }
 
 /** Whether a way or relation uses the node, in which case OSM won't let it be deleted. */
-export async function nodeInUse(
-  api: string,
-  ref: ElementRef
-): Promise<boolean> {
+export async function nodeInUse(osm: Osm, ref: ElementRef): Promise<boolean> {
   if (ref.type !== "node") {
     return true;
   }
   for (const parent of ["ways", "relations"]) {
     // oxlint-disable-next-line no-await-in-loop -- one OSM read at a time, per its usage policy
-    await sleep(READ_INTERVAL);
-    // oxlint-disable-next-line no-await-in-loop -- one OSM read at a time, per its usage policy
-    const response = await fetch(
-      `${api}/api/0.6/${refKey(ref)}/${parent}.json`,
-      {
-        headers: { "User-Agent": USER_AGENT },
-      }
-    );
+    const response = await read(osm, `${refKey(ref)}/${parent}.json`);
     if (!response.ok) {
       throw new Error(`OSM ${refKey(ref)}/${parent}: HTTP ${response.status}`);
     }
@@ -109,7 +110,7 @@ export async function nodeInUse(
 
 /** Everything in the area tagged as taking bitcoin, from the Overpass API. `area` is south,west,north,east. */
 export async function bitcoinElements(
-  overpass: string,
+  osm: Osm,
   area: string
 ): Promise<Candidate[]> {
   const query = `[out:json][timeout:90];
@@ -120,15 +121,16 @@ export async function bitcoinElements(
   nwr["payment:onchain"="yes"](${area});
 );
 out center tags;`;
-  const response = await fetch(overpass, {
+  const response = await fetch(osm.overpass, {
     body: new URLSearchParams({ data: query }),
-    headers: { "User-Agent": USER_AGENT },
+    headers: { "User-Agent": osm.userAgent },
     method: "POST",
   });
   if (!response.ok) {
     throw new Error(`Overpass: HTTP ${response.status}`);
   }
   const body = (await response.json()) as {
+    remark?: string;
     elements?: {
       type: ElementType;
       id: number;
@@ -138,6 +140,10 @@ out center tags;`;
       tags?: Record<string, string>;
     }[];
   };
+  // A query Overpass cut short still answers 200, with part of the answer and a remark.
+  if (body.remark) {
+    throw new Error(`Overpass: ${body.remark}`);
+  }
   return (body.elements ?? []).flatMap((element) => {
     const lat = element.lat ?? element.center?.lat;
     const lon = element.lon ?? element.center?.lon;

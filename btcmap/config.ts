@@ -2,12 +2,12 @@ import { PrivateKeySigner } from "applesauce-signers";
 
 import type { AddressReader } from "./addresses";
 import { ADDRESS_FORMATS } from "./addresses";
+import type { Osm } from "./osm";
 
 export interface BtcmapConfig {
   signer: PrivateKeySigner;
   relay: string;
-  osmApi: string;
-  overpass: string;
+  osm: Osm;
   /** Where discovery looks, as Overpass's south,west,north,east. Without it, there's no discovery. */
   area: string | undefined;
   /** Reads the records' addresses. Without it, no address goes to OSM. */
@@ -72,14 +72,18 @@ export function loadConfig(): BtcmapConfig {
     }
     throw new ConfigError("BTCMAP_KEY must be an nsec or a hex key.");
   }
+  const contact = optional("OSM_CONTACT");
   return {
     area: area(optional("BTCMAP_AREA")),
-    osmApi: (optional("OSM_API") ?? "https://api.openstreetmap.org").replace(
-      /\/+$/u,
-      ""
-    ),
-    overpass:
-      optional("OVERPASS_URL") ?? "https://overpass-api.de/api/interpreter",
+    osm: {
+      api: (optional("OSM_API") ?? "https://api.openstreetmap.org").replace(
+        /\/+$/u,
+        ""
+      ),
+      overpass:
+        optional("OVERPASS_URL") ?? "https://overpass-api.de/api/interpreter",
+      userAgent: contact ? `Freehub-btcmap (${contact})` : "Freehub-btcmap",
+    },
     readAddress: addressReader(optional("ADDRESS_FORMAT")),
     relay: required("RELAY_URL"),
     signer,

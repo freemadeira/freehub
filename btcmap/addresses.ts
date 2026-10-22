@@ -5,11 +5,17 @@ export type AddressReader = (
 
 const PORTUGUESE =
   /^(?<street>[^,]+?)[\s,]+(?<number>\d+[A-Za-z]?)\s*,\s*(?<postcode>\d{4}-\d{3})\s+(?<city>[^,\d]+)$/u;
+/** A word before the number that says it isn't the house number: nº 12, Loja 3, Piso 2. */
+const NOT_HOUSE_NUMBER =
+  /\s(?:n\.?º|n\.?o\.?|loja|piso|andar|lote|bloco|fra[cç][aã]o|apartamento|apt\.?)$/iu;
 
 /** "Rua da Carreira 12, 9000-042 Funchal" */
 function portuguese(text: string): Record<string, string> | undefined {
   const parts = PORTUGUESE.exec(text.trim().replaceAll(/\s+/gu, " "))?.groups;
-  if (!(parts?.street && parts.number && parts.postcode && parts.city)) {
+  if (
+    !(parts?.street && parts.number && parts.postcode && parts.city) ||
+    NOT_HOUSE_NUMBER.test(parts.street)
+  ) {
     return undefined;
   }
   return {

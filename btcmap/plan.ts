@@ -18,12 +18,16 @@ export interface Position {
 
 /** What the team's record says about a merchant, in the terms OSM needs. */
 export interface Merchant {
+  /** The record's title, the business's name. */
+  name: string;
   listing: Listing | undefined;
+  /** Where the record has the business; for a relocated one, where it was. */
+  location: Position | undefined;
   /** Where a relocated business is now, once someone pinned it. */
   newLocation: Position | undefined;
   address: string;
   website: string;
-  /** YYYY-MM-DD of the newest visit. */
+  /** YYYY-MM-DD of the newest visit since the record took its stage. */
   lastVisit: string | undefined;
 }
 
@@ -58,7 +62,7 @@ export interface Plan {
   action: Action;
   /** Whether the element takes bitcoin once the action is carried out. */
   onMap: boolean;
-  /** The record has an address the reader can't read, so it's left out. */
+  /** The plan needed the record's address, and the reader couldn't read it. */
   unreadAddress: boolean;
 }
 
@@ -68,7 +72,7 @@ export interface Context {
   readAddress: AddressReader | undefined;
 }
 
-/** Closer than this, the new location and the OSM pin are the same spot. */
+/** Closer than this, two positions are the same spot. */
 const MOVE_THRESHOLD = 25;
 
 const CURRENCY = "currency:XBT";
@@ -78,10 +82,9 @@ const PAYMENT_TAGS = [
   "payment:lightning",
   "payment:onchain",
 ];
-/** Taken off a business that doesn't accept bitcoin. Only the currency is ever added: records don't say lightning or on-chain. */
-const BITCOIN_TAGS = new Set([
+/** Only the currency is ever added: records don't say lightning or on-chain. */
+const ACCEPTANCE_TAGS = new Set([
   CURRENCY,
-  CHECK_DATE,
   ...PAYMENT_TAGS,
   "payment:lightning_contactless",
 ]);
@@ -99,6 +102,10 @@ function metresBetween(a: Position, b: Position): number {
     Math.sin(dLat / 2) ** 2 +
     Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
   return 2 * 6_371_000 * Math.asin(Math.sqrt(h));
+}
+
+function isNear(a: Position, b: Position | undefined): boolean {
+  return b !== undefined && metresBetween(a, b) <= MOVE_THRESHOLD;
 }
 
 function edit(changes: TagChange[]): Action {
@@ -119,6 +126,28 @@ function setting(
     : [];
 }
 
+function removing(tags: Record<string, string>, keys: string[]): TagChange[] {
+  return keys.flatMap((key) =>
+    tags[key] === undefined ? [] : [{ from: tags[key], key }]
+  );
+}
+
+/** The tags once the changes are made. */
+function applying(
+  tags: Record<string, string>,
+  changes: TagChange[]
+): Record<string, string> {
+  const next = new Map(Object.entries(tags));
+  for (const { key, to } of changes) {
+    if (to === undefined) {
+      next.delete(key);
+    } else {
+      next.set(key, to);
+    }
+  }
+  return Object.fromEntries(next);
+}
+
 function hasAddress(tags: Record<string, string>): boolean {
   return Object.keys(tags).some((key) => key.startsWith("addr:"));
 }
@@ -129,35 +158,70 @@ function replacingAddress(
   address: Record<string, string>
 ): TagChange[] {
   return [
-    ...Object.entries(tags)
-      .filter(([key]) => key.startsWith("addr:") && !(key in address))
-      .map(([key, from]) => ({ from, key })),
+    ...removing(
+      tags,
+      Object.keys(tags).filter(
+        (key) => key.startsWith("addr:") && !(key in address)
+      )
+    ),
     ...Object.entries(address).flatMap(([key, value]) =>
       setting(tags, key, value)
     ),
   ];
 }
 
-/** How far a relocated business's node has to go: nothing when it isn't pinned yet or is there already. */
-function moveDistance(
+/** The website as OSM takes it: a full http or https address, or nothing. */
+function webAddress(text: string): string {
+  const url = URL.parse(text.trim());
+  return url && ["http:", "https:"].includes(url.protocol) ? text.trim() : "";
+}
+
+function normalized(text: string): string {
+  return text
+    .normalize("NFD")
+    .replaceAll(/\p{M}/gu, "")
+    .toLowerCase()
+    .replaceAll(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+/**
+ * Whether the element is still the record's business: its name, alone or with
+ * its branch, is the record's title. A link to a spot another business took
+ * since must not change that business.
+ */
+function sameBusiness(
   merchant: Merchant,
-  element: Element
-): number | undefined {
-  const { newLocation } = merchant;
-  if (!(newLocation && element.position)) {
-    return undefined;
-  }
-  const metres = metresBetween(element.position, newLocation);
-  return metres > MOVE_THRESHOLD ? metres : undefined;
+  tags: Record<string, string>
+): boolean {
+  const { name = "", branch = "" } = tags;
+  const title = normalized(merchant.name);
+  return (
+    name !== "" &&
+    [name, `${name} ${branch}`].some(
+      (candidate) => normalized(candidate) === title
+    )
+  );
+}
+
+/** A relocated business's node still where the record had it, and away from where it is now. */
+function wouldMove(merchant: Merchant, element: Element): boolean {
+  const { position } = element;
+  return (
+    merchant.listing === "relocated" &&
+    element.type === "node" &&
+    position !== undefined &&
+    merchant.newLocation !== undefined &&
+    !isNear(position, merchant.newLocation) &&
+    isNear(position, merchant.location)
+  );
 }
 
 /** Whether the plan would delete or move the node if nothing else used it: only then is OSM asked. */
 export function mayDeleteOrMove(merchant: Merchant, element: Element): boolean {
   return (
-    element.type === "node" &&
-    (merchant.listing === "closed" ||
-      (merchant.listing === "relocated" &&
-        moveDistance(merchant, element) !== undefined))
+    (merchant.listing === "closed" && element.type === "node") ||
+    wouldMove(merchant, element)
   );
 }
 
@@ -176,17 +240,19 @@ function accepting(
     // The business's own details are the mappers': the record only fills in what OSM lacks.
     ...(tags.website || tags["contact:website"]
       ? []
-      : setting(tags, "website", merchant.website.trim())),
+      : setting(tags, "website", webAddress(merchant.website))),
     ...(address && !hasAddress(tags) ? replacingAddress(tags, address) : []),
   ]);
 }
 
+/** Takes off what says the business accepts bitcoin. An explicit "no" stays: it's true. */
 function declined(tags: Record<string, string>): Action {
-  return edit(
-    Object.entries(tags)
-      .filter(([key]) => BITCOIN_TAGS.has(key))
-      .map(([key, from]) => ({ from, key }))
+  const accepted = Object.keys(tags).filter(
+    (key) => ACCEPTANCE_TAGS.has(key) && tags[key] === "yes"
   );
+  return accepted.length > 0
+    ? edit(removing(tags, [...accepted, CHECK_DATE]))
+    : KEEP;
 }
 
 function closed(element: Element, standalone: boolean): Action {
@@ -205,32 +271,32 @@ function relocated(
   standalone: boolean,
   address: Record<string, string> | undefined
 ): Action {
-  const { newLocation } = merchant;
-  const from = element.position;
+  const { location, newLocation } = merchant;
+  const { position, tags } = element;
   if (!newLocation) {
     return KEEP;
   }
-  if (element.type !== "node" || !from) {
+  if (element.type !== "node" || !position) {
     return byHand("drawn as an area: move it");
   }
-  const metres = moveDistance(merchant, element);
-  if (metres === undefined) {
+  const metres = metresBetween(position, newLocation);
+  if (metres <= MOVE_THRESHOLD) {
     return KEEP;
   }
-  const away = `${Math.round(metres)} m away`;
+  const away = `${Math.round(metres)} m from its new location`;
+  // Once moved, or put right by a mapper, the node isn't where the record had it, and stays put.
+  if (!isNear(position, location)) {
+    return byHand(`${away}, and not where the record had it: check it`);
+  }
   if (!standalone) {
     return byHand(`${away}, and a way or relation uses the node: move it`);
   }
-  if (hasAddress(element.tags) && !address) {
+  const changes = address ? replacingAddress(tags, address) : [];
+  // An address that changes nothing on OSM is the old one.
+  if (hasAddress(tags) && changes.length === 0) {
     return byHand(`${away}, and its new address isn't known: move it`);
   }
-  return {
-    changes: address ? replacingAddress(element.tags, address) : [],
-    from,
-    kind: "move",
-    metres,
-    to: newLocation,
-  };
+  return { changes, from: position, kind: "move", metres, to: newLocation };
 }
 
 function actionFor(
@@ -258,25 +324,51 @@ function actionFor(
   }
 }
 
+/** The element's tags once the action is carried out, or nothing once it's deleted. */
+function tagsAfter(
+  tags: Record<string, string>,
+  action: Action
+): Record<string, string> | undefined {
+  switch (action.kind) {
+    case "delete": {
+      return undefined;
+    }
+    case "edit":
+    case "move": {
+      return applying(tags, action.changes);
+    }
+    default: {
+      return tags;
+    }
+  }
+}
+
 /** What to do to the element so it matches the merchant's record. Empty fields never clear a tag. */
 export function plan(
   merchant: Merchant,
   element: Element,
   context: Context
 ): Plan {
+  const { tags } = element;
   const typed = merchant.address.trim();
   const address = typed ? context.readAddress?.(typed) : undefined;
-  const action = actionFor(merchant, element, context, address);
-  let onMap = takesBitcoin(element.tags);
-  if (merchant.listing === "accepting") {
-    onMap = true;
-  } else if (merchant.listing === "declined" || action.kind === "delete") {
-    onMap = false;
+  let action = actionFor(merchant, element, context, address);
+  if (action.kind !== "keep" && !sameBusiness(merchant, tags)) {
+    action = byHand(
+      `OSM calls it "${tags.name ?? ""}", the record "${merchant.name}": check the link`
+    );
   }
+  const after = tagsAfter(tags, action);
+  const wantsAddress =
+    (merchant.listing === "accepting" && !hasAddress(tags)) ||
+    wouldMove(merchant, element);
   return {
     action,
-    onMap,
+    onMap: after !== undefined && takesBitcoin(after),
     unreadAddress:
-      typed !== "" && context.readAddress !== undefined && !address,
+      wantsAddress &&
+      typed !== "" &&
+      context.readAddress !== undefined &&
+      !address,
   };
 }
