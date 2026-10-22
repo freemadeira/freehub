@@ -1,14 +1,17 @@
 import { PrivateKeySigner } from "applesauce-signers";
 
-import { CRM_TABLE_KIND, isPubkey } from "@/lib/model";
+import type { AddressReader } from "./addresses";
+import { ADDRESS_FORMATS } from "./addresses";
 
 export interface BtcmapConfig {
   signer: PrivateKeySigner;
   relay: string;
-  /** Address of the merchants table, `30305:<creator pubkey>:<table id>`. */
-  table: string;
   osmApi: string;
   overpass: string;
+  /** Where discovery looks, as Overpass's south,west,north,east. Without it, there's no discovery. */
+  area: string | undefined;
+  /** Reads the records' addresses. Without it, no address goes to OSM. */
+  readAddress: AddressReader | undefined;
 }
 
 export class ConfigError extends Error {
@@ -23,14 +26,40 @@ function required(name: string): string {
   return value;
 }
 
-function tableAddress(value: string): string {
-  const [kind, creator, id] = value.split(":");
-  if (kind !== String(CRM_TABLE_KIND) || !isPubkey(creator) || !id) {
+function optional(name: string): string | undefined {
+  return process.env[name]?.trim() || undefined;
+}
+
+function area(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const edges = value.split(",").map((edge) => Number(edge.trim()));
+  const [
+    south = Number.NaN,
+    west = Number.NaN,
+    north = Number.NaN,
+    east = Number.NaN,
+  ] = edges;
+  if (edges.length !== 4 || !(south < north && west < east)) {
     throw new ConfigError(
-      `BTCMAP_TABLE must be a table address, ${CRM_TABLE_KIND}:<creator pubkey>:<table id>.`
+      "BTCMAP_AREA must be south,west,north,east in degrees."
     );
   }
-  return value;
+  return edges.join(",");
+}
+
+function addressReader(value: string | undefined): AddressReader | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const reader = ADDRESS_FORMATS.get(value.toLowerCase());
+  if (!reader) {
+    throw new ConfigError(
+      `ADDRESS_FORMAT must be one of: ${[...ADDRESS_FORMATS.keys()].join(", ")}.`
+    );
+  }
+  return reader;
 }
 
 export function loadConfig(): BtcmapConfig {
@@ -44,14 +73,15 @@ export function loadConfig(): BtcmapConfig {
     throw new ConfigError("BTCMAP_KEY must be an nsec or a hex key.");
   }
   return {
-    osmApi: (
-      process.env.OSM_API?.trim() || "https://api.openstreetmap.org"
-    ).replace(/\/+$/u, ""),
+    area: area(optional("BTCMAP_AREA")),
+    osmApi: (optional("OSM_API") ?? "https://api.openstreetmap.org").replace(
+      /\/+$/u,
+      ""
+    ),
     overpass:
-      process.env.OVERPASS_URL?.trim() ||
-      "https://overpass-api.de/api/interpreter",
+      optional("OVERPASS_URL") ?? "https://overpass-api.de/api/interpreter",
+    readAddress: addressReader(optional("ADDRESS_FORMAT")),
     relay: required("RELAY_URL"),
     signer,
-    table: tableAddress(required("BTCMAP_TABLE")),
   };
 }

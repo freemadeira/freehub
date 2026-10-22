@@ -20,10 +20,7 @@ export interface Candidate extends ElementRef {
   lon: number;
 }
 
-/** Madeira and Porto Santo: south, west, north, east. */
-const MADEIRA_BBOX = "32.55,-17.35,33.15,-16.25";
-const USER_AGENT =
-  "FreeHub-btcmap (FREE Madeira; github.com/freemadeira/freehub)";
+const USER_AGENT = "Freehub-btcmap (https://github.com/freemadeira/freehub)";
 /** Gap between OSM API reads, to stay well inside its usage policy. */
 const READ_INTERVAL = 1000;
 
@@ -110,14 +107,17 @@ export async function nodeInUse(
   return false;
 }
 
-/** Everything in Madeira tagged as taking bitcoin, from the Overpass API. */
-export async function bitcoinElements(overpass: string): Promise<Candidate[]> {
+/** Everything in the area tagged as taking bitcoin, from the Overpass API. `area` is south,west,north,east. */
+export async function bitcoinElements(
+  overpass: string,
+  area: string
+): Promise<Candidate[]> {
   const query = `[out:json][timeout:90];
 (
-  nwr["currency:XBT"="yes"](${MADEIRA_BBOX});
-  nwr["payment:bitcoin"="yes"](${MADEIRA_BBOX});
-  nwr["payment:lightning"="yes"](${MADEIRA_BBOX});
-  nwr["payment:onchain"="yes"](${MADEIRA_BBOX});
+  nwr["currency:XBT"="yes"](${area});
+  nwr["payment:bitcoin"="yes"](${area});
+  nwr["payment:lightning"="yes"](${area});
+  nwr["payment:onchain"="yes"](${area});
 );
 out center tags;`;
   const response = await fetch(overpass, {

@@ -1,24 +1,38 @@
-import type { StageKind } from "@/lib/crm";
+import type { AddressReader } from "./addresses";
+import type { ElementType } from "./osm";
 
-/** What the team's records say about a merchant, in the terms OSM needs. */
-export interface Merchant {
-  /** `won` takes bitcoin, `lost` doesn't (not interested, or closed), `open` is still being worked on. */
-  stage: StageKind | undefined;
-  /** The business no longer exists: its listing comes off OSM. */
-  closed: boolean;
-  /** The business moved: its listing follows the record's Location once the new spot is pinned. */
-  relocated: boolean;
-  location: Position | undefined;
-  name: string;
-  address: string;
-  website: string;
-  /** YYYY-MM-DD of the newest visit, Lisbon time. */
-  lastVisit: string | undefined;
-}
+/** What a record's stage means on OSM, as its table maps the stage's options. */
+export const LISTINGS = [
+  "accepting",
+  "declined",
+  "closed",
+  "relocated",
+] as const;
+
+export type Listing = (typeof LISTINGS)[number];
 
 export interface Position {
   lat: number;
   lon: number;
+}
+
+/** What the team's record says about a merchant, in the terms OSM needs. */
+export interface Merchant {
+  listing: Listing | undefined;
+  /** Where a relocated business is now, once someone pinned it. */
+  newLocation: Position | undefined;
+  address: string;
+  website: string;
+  /** YYYY-MM-DD of the newest visit. */
+  lastVisit: string | undefined;
+}
+
+/** The OSM element as the rules need it. */
+export interface Element {
+  type: ElementType;
+  tags: Record<string, string>;
+  /** A node's position. */
+  position?: Position;
 }
 
 export interface TagChange {
@@ -27,138 +41,57 @@ export interface TagChange {
   to?: string;
 }
 
+export type Action =
+  | { kind: "keep" }
+  | { kind: "edit"; changes: TagChange[] }
+  | { kind: "delete" }
+  | {
+      kind: "move";
+      from: Position;
+      to: Position;
+      metres: number;
+      changes: TagChange[];
+    }
+  | { kind: "by hand"; reason: string };
+
 export interface Plan {
-  changes: TagChange[];
-  /** Delete the whole element from OSM: a closed business on a node nothing else uses. */
-  deleteElement: boolean;
-  /** Whether the element takes bitcoin once the changes are made. */
-  onBtcMap: boolean;
-  /** The address is set but couldn't be split into OSM's parts. */
-  unsplitAddress: boolean;
+  action: Action;
+  /** Whether the element takes bitcoin once the action is carried out. */
+  onMap: boolean;
+  /** The record has an address the reader can't read, so it's left out. */
+  unreadAddress: boolean;
 }
 
-// Only the currency: records don't say lightning vs. on-chain, and OSM often does (a `payment:onchain=no` must stay).
-const BITCOIN_TAGS: Record<string, string> = { "currency:XBT": "yes" };
+export interface Context {
+  /** The element is a node no way or relation uses, so it can be deleted or moved. */
+  standalone: boolean;
+  readAddress: AddressReader | undefined;
+}
+
+/** Closer than this, the new location and the OSM pin are the same spot. */
+const MOVE_THRESHOLD = 25;
+
+const CURRENCY = "currency:XBT";
 const CHECK_DATE = "check_date:currency:XBT";
-const REMOVED_TAGS = new Set([
-  ...Object.keys(BITCOIN_TAGS),
+const PAYMENT_TAGS = [
+  "payment:bitcoin",
   "payment:lightning",
   "payment:onchain",
-  "payment:bitcoin",
-  "payment:lightning_contactless",
+];
+/** Taken off a business that doesn't accept bitcoin. Only the currency is ever added: records don't say lightning or on-chain. */
+const BITCOIN_TAGS = new Set([
+  CURRENCY,
   CHECK_DATE,
+  ...PAYMENT_TAGS,
+  "payment:lightning_contactless",
 ]);
+const KEEP: Action = { kind: "keep" };
 
-/** What an element that can't be deleted keeps once its business closed: the premises, not the business. */
-const KEPT_WHEN_CLOSED = /^(?:addr:|building|level|entrance|indoor)/u;
-
-const ADDRESS =
-  /^(?<street>[^,]+?)[\s,]+(?<number>\d+[A-Za-z]?)\s*,\s*(?<postcode>\d{4}-\d{3})\s+(?<city>[^,\d]+)$/u;
-
-/** A Portuguese address as OSM's addr:* parts, when it has the usual shape. */
-export function splitAddress(text: string): Record<string, string> | undefined {
-  const parts = ADDRESS.exec(text.trim().replaceAll(/\s+/gu, " "))?.groups;
-  if (!(parts?.street && parts.number && parts.postcode && parts.city)) {
-    return undefined;
-  }
-  return {
-    "addr:city": parts.city.trim(),
-    "addr:housenumber": parts.number,
-    "addr:postcode": parts.postcode,
-    "addr:street": parts.street.trim(),
-  };
+function takesBitcoin(tags: Record<string, string>): boolean {
+  return [CURRENCY, ...PAYMENT_TAGS].some((key) => tags[key] === "yes");
 }
 
-export function takesBitcoin(tags: Record<string, string>): boolean {
-  return [
-    "currency:XBT",
-    "payment:bitcoin",
-    "payment:lightning",
-    "payment:onchain",
-  ].some((key) => tags[key] === "yes");
-}
-
-function removing(
-  tags: Record<string, string>,
-  keep: (key: string) => boolean
-): TagChange[] {
-  return Object.entries(tags)
-    .filter(([key]) => !keep(key))
-    .map(([key, value]) => ({ from: value, key }));
-}
-
-/** The addr:* changes the record's Address asks for, when it splits cleanly. */
-export function addressChanges(
-  address: string,
-  tags: Record<string, string>
-): TagChange[] {
-  const parts = address.trim() ? splitAddress(address) : undefined;
-  return Object.entries(parts ?? {})
-    .filter(([key, value]) => tags[key] !== value)
-    .map(([key, value]) => ({ from: tags[key], key, to: value }));
-}
-
-/**
- * What to do to the element so it matches the merchant's record. Empty fields never clear a tag.
- * `deletable`: the element is a node no way or relation uses, so a closed business can be deleted outright.
- */
-export function plan(
-  merchant: Merchant,
-  tags: Record<string, string>,
-  deletable = false
-): Plan {
-  const result = {
-    deleteElement: false,
-    onBtcMap: false,
-    unsplitAddress: false,
-  };
-  if (merchant.closed) {
-    // Closed or moved away: the listing comes off OSM. A building or shared node stays, without the business.
-    return deletable
-      ? { ...result, changes: [], deleteElement: true }
-      : {
-          ...result,
-          changes: removing(tags, (key) => KEPT_WHEN_CLOSED.test(key)),
-        };
-  }
-  if (merchant.stage === "lost") {
-    return {
-      ...result,
-      changes: removing(tags, (key) => !REMOVED_TAGS.has(key)),
-    };
-  }
-  if (merchant.stage !== "won") {
-    return { ...result, changes: [], onBtcMap: takesBitcoin(tags) };
-  }
-  const changes: TagChange[] = [];
-  const set = (key: string, value: string) => {
-    if (value && tags[key] !== value) {
-      changes.push({ from: tags[key], key, to: value });
-    }
-  };
-  for (const [key, value] of Object.entries(BITCOIN_TAGS)) {
-    set(key, value);
-  }
-  const checked = tags[CHECK_DATE];
-  if (merchant.lastVisit && !(checked && checked >= merchant.lastVisit)) {
-    set(CHECK_DATE, merchant.lastVisit);
-  }
-  set("name", merchant.name.trim());
-  set("website", merchant.website.trim());
-  changes.push(...addressChanges(merchant.address, tags));
-  return {
-    ...result,
-    changes,
-    onBtcMap: true,
-    unsplitAddress:
-      merchant.address.trim() !== "" && !splitAddress(merchant.address),
-  };
-}
-
-/** Closer than this, the record's Location and the OSM pin are the same spot: nothing was re-pinned. */
-export const MOVE_THRESHOLD = 25;
-
-export function metresBetween(a: Position, b: Position): number {
+function metresBetween(a: Position, b: Position): number {
   const rad = Math.PI / 180;
   const dLat = (b.lat - a.lat) * rad;
   const dLon = (b.lon - a.lon) * rad;
@@ -168,36 +101,182 @@ export function metresBetween(a: Position, b: Position): number {
   return 2 * 6_371_000 * Math.asin(Math.sqrt(h));
 }
 
-export type Move =
-  | { kind: "move"; to: Position; metres: number; changes: TagChange[] }
-  | { kind: "by hand"; metres?: number };
+function edit(changes: TagChange[]): Action {
+  return changes.length > 0 ? { changes, kind: "edit" } : KEEP;
+}
 
-/**
- * Where a Relocated merchant's listing goes. Nothing until the new spot is pinned in the record
- * (until then its Location is still the OSM pin's). Only a node nothing else uses is moved; a
- * building outline or a shared node is left for a mapper.
- */
-export function relocation(
+function byHand(reason: string): Action {
+  return { kind: "by hand", reason };
+}
+
+function setting(
+  tags: Record<string, string>,
+  key: string,
+  value: string
+): TagChange[] {
+  return value && tags[key] !== value
+    ? [{ from: tags[key], key, to: value }]
+    : [];
+}
+
+function hasAddress(tags: Record<string, string>): boolean {
+  return Object.keys(tags).some((key) => key.startsWith("addr:"));
+}
+
+/** The element's addr:* tags swapped for the address's. */
+function replacingAddress(
+  tags: Record<string, string>,
+  address: Record<string, string>
+): TagChange[] {
+  return [
+    ...Object.entries(tags)
+      .filter(([key]) => key.startsWith("addr:") && !(key in address))
+      .map(([key, from]) => ({ from, key })),
+    ...Object.entries(address).flatMap(([key, value]) =>
+      setting(tags, key, value)
+    ),
+  ];
+}
+
+/** How far a relocated business's node has to go: nothing when it isn't pinned yet or is there already. */
+function moveDistance(
   merchant: Merchant,
-  element: { tags: Record<string, string>; position?: Position },
-  movable: boolean
-): Move | undefined {
-  if (!(merchant.relocated && merchant.location)) {
+  element: Element
+): number | undefined {
+  const { newLocation } = merchant;
+  if (!(newLocation && element.position)) {
     return undefined;
   }
-  if (!element.position) {
-    return { kind: "by hand" };
+  const metres = metresBetween(element.position, newLocation);
+  return metres > MOVE_THRESHOLD ? metres : undefined;
+}
+
+/** Whether the plan would delete or move the node if nothing else used it: only then is OSM asked. */
+export function mayDeleteOrMove(merchant: Merchant, element: Element): boolean {
+  return (
+    element.type === "node" &&
+    (merchant.listing === "closed" ||
+      (merchant.listing === "relocated" &&
+        moveDistance(merchant, element) !== undefined))
+  );
+}
+
+function accepting(
+  merchant: Merchant,
+  tags: Record<string, string>,
+  address: Record<string, string> | undefined
+): Action {
+  const { lastVisit } = merchant;
+  const checked = tags[CHECK_DATE];
+  return edit([
+    ...setting(tags, CURRENCY, "yes"),
+    ...(lastVisit && !(checked && checked >= lastVisit)
+      ? setting(tags, CHECK_DATE, lastVisit)
+      : []),
+    // The business's own details are the mappers': the record only fills in what OSM lacks.
+    ...(tags.website || tags["contact:website"]
+      ? []
+      : setting(tags, "website", merchant.website.trim())),
+    ...(address && !hasAddress(tags) ? replacingAddress(tags, address) : []),
+  ]);
+}
+
+function declined(tags: Record<string, string>): Action {
+  return edit(
+    Object.entries(tags)
+      .filter(([key]) => BITCOIN_TAGS.has(key))
+      .map(([key, from]) => ({ from, key }))
+  );
+}
+
+function closed(element: Element, standalone: boolean): Action {
+  if (element.type !== "node") {
+    return byHand("drawn as an area: take the business off it");
   }
-  const metres = metresBetween(element.position, merchant.location);
-  if (metres <= MOVE_THRESHOLD) {
-    return undefined;
+  if (!standalone) {
+    return byHand("a way or relation uses the node: take the business off it");
   }
-  return movable
-    ? {
-        changes: addressChanges(merchant.address, element.tags),
-        kind: "move",
-        metres,
-        to: merchant.location,
-      }
-    : { kind: "by hand", metres };
+  return { kind: "delete" };
+}
+
+function relocated(
+  merchant: Merchant,
+  element: Element,
+  standalone: boolean,
+  address: Record<string, string> | undefined
+): Action {
+  const { newLocation } = merchant;
+  const from = element.position;
+  if (!newLocation) {
+    return KEEP;
+  }
+  if (element.type !== "node" || !from) {
+    return byHand("drawn as an area: move it");
+  }
+  const metres = moveDistance(merchant, element);
+  if (metres === undefined) {
+    return KEEP;
+  }
+  const away = `${Math.round(metres)} m away`;
+  if (!standalone) {
+    return byHand(`${away}, and a way or relation uses the node: move it`);
+  }
+  if (hasAddress(element.tags) && !address) {
+    return byHand(`${away}, and its new address isn't known: move it`);
+  }
+  return {
+    changes: address ? replacingAddress(element.tags, address) : [],
+    from,
+    kind: "move",
+    metres,
+    to: newLocation,
+  };
+}
+
+function actionFor(
+  merchant: Merchant,
+  element: Element,
+  { standalone }: Context,
+  address: Record<string, string> | undefined
+): Action {
+  switch (merchant.listing) {
+    case "accepting": {
+      return accepting(merchant, element.tags, address);
+    }
+    case "declined": {
+      return declined(element.tags);
+    }
+    case "closed": {
+      return closed(element, standalone);
+    }
+    case "relocated": {
+      return relocated(merchant, element, standalone, address);
+    }
+    default: {
+      return KEEP;
+    }
+  }
+}
+
+/** What to do to the element so it matches the merchant's record. Empty fields never clear a tag. */
+export function plan(
+  merchant: Merchant,
+  element: Element,
+  context: Context
+): Plan {
+  const typed = merchant.address.trim();
+  const address = typed ? context.readAddress?.(typed) : undefined;
+  const action = actionFor(merchant, element, context, address);
+  let onMap = takesBitcoin(element.tags);
+  if (merchant.listing === "accepting") {
+    onMap = true;
+  } else if (merchant.listing === "declined" || action.kind === "delete") {
+    onMap = false;
+  }
+  return {
+    action,
+    onMap,
+    unreadAddress:
+      typed !== "" && context.readAddress !== undefined && !address,
+  };
 }

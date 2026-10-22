@@ -23,6 +23,7 @@ import { parseColor } from "@/lib/palette";
 
 /** Which field types each attribute type can fill, the best fit first. */
 const COMPATIBLE = {
+  checkbox: ["checkbox"],
   currency: ["currency", "number"],
   date: ["date"],
   email: ["email", "text"],
