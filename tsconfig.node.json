@@ -16,5 +16,12 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts", "connector/vite.config.ts"]
+  "include": [
+    "vite.config.ts",
+    "vite.service.ts",
+    "vitest.config.ts",
+    "connector/vite.config.ts",
+    "notifier/vite.config.ts",
+    "btcmap/vite.config.ts"
+  ]
 }
