@@ -413,6 +413,17 @@ export function newer(a: NostrEvent, b: NostrEvent): boolean {
   );
 }
 
+/** The newest of the events, as `newer` decides. */
+export function latest(events: NostrEvent[]): NostrEvent | undefined {
+  let found: NostrEvent | undefined;
+  for (const event of events) {
+    if (!found || newer(event, found)) {
+      found = event;
+    }
+  }
+  return found;
+}
+
 export function nextCreatedAt(previous?: NostrEvent): number {
   return previous ? Math.max(unixNow(), previous.created_at + 1) : unixNow();
 }
@@ -501,18 +512,18 @@ export function latestVersions(
   kind: number,
   authors: Set<string>
 ): Map<string, NostrEvent> {
-  const latest = new Map<string, NostrEvent>();
+  const newest = new Map<string, NostrEvent>();
   for (const event of events) {
     const id = getTagValue(event, "d");
     if (event.kind !== kind || !id || !authors.has(event.pubkey)) {
       continue;
     }
-    const current = latest.get(id);
+    const current = newest.get(id);
     if (!current || newer(event, current)) {
-      latest.set(id, event);
+      newest.set(id, event);
     }
   }
-  return latest;
+  return newest;
 }
 
 /** One card's newest version on the board, unless it was deleted. */
