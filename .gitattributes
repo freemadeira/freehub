@@ -1,0 +1,2 @@
+# LF in every checkout, Windows too, so the format check reads the same everywhere.
+* text=auto eol=lf
