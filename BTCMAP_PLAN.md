@@ -155,6 +155,7 @@ Checked on this branch, 2026-10-20 and 2026-10-21.
    3. `node btcmap/dist/btcmap.js nightly` and `node btcmap/dist/btcmap.js discover`. With no command it waits for its schedule.
 
    Checked against live OSM data: Ciao Pizzeria's node (Closed: deleted, nothing else uses it; Not interested: only the Bitcoin tags removed; Relocated: no move while the pin is unchanged, a move with the new address once pinned ~200 m away, "by hand" if the node were shared), an A Confeitaria node (only the check date and name change; its `payment:onchain=no` stays), and the Overpass query (167 bitcoin merchants in Madeira on 2026-10-21).
+
 3. **Writes on a short allowlist.** Ciao Pizza and the linked A Confeitaria records only. Check the result on OSM and, after its import, on BTC Map.
 4. **Everything.** Allowlist removed; nightly run and monthly discovery on.
 
