@@ -488,3 +488,39 @@
   background: color-mix(in oklab, var(--primary) 85%, var(--foreground));
   pointer-events: none;
 }
+
+/* A link still being read: a soft sheen passing over where its picture and
+   words will be. */
+@layer components {
+  .link-reading {
+    position: relative;
+    overflow: hidden;
+    background: color-mix(in oklab, var(--foreground) 5%, transparent);
+
+    &::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        100deg,
+        transparent 20%,
+        color-mix(in oklab, var(--foreground) 7%, transparent) 50%,
+        transparent 80%
+      );
+      translate: -100% 0;
+      animation: link-reading 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      &::after {
+        display: none;
+      }
+    }
+  }
+
+  @keyframes link-reading {
+    to {
+      translate: 100% 0;
+    }
+  }
+}

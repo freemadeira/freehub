@@ -129,6 +129,9 @@ export function notificationWords(
         }
       }
     }
+    case "link": {
+      return notification.reason === "comment" ? "commented" : "mentioned you";
+    }
     case "record": {
       if (notification.reason === "mention" || !("table" in target)) {
         return "mentioned you";
@@ -163,7 +166,7 @@ export function notificationQuote(
   return "content" in notification ? notification.content : undefined;
 }
 
-/** What the notification is about: the card by its key and title, or the page, file or record by name. */
+/** What the notification is about: the card by its key and title, or the page, file, link or record by name. */
 export function notificationTitle(target: NotificationTarget): string {
   if ("card" in target) {
     return `${cardKey(target.board, target.card)} ${target.card.title || "Untitled"}`;
@@ -173,6 +176,9 @@ export function notificationTitle(target: NotificationTarget): string {
   }
   if ("file" in target) {
     return target.file.name;
+  }
+  if ("link" in target) {
+    return target.link.title;
   }
   return recordTitle(target.record);
 }

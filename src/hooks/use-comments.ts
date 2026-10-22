@@ -22,18 +22,19 @@ export interface CardThread {
 }
 
 /**
- * Every comment the boards' members wrote on cards, for search. Comments name
- * their card, not its board, so they're asked for by author and matched to
- * cards afterwards. Activity shares the thread and is left out.
+ * Every comment these people wrote on things of one kind, like cards, for
+ * search. Comments name what they're on, not where it sits, so they're asked
+ * for by author and matched afterwards. Activity shares the thread and is
+ * left out.
  */
-export function useCardComments(boards: Board[]): {
-  comments: Comment[];
-  loaded: boolean;
-} {
-  const members = [...new Set(boards.flatMap((board) => board.members))];
-  const key = members.toSorted().join(",");
+export function useCommentsOn(
+  kind: number,
+  people: string[]
+): { comments: Comment[]; loaded: boolean } {
+  const members = [...new Set(people)];
+  const key = `${kind}:${members.toSorted().join(",")}`;
   const filters = [
-    { "#K": [String(CARD_KIND)], authors: members, kinds: [COMMENT_KIND] },
+    { "#K": [String(kind)], authors: members, kinds: [COMMENT_KIND] },
   ];
   const loaded = useObservableValue(
     () =>
@@ -66,6 +67,17 @@ export function useCardComments(boards: Board[]): {
     [key]
   );
   return { comments: comments ?? [], loaded: loaded ?? false };
+}
+
+/** Every comment the boards' members wrote on cards, for search. */
+export function useCardComments(boards: Board[]): {
+  comments: Comment[];
+  loaded: boolean;
+} {
+  return useCommentsOn(
+    CARD_KIND,
+    boards.flatMap((board) => board.members)
+  );
 }
 
 /** The card's comments and activity, which share its NIP-22 thread. */

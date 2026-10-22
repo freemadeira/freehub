@@ -2,6 +2,9 @@ import type { ReactNode } from "react";
 
 import type { Keys } from "@/lib/shortcuts";
 
+/** How an item's icon sits beside its title. */
+export const ICON = "text-muted-foreground size-4 shrink-0";
+
 /** Something search can open: a place in the app, or something found in one. */
 export interface SearchItem {
   /** Its kind and id, which no other item in a list shares. */

@@ -18,6 +18,11 @@ import {
   MentionMenuStore,
 } from "@/components/markdown-editor/mention-menu";
 import {
+  RefCommand,
+  RefMenu,
+  RefMenuStore,
+} from "@/components/markdown-editor/ref-menu";
+import {
   hideSelectionToolbar,
   LinkTarget,
   SelectionToolbar,
@@ -42,9 +47,12 @@ export function MarkdownEditorView({
   placeholder = "",
   className,
   people,
+  refs,
   "aria-label": label,
 }: MarkdownEditorProps) {
   const mentionMenu = useMemo(() => new MentionMenuStore(), []);
+  const refMenu = useMemo(() => new RefMenuStore(), []);
+  const referencing = refs !== undefined;
   const mentioning = people !== undefined;
   const profileNames = useProfileNames(people ?? []);
   const names = mentionNames(people ?? [], profileNames);
@@ -55,9 +63,10 @@ export function MarkdownEditorView({
       InternalLinks,
       LinkTarget,
       MentionCommand.configure({ store: mentioning ? mentionMenu : null }),
+      RefCommand.configure({ store: referencing ? refMenu : null }),
       Placeholder.configure({ placeholder }),
     ],
-    [placeholder, mentioning, mentionMenu]
+    [placeholder, mentioning, mentionMenu, referencing, refMenu]
   );
   // The value from outside, as editor content and as the markdown that saves.
   const incoming = useMemo(() => {
@@ -195,6 +204,9 @@ export function MarkdownEditorView({
       )}
       {editor && mentioning && (
         <MentionMenu editor={editor} names={names} store={mentionMenu} />
+      )}
+      {editor && referencing && (
+        <RefMenu editor={editor} project={refs.project} store={refMenu} />
       )}
     </>
   );

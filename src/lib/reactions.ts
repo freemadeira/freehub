@@ -2,8 +2,11 @@ import type { NostrEvent } from "applesauce-core/helpers/event";
 import { getTagValue, isAddressableKind } from "applesauce-core/helpers/event";
 import type { Filter } from "applesauce-core/helpers/filter";
 
+import type { Link } from "@/lib/catalogs";
+import { linkAddresses } from "@/lib/catalogs";
 import type { Board, Card, Comment, Template } from "@/lib/model";
 import { cardCommentAddresses, DELETE_KIND, REACTION_KIND } from "@/lib/model";
+import type { Project } from "@/lib/project";
 
 /** Different emoji one card or comment can be reacted with. */
 export const MAX_REACTION_KINDS = 20;
@@ -59,6 +62,18 @@ export function cardReactionTarget(board: Board, card: Card): ReactionTarget {
     event: card.event,
     filter: { "#a": cardCommentAddresses(board, card), kinds: [REACTION_KIND] },
     id: card.id,
+  };
+}
+
+/** A link, by its address on every member's version, as a card is. */
+export function linkReactionTarget(
+  project: Pick<Project, "members">,
+  link: Pick<Link, "id" | "event">
+): ReactionTarget {
+  return {
+    event: link.event,
+    filter: { "#a": linkAddresses(project, link), kinds: [REACTION_KIND] },
+    id: link.id,
   };
 }
 

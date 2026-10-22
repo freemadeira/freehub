@@ -28,6 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/user-avatar";
 import { OPENED_FROM_BOARD } from "@/features/board/board-context";
 import { PRIORITY_STYLES, STATUS_STYLES } from "@/features/card/card-fields";
+import { PlatformIcon } from "@/features/catalogs/platform-icon";
 import { TableIcon } from "@/features/crm/table-icon";
 import { REVEAL_MENTION } from "@/features/docs/docs-context";
 import { PageIcon } from "@/features/docs/page-icon";
@@ -86,6 +87,9 @@ function newsIcon(
     return {
       icon: notification.reason === "assigned" ? UserPlusIcon : AtSignIcon,
     };
+  }
+  if (notification.type === "link" && notification.reason === "comment") {
+    return { icon: MessageSquareIcon };
   }
   if (notification.type !== "card") {
     return { icon: AtSignIcon };
@@ -155,9 +159,23 @@ function Who({ item, pubkey }: { item: InboxItem; pubkey: string }) {
   );
 }
 
-/** What it's about: the card by its key and title, or the page, file or record by its icon and name. */
+/** What it's about: the card by its key and title, or the page, file, link or record by its icon and name. */
 function Subject({ item, read }: { item: InboxItem; read: boolean }) {
   const title = cn("truncate", !read && "text-foreground font-medium");
+  if ("link" in item) {
+    return (
+      <>
+        <PlatformIcon
+          className="size-3.5 self-center"
+          platform={item.link.platform}
+        />
+        <span className={title}>{item.link.title}</span>
+        <span className="text-muted-foreground truncate text-xs">
+          {item.catalog.title}
+        </span>
+      </>
+    );
+  }
   if ("file" in item) {
     return (
       <>

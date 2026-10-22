@@ -1,6 +1,6 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { cn } from "cn";
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 
 const ITEM =
@@ -165,6 +165,50 @@ function DropdownMenuShortcut({ className, ...props }: ComponentProps<"kbd">) {
   );
 }
 
+function DropdownMenuSub({ ...props }: MenuPrimitive.SubmenuRoot.Props) {
+  return <MenuPrimitive.SubmenuRoot data-slot="dropdown-menu-sub" {...props} />;
+}
+
+/** An item opening a menu of its own beside it, marked with a chevron. */
+function DropdownMenuSubTrigger({
+  className,
+  children,
+  ...props
+}: MenuPrimitive.SubmenuTrigger.Props) {
+  return (
+    <MenuPrimitive.SubmenuTrigger
+      className={cn(
+        ITEM,
+        "data-popup-open:bg-accent data-popup-open:text-accent-foreground",
+        className
+      )}
+      data-slot="dropdown-menu-sub-trigger"
+      {...props}
+    >
+      {children}
+      <ChevronRightIcon className="text-muted-foreground ml-auto" />
+    </MenuPrimitive.SubmenuTrigger>
+  );
+}
+
+function DropdownMenuSubContent({
+  align = "start",
+  alignOffset = -4,
+  side = "inline-end",
+  sideOffset = 2,
+  ...props
+}: ComponentProps<typeof DropdownMenuContent>) {
+  return (
+    <DropdownMenuContent
+      align={align}
+      alignOffset={alignOffset}
+      side={side}
+      sideOffset={sideOffset}
+      {...props}
+    />
+  );
+}
+
 export {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -175,6 +219,9 @@ export {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 };

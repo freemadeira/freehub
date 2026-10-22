@@ -19,6 +19,7 @@ import { fileKind, formatDuration, KIND_LABELS } from "@/lib/drive";
 import { addFileComment, deleteFileComment } from "@/lib/drive-actions";
 import { encodeMentions } from "@/lib/mentions";
 import type { Comment as FileComment } from "@/lib/model";
+import { encodeRefs } from "@/lib/refs";
 import { formatBytes } from "@/lib/utils";
 
 const APPLE = /Mac|iPhone|iPad/u.test(navigator.userAgent);
@@ -154,7 +155,7 @@ function Comment({ comment }: { comment: FileComment }) {
 function Composer({ file }: { file: DriveFile }) {
   const { pubkey, project } = useDrive();
   // Kept when the preview closes, until it's sent.
-  const [{ text, picked }, setDraft] = useLocalDraft(
+  const [{ text, picked, refs }, setDraft] = useLocalDraft(
     draftKey(pubkey, "file-comment", file.id),
     parseDraft,
     isEmptyDraft
@@ -162,10 +163,10 @@ function Composer({ file }: { file: DriveFile }) {
   const ready = text.trim() !== "";
 
   const send = () => {
-    const content = encodeMentions(text.trim(), picked);
+    const content = encodeRefs(encodeMentions(text.trim(), picked), refs);
     if (content) {
       addFileComment(file, content);
-      setDraft({ picked: [], text: "" });
+      setDraft({ picked: [], refs: [], text: "" });
     }
   };
 
@@ -197,6 +198,9 @@ function Composer({ file }: { file: DriveFile }) {
             picked: [...draft.picked, mention],
           }))
         }
+        onRef={(ref) =>
+          setDraft((draft) => ({ ...draft, refs: [...draft.refs, ref] }))
+        }
         onValueChange={(value) =>
           setDraft((draft) => ({ ...draft, text: value }))
         }
@@ -204,7 +208,8 @@ function Composer({ file }: { file: DriveFile }) {
         people={[...project.members, ...project.viewers].filter(
           (person) => person !== pubkey
         )}
-        placeholder="Comment… @ to mention"
+        placeholder="Comment… @ to mention, # to link"
+        refs={{ project: project.address }}
         rows={1}
         value={text}
       />

@@ -28,9 +28,10 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useOpenPalette } from "@/features/palette/palette-context";
-import { ICON, matching, usePlaceItems } from "@/features/search/items";
+import { matching, usePlaceItems } from "@/features/search/items";
 import { useRecentItems } from "@/features/search/recent-items";
 import type { SearchGroup, SearchItem } from "@/features/search/search-item";
+import { ICON } from "@/features/search/search-item";
 import { SearchList } from "@/features/search/search-list";
 import type { SearchChip } from "@/features/search/search-path";
 import { searchQuery } from "@/features/search/search-path";
@@ -52,6 +53,7 @@ const KINDS: Record<SearchKind, { label: string; plural: string }> = {
   comment: { label: "Comments", plural: "comments" },
   doc: { label: "Docs", plural: "docs" },
   file: { label: "Files", plural: "files" },
+  link: { label: "Links", plural: "links" },
   record: { label: "Records", plural: "records" },
 };
 

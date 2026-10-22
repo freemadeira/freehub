@@ -22,6 +22,7 @@
     "vitest.config.ts",
     "connector/vite.config.ts",
     "notifier/vite.config.ts",
-    "btcmap/vite.config.ts"
+    "btcmap/vite.config.ts",
+    "reader/vite.config.ts"
   ]
 }

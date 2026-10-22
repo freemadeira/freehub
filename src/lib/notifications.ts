@@ -30,6 +30,7 @@ import {
   isClosed,
   isDeleted,
   isPubkey,
+  LINK_KIND,
   parseStatus,
   PROJECT_KIND,
   toSubscriber,
@@ -91,6 +92,15 @@ export interface FileNotification extends NotificationFields {
   content: string;
 }
 
+/** Someone mentioned the recipient in a comment on a catalog's link, or commented on one they saved. */
+export interface LinkNotification extends NotificationFields {
+  type: "link";
+  /** The link's `d` tag; its project comes from the link itself. */
+  linkId: string;
+  reason: "mention" | "comment";
+  content: string;
+}
+
 /** What happened on a CRM record. */
 export type RecordNews =
   /** An entry logged on the record mentions the recipient. */
@@ -110,6 +120,7 @@ export type Notification =
   | CardNotification
   | PageNotification
   | FileNotification
+  | LinkNotification
   | RecordNotification;
 
 export interface NotificationRule {
@@ -267,6 +278,31 @@ const fileMention: NotificationRule = {
   filters: commentFilters(DRIVE_FILE_KIND),
 };
 
+/** A comment on a link: news to whoever it mentions, and to whoever saved the link. */
+const linkThread: NotificationRule = {
+  derive(event, recipient) {
+    const linkId = commentedOn(event, LINK_KIND);
+    if (!linkId || event.pubkey === recipient) {
+      return;
+    }
+    const fields = {
+      actor: event.pubkey,
+      content: event.content,
+      createdAt: event.created_at,
+      id: event.id,
+      linkId,
+      type: "link",
+    } as const;
+    if (mentions(event.content, recipient)) {
+      return { ...fields, direct: true, reason: "mention" };
+    }
+    return toSubscriber(event, recipient)
+      ? { ...fields, direct: false, reason: "comment" }
+      : undefined;
+  },
+  filters: commentFilters(LINK_KIND),
+};
+
 const recordThread: NotificationRule = {
   derive(event, recipient) {
     const recordId = commentedOn(event, CRM_RECORD_KIND);
@@ -344,6 +380,7 @@ export const NOTIFICATION_RULES: readonly NotificationRule[] = [
   dueSoon,
   docMention,
   fileMention,
+  linkThread,
   recordThread,
 ];
 
@@ -399,6 +436,9 @@ export function notificationSubject(notification: Notification): string {
     }
     case "file": {
       return subjectOf(DRIVE_FILE_KIND, notification.fileId);
+    }
+    case "link": {
+      return subjectOf(LINK_KIND, notification.linkId);
     }
     default: {
       return subjectOf(CRM_RECORD_KIND, notification.recordId);

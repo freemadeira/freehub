@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.service.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.reader.tsbuildinfo"
+  },
+  "include": ["reader"],
+  "exclude": ["reader/vite.config.ts", "reader/dist"]
+}

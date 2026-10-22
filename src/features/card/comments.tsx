@@ -31,6 +31,8 @@ import { encodeMentions } from "@/lib/mentions";
 import type { Card, Comment } from "@/lib/model";
 import type { Reaction } from "@/lib/reactions";
 import { commentReactionTarget, NO_REACTIONS } from "@/lib/reactions";
+import type { PickedRef } from "@/lib/refs";
+import { encodeRefs } from "@/lib/refs";
 
 function DeleteComment({ comment }: { comment: Comment }) {
   const [open, setOpen] = useState(false);
@@ -76,7 +78,7 @@ export function CommentEntry({
   own: boolean;
   reactions?: Reaction[];
 }) {
-  const { canEdit } = useBoard();
+  const { canEdit, pubkey } = useBoard();
   const { name } = useProfile(comment.author);
   const signed = comment.event.sig !== "";
   const target = commentReactionTarget(comment);
@@ -110,7 +112,12 @@ export function CommentEntry({
           <MentionText content={comment.content} />
         </p>
         <FluidTooltip.Group>
-          <Reactions reactions={reactions} target={target} />
+          <Reactions
+            canEdit={canEdit}
+            me={pubkey}
+            reactions={reactions}
+            target={target}
+          />
         </FluidTooltip.Group>
       </div>
     </li>
@@ -121,6 +128,8 @@ export interface Draft {
   text: string;
   /** Who was picked from the list, so their `@Name` still mentions them. */
   picked: Mention[];
+  /** What was picked to reference, so its `#Label` still goes to it. */
+  refs: PickedRef[];
 }
 
 function isMention(value: unknown): value is Mention {
@@ -134,10 +143,23 @@ function isMention(value: unknown): value is Mention {
   );
 }
 
+function isPickedRef(value: unknown): value is PickedRef {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "label" in value &&
+    typeof value.label === "string" &&
+    "url" in value &&
+    typeof value.url === "string"
+  );
+}
+
 export function parseDraft(saved: unknown): Draft {
   const fields = draftFields(saved);
   return {
     picked: Array.isArray(fields.picked) ? fields.picked.filter(isMention) : [],
+    // Missing from drafts kept before things could be referenced.
+    refs: Array.isArray(fields.refs) ? fields.refs.filter(isPickedRef) : [],
     text: draftText(fields.text),
   };
 }
@@ -149,17 +171,17 @@ export function isEmptyDraft({ text }: Draft): boolean {
 export function Composer({ card }: { card: Card }) {
   const { board, pubkey } = useBoard();
   // Kept when the card closes, until it's sent.
-  const [{ text, picked }, setDraft] = useLocalDraft(
+  const [{ text, picked, refs }, setDraft] = useLocalDraft(
     draftKey(pubkey, "comment", card.id),
     parseDraft,
     isEmptyDraft
   );
 
   const send = () => {
-    const content = encodeMentions(text.trim(), picked);
+    const content = encodeRefs(encodeMentions(text.trim(), picked), refs);
     if (content) {
       addComment(board, card, content);
-      setDraft({ picked: [], text: "" });
+      setDraft({ picked: [], refs: [], text: "" });
     }
   };
 
@@ -185,6 +207,9 @@ export function Composer({ card }: { card: Card }) {
             picked: [...draft.picked, mention],
           }))
         }
+        onRef={(ref) =>
+          setDraft((draft) => ({ ...draft, refs: [...draft.refs, ref] }))
+        }
         onValueChange={(value) =>
           setDraft((draft) => ({ ...draft, text: value }))
         }
@@ -192,7 +217,8 @@ export function Composer({ card }: { card: Card }) {
         people={[...board.members, ...board.viewers].filter(
           (person) => person !== pubkey
         )}
-        placeholder="Add a comment… Type @ to mention someone."
+        placeholder="Add a comment… Type @ to mention someone, # to link."
+        refs={{ project: board.project }}
         value={text}
       />
       {text.trim() && (

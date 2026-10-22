@@ -1,4 +1,5 @@
 import {
+  BookmarkIcon,
   ChevronRightIcon,
   HouseIcon,
   InboxIcon,
@@ -52,6 +53,8 @@ import { UserMenu } from "@/components/user-menu";
 import { getConfig } from "@/config";
 import { boardPath, useOpenBoard } from "@/features/board/board-context";
 import { BOARDS_PATH } from "@/features/boards/boards-page";
+import { countNew } from "@/features/catalogs/catalog-context";
+import { catalogPath } from "@/features/catalogs/catalogs-context";
 import { TableIcon } from "@/features/crm/table-icon";
 import { SidebarDocs } from "@/features/docs/sidebar-docs";
 import { SidebarDrive } from "@/features/drive/sidebar-drive";
@@ -60,6 +63,10 @@ import { INBOX_PATH } from "@/features/inbox/inbox-page";
 import { MAP_PATH } from "@/features/map/map-path";
 import { SEARCH_PATH } from "@/features/search/search-path";
 import { useAppCommands } from "@/features/shortcuts/app-commands";
+import { useCatalogMarks } from "@/hooks/use-catalogs";
+import type { CatalogsDoc } from "@/lib/catalog-marks";
+import type { CatalogsContent } from "@/lib/catalogs";
+import { EMPTY_CATALOGS } from "@/lib/catalogs";
 import type { CrmTable } from "@/lib/crm";
 import type { DocsContent } from "@/lib/docs";
 import { EMPTY_DOCS } from "@/lib/docs";
@@ -99,7 +106,8 @@ function sidebarPins(
   projects: Project[],
   boards: Board[],
   tables: Map<string, CrmTable[]>,
-  docs: Map<string, DocsContent>
+  docs: Map<string, DocsContent>,
+  catalogs: Map<string, CatalogsContent>
 ): Map<string, Pin> {
   const pins: Pin[] = [
     ...projects.map((project): Pin => ({
@@ -113,6 +121,13 @@ function sidebarPins(
     ...[...docs].flatMap(([project, content]) =>
       content.pages.map((page): Pin => ({ id: page.id, project, type: "page" }))
     ),
+    ...[...catalogs].flatMap(([project, content]) =>
+      content.catalogs.map((catalog): Pin => ({
+        id: catalog.id,
+        project,
+        type: "catalog",
+      }))
+    ),
   ];
   return new Map(pins.map((pin) => [pinKey(pin), pin]));
 }
@@ -121,6 +136,10 @@ interface ProjectItemProps {
   project: Project;
   tables: CrmTable[];
   docs: DocsContent;
+  /** This project's catalogs and links. */
+  catalogs: CatalogsContent;
+  /** What the person has seen of catalogs, for how many links are new to them. */
+  marks: CatalogsDoc;
   /** This project's Drive folders, or nothing when the team keeps no files. */
   drive?: DriveTree;
   /** This project's boards. */
@@ -138,6 +157,8 @@ function ProjectItem({
   project,
   tables,
   docs,
+  catalogs,
+  marks,
   drive,
   boards,
   allBoards,
@@ -203,6 +224,39 @@ function ProjectItem({
               </SidebarMenuSubButton>
             </SidebarMenuSubItem>
           ))}
+          {catalogs.catalogs.map((catalog) => {
+            const href = catalogPath(project, catalog);
+            const fresh = countNew(
+              catalog,
+              catalogs.linksIn.get(catalog.id) ?? [],
+              marks,
+              pubkey
+            );
+            return (
+              <SidebarMenuSubItem key={catalog.id}>
+                <SidebarMenuSubButton
+                  data-pin={pinKey({
+                    id: catalog.id,
+                    project: project.address,
+                    type: "catalog",
+                  })}
+                  isActive={location === href}
+                  render={<NavLink href={href} />}
+                >
+                  <BookmarkIcon />
+                  <span>{catalog.title}</span>
+                  {fresh > 0 && (
+                    <span
+                      aria-label={`${fresh} new`}
+                      className="text-primary ml-auto text-xs font-medium tabular-nums"
+                    >
+                      {fresh > MAX_BADGE ? `${MAX_BADGE}+` : fresh}
+                    </span>
+                  )}
+                </SidebarMenuSubButton>
+              </SidebarMenuSubItem>
+            );
+          })}
           <SidebarDocs
             canEdit={canEdit(project, pubkey)}
             docs={docs}
@@ -227,6 +281,8 @@ interface AppSidebarProps {
   tables: Map<string, CrmTable[]>;
   /** Every project's doc pages, by project address. */
   docs: Map<string, DocsContent>;
+  /** Every project's catalogs and links, by project address. */
+  catalogs: Map<string, CatalogsContent>;
   /** Every project's Drive folders, by project address; none when the team keeps no files. */
   drive?: Map<string, DriveTree>;
   pubkey: string;
@@ -240,6 +296,7 @@ export function AppSidebar({
   projects,
   tables,
   docs,
+  catalogs,
   drive,
   pubkey,
   unread,
@@ -257,7 +314,8 @@ export function AppSidebar({
   }, [storageKey, opened]);
 
   const looseBoards = outsideProjects(boards, projects);
-  const pins = sidebarPins(projects, boards, tables, docs);
+  const pins = sidebarPins(projects, boards, tables, docs, catalogs);
+  const marks = useCatalogMarks(pubkey);
   const [menuFor, setMenuFor] = useState<{ pin: Pin; href: string }>();
 
   const isOpen = (project: Project): boolean =>
@@ -400,6 +458,7 @@ export function AppSidebar({
                   <ProjectItem
                     allBoards={boards}
                     boards={projectBoards}
+                    catalogs={catalogs.get(project.address) ?? EMPTY_CATALOGS}
                     docs={docs.get(project.address) ?? EMPTY_DOCS}
                     drive={
                       drive
@@ -409,6 +468,7 @@ export function AppSidebar({
                     key={project.address}
                     openBoard={openBoard}
                     location={location}
+                    marks={marks}
                     onOpenChange={(open) =>
                       setOpened({ ...opened, [project.address]: open })
                     }

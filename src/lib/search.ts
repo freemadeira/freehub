@@ -12,6 +12,7 @@ export const SEARCH_KINDS = [
   "doc",
   "record",
   "file",
+  "link",
   "comment",
 ] as const;
 export type SearchKind = (typeof SEARCH_KINDS)[number];
@@ -25,6 +26,7 @@ export const PLACE_KINDS = [
   "table",
   "record",
   "folder",
+  "catalog",
 ] as const;
 export type PlaceKind = (typeof PLACE_KINDS)[number];
 

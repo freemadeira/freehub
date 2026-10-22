@@ -1,6 +1,7 @@
 import { Autocomplete } from "@base-ui/react/autocomplete";
 import type { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import {
+  BookmarkPlusIcon,
   CheckIcon,
   FilePlusIcon,
   FolderOpenIcon,
@@ -26,13 +27,9 @@ import { useSidebar } from "@/components/ui/sidebar";
 import { pagePath } from "@/features/docs/docs-context";
 import { usePageCommandGroups } from "@/features/palette/page-commands";
 import type { PaletteStart, Picker } from "@/features/palette/palette-context";
-import {
-  distinct,
-  ICON,
-  matching,
-  usePlaceItems,
-} from "@/features/search/items";
+import { distinct, matching, usePlaceItems } from "@/features/search/items";
 import { useRecentItems } from "@/features/search/recent-items";
+import { ICON } from "@/features/search/search-item";
 import type {
   SearchGroup,
   SearchItem,
@@ -59,6 +56,8 @@ export interface PaletteCommands {
   canAddCards: boolean;
   newCard: () => void;
   newProject: () => void;
+  /** Only when there's a catalog the person can save links to. */
+  saveLink?: () => void;
   showShortcuts: () => void;
   logOut: () => void;
   /** The project in view: where Docs, Drive and new pages go. */
@@ -78,7 +77,7 @@ const THEMES: { value: Theme; label: string; icon: ReactNode }[] = [
 ];
 
 /** Kinds of items found in what the team wrote, whose searches are worth keeping. */
-const FOUND = /^(?:card|doc|record|file|comment):/u;
+const FOUND = /^(?:card|doc|record|file|link|comment):/u;
 
 function few(items: SearchItem[]): SearchItem[] {
   return items.slice(0, FEW);
@@ -142,6 +141,16 @@ function useAppGroups(
         navigate(pagePath(here, { id, title: "" }));
       },
       title: "New page",
+    });
+  }
+  if (commands.saveLink) {
+    create.push({
+      icon: <BookmarkPlusIcon className={ICON} />,
+      key: "save-link",
+      keywords:
+        "add bookmark catalog url youtube tiktok video post article paste",
+      run: commands.saveLink,
+      title: "Save link…",
     });
   }
   create.push({
@@ -274,6 +283,7 @@ function useFoundGroups(
     { items: few(found.doc), label: "Docs", value: "docs" },
     { items: few(found.record), label: "Records", value: "records" },
     { items: few(found.file), label: "Files", value: "files" },
+    { items: few(found.link), label: "Links", value: "links" },
     { items: few(found.comment), label: "Comments", value: "comments" },
     {
       items: [

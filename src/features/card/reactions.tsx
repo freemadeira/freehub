@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { EmojiPicker } from "@/components/emoji-picker";
 import { IconButton } from "@/components/icon-button";
 import { FluidTooltip } from "@/components/ui/fluid-tooltip";
-import { useBoard } from "@/features/board/board-context";
 import { useProfileNames } from "@/hooks/use-profile-names";
 import { setReaction } from "@/lib/actions";
 import type { Reaction, ReactionTarget } from "@/lib/reactions";
@@ -17,14 +16,22 @@ const NAMES = new Intl.ListFormat("en", { style: "long", type: "conjunction" });
 const PILL =
   "flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium tabular-nums transition-[background-color,box-shadow,scale,opacity] duration-150 ease-out outline-none focus-visible:ring-3 focus-visible:ring-ring/50 starting:scale-90 starting:opacity-0";
 
+/** Who's looking, and whether they may react. */
+interface Viewer {
+  canEdit: boolean;
+  /** Their pubkey. */
+  me: string;
+}
+
 function ReactionPill({
   reaction,
   target,
-}: {
+  canEdit,
+  me: pubkey,
+}: Viewer & {
   reaction: Reaction;
   target: ReactionTarget;
 }) {
-  const { canEdit, pubkey } = useBoard();
   const names = useProfileNames(reaction.people);
   const mine = reaction.people.includes(pubkey);
   // Who reacted, you first.
@@ -70,14 +77,15 @@ function ReactionPill({
 }
 
 /**
- * The reactions to a card or a comment, as pills that add or take back yours.
+ * The reactions to a card, a link or a comment, as pills that add or take back yours.
  * Goes inside a FluidTooltip.Group.
  */
 export function Reactions({
   reactions,
   target,
   className,
-}: {
+  ...viewer
+}: Viewer & {
   reactions: Reaction[];
   target: ReactionTarget;
   className?: string;
@@ -92,14 +100,14 @@ export function Reactions({
     >
       {reactions.map((reaction) => (
         <li key={reaction.emoji}>
-          <ReactionPill reaction={reaction} target={target} />
+          <ReactionPill {...viewer} reaction={reaction} target={target} />
         </li>
       ))}
     </ul>
   );
 }
 
-/** A smiley that picks an emoji to react to a card or a comment with. */
+/** A smiley that picks an emoji to react to a card, a link or a comment with. */
 export function AddReaction({
   reactions,
   target,

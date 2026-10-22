@@ -1,4 +1,5 @@
 /** Where a notification leads. No browser APIs here: the notifier links there too. */
+import { linkPath } from "@/features/catalogs/catalogs-context";
 import { pagePath } from "@/features/docs/docs-context";
 import { fileHref } from "@/features/drive/drive-context";
 import type { NotificationTarget } from "@/lib/notification-targets";
@@ -10,6 +11,9 @@ export function notificationPath(target: NotificationTarget): string {
   }
   if ("file" in target) {
     return fileHref(target.project, target.file);
+  }
+  if ("link" in target) {
+    return linkPath(target.project, target.catalog, target.link.id);
   }
   if ("record" in target) {
     return recordPath(target.project, target.table, target.record);

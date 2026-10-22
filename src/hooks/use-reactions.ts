@@ -21,20 +21,27 @@ function lastTag(event: NostrEvent, name: string): string | undefined {
   return event.tags.findLast(([tag]) => tag === name)?.[1];
 }
 
+/** Something reactions are on: its id, its address under every member, and who those are. */
+export interface ReactedTo {
+  id: string;
+  kind: number;
+  addresses: string[];
+  members: string[];
+  /** Changes when any of the above do. */
+  key: string;
+}
+
 /**
- * The reactions to a card and to its comments, by the card's or comment's
- * id. Only members' count, as with everything on the board.
+ * The reactions to a card or link and to its comments, by the card's, link's
+ * or comment's id. Only members' count, as with everything else there.
  */
-export function useCardReactions(
-  board: Board,
-  card: Card,
+export function useThreadReactions(
+  { id, kind, addresses, members, key }: ReactedTo,
   comments: Comment[]
 ): ReadonlyMap<string, Reaction[]> {
-  const addresses = cardCommentAddresses(board, card);
   const commentIds = comments.flatMap((comment) =>
     comment.event.sig ? [comment.id] : []
   );
-  const key = `${board.event.id}:${card.id}`;
   const commentsKey = commentIds.join(",");
   useObservableValue(
     () =>
@@ -42,8 +49,8 @@ export function useCardReactions(
         addressFilters(
           "#a",
           addresses,
-          { "#k": [String(CARD_KIND)], kinds: [REACTION_KIND] },
-          board.members
+          { "#k": [String(kind)], kinds: [REACTION_KIND] },
+          members
         )
       ),
     [key]
@@ -65,9 +72,7 @@ export function useCardReactions(
             : []),
         ])
         .pipe(
-          map((all) =>
-            all.filter((event) => board.members.includes(event.pubkey))
-          )
+          map((all) => all.filter((event) => members.includes(event.pubkey)))
         ),
     [key, commentsKey]
   );
@@ -80,14 +85,34 @@ export function useCardReactions(
   if (!events) {
     return NONE;
   }
-  const onCard = new Set(addresses);
+  const onThing = new Set(addresses);
   const onComment = new Set(commentIds);
   return groupReactions(events, (event) => {
     const address = lastTag(event, "a");
-    if (address !== undefined && onCard.has(address)) {
-      return card.id;
+    if (address !== undefined && onThing.has(address)) {
+      return id;
     }
-    const id = lastTag(event, "e");
-    return id !== undefined && onComment.has(id) ? id : undefined;
+    const comment = lastTag(event, "e");
+    return comment !== undefined && onComment.has(comment)
+      ? comment
+      : undefined;
   });
+}
+
+/** The reactions to a card and to its comments, by the card's or comment's id. */
+export function useCardReactions(
+  board: Board,
+  card: Card,
+  comments: Comment[]
+): ReadonlyMap<string, Reaction[]> {
+  return useThreadReactions(
+    {
+      addresses: cardCommentAddresses(board, card),
+      id: card.id,
+      key: `${board.event.id}:${card.id}`,
+      kind: CARD_KIND,
+      members: board.members,
+    },
+    comments
+  );
 }

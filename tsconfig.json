@@ -5,7 +5,8 @@
     { "path": "./tsconfig.node.json" },
     { "path": "./tsconfig.connector.json" },
     { "path": "./tsconfig.notifier.json" },
-    { "path": "./tsconfig.btcmap.json" }
+    { "path": "./tsconfig.btcmap.json" },
+    { "path": "./tsconfig.reader.json" }
   ],
   "compilerOptions": {
     "paths": {

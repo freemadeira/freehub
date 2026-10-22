@@ -6,10 +6,6 @@ import {
   authorize,
   CanceledError,
   deleteBlobs,
-  newKey,
-  newNonce,
-  seal,
-  sha256,
   uploadBlob,
 } from "@/lib/blossom";
 import type { SealedBlob } from "@/lib/drive";
@@ -29,6 +25,7 @@ import { newId } from "@/lib/model";
 import { accounts } from "@/lib/nostr";
 import type { Project } from "@/lib/project";
 import { publish } from "@/lib/publish";
+import { newKey, newNonce, seal, sha256 } from "@/lib/sealing";
 import { measure } from "@/lib/thumbnails";
 import { errorMessage, plural } from "@/lib/utils";
 

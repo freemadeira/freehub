@@ -113,4 +113,32 @@ function SelectItem({
   );
 }
 
-export { Select, SelectContent, SelectItem, SelectTrigger, SelectValue };
+function SelectGroup({ ...props }: SelectPrimitive.Group.Props) {
+  return <SelectPrimitive.Group data-slot="select-group" {...props} />;
+}
+
+function SelectGroupLabel({
+  className,
+  ...props
+}: SelectPrimitive.GroupLabel.Props) {
+  return (
+    <SelectPrimitive.GroupLabel
+      className={cn(
+        "text-muted-foreground px-2 pt-1.5 pb-1 text-xs font-medium",
+        className
+      )}
+      data-slot="select-group-label"
+      {...props}
+    />
+  );
+}
+
+export {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectGroupLabel,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+};

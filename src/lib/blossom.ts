@@ -1,23 +1,17 @@
-import { bytesToHex, hexToBytes } from "applesauce-core/helpers/event";
-import { unixNow } from "applesauce-core/helpers/time";
-
 import { getConfig } from "@/config";
 import { abortSigning, accounts } from "@/lib/nostr";
+import { blossomAuthHeader, blossomAuthTemplate, sha256 } from "@/lib/sealing";
 import { TimeoutError, withTimeout } from "@/lib/utils";
 
 /**
  * Files on the team's Blossom servers (BUD-01, 02 and 11), sealed with
- * AES-GCM in the browser first: the servers hand any blob to whoever asks for
- * its hash, so they only ever hold what they can't read.
+ * AES-GCM in the browser first (see sealing.ts): the servers hand any blob to
+ * whoever asks for its hash, so they only ever hold what they can't read.
  */
 
-/** BUD-11's kind for the event that lets a request through. */
-const AUTH_KIND = 24_242;
 const SIGN_TIMEOUT = 60_000;
 /** An upload of the largest file can take a while on a slow connection. */
 const AUTH_SECONDS = 60 * 60;
-const KEY_BYTES = 32;
-const NONCE_BYTES = 12;
 /** Hashes per delete request: each goes in the auth header, which servers cap. */
 const DELETE_BATCH = 20;
 
@@ -25,66 +19,9 @@ export class CanceledError extends Error {
   override name = "CanceledError";
 }
 
-/** A new key for one file and its thumbnail, as hex. */
-export function newKey(): string {
-  return bytesToHex(crypto.getRandomValues(new Uint8Array(KEY_BYTES)));
-}
-
-/** A new nonce: never use one twice with the same key. */
-export function newNonce(): string {
-  return bytesToHex(crypto.getRandomValues(new Uint8Array(NONCE_BYTES)));
-}
-
-/** The hex as bytes Web Crypto takes, which must sit in a plain ArrayBuffer. */
-function bytes(hex: string): Uint8Array<ArrayBuffer> {
-  return new Uint8Array(hexToBytes(hex));
-}
-
-function importKey(key: string, usage: KeyUsage): Promise<CryptoKey> {
-  return crypto.subtle.importKey("raw", bytes(key), "AES-GCM", false, [usage]);
-}
-
-export async function seal(
-  data: BufferSource,
-  key: string,
-  nonce: string
-): Promise<ArrayBuffer> {
-  return await crypto.subtle.encrypt(
-    { iv: bytes(nonce), name: "AES-GCM" },
-    await importKey(key, "encrypt"),
-    data
-  );
-}
-
-/** The sealed data as it was; throws when it's been tampered with or the key is wrong. */
-export async function open(
-  data: BufferSource,
-  key: string,
-  nonce: string
-): Promise<ArrayBuffer> {
-  return await crypto.subtle.decrypt(
-    { iv: bytes(nonce), name: "AES-GCM" },
-    await importKey(key, "decrypt"),
-    data
-  );
-}
-
-export async function sha256(data: BufferSource): Promise<string> {
-  return bytesToHex(
-    new Uint8Array(await crypto.subtle.digest("SHA-256", data))
-  );
-}
-
 /** Whether the team has somewhere to keep files. Without it, there's no Drive. */
 export function hasBlossom(): boolean {
   return getConfig().blossom.length > 0;
-}
-
-function base64Url(text: string): string {
-  return btoa(String.fromCodePoint(...new TextEncoder().encode(text)))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/u, "");
 }
 
 /**
@@ -102,20 +39,13 @@ export async function authorize(
   }
   try {
     const signed = await withTimeout(
-      account.signEvent({
-        content,
-        created_at: unixNow(),
-        kind: AUTH_KIND,
-        tags: [
-          ["t", verb],
-          ["expiration", String(unixNow() + AUTH_SECONDS)],
-          ...hashes.map((hash) => ["x", hash]),
-        ],
-      }),
+      account.signEvent(
+        blossomAuthTemplate(verb, hashes, content, AUTH_SECONDS)
+      ),
       SIGN_TIMEOUT,
       "Your signer didn’t answer."
     );
-    return `Nostr ${base64Url(JSON.stringify(signed))}`;
+    return blossomAuthHeader(signed);
   } catch (error) {
     if (error instanceof TimeoutError) {
       abortSigning(error);

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { useObservableValue } from "@/hooks/use-observable-value";
 import { useSubscriptions } from "@/hooks/use-subscriptions";
+import { catalogReaders } from "@/lib/catalog-actions";
 import type { CrmTable } from "@/lib/crm";
 import type { DocsContent } from "@/lib/docs";
 import { inboxStore } from "@/lib/inbox";
@@ -13,10 +14,13 @@ import { isArchived, isRead } from "@/lib/inbox-marks";
 import type { Board } from "@/lib/model";
 import {
   CARD_KIND,
+  CATALOG_KIND,
   CRM_RECORD_KIND,
   DELETE_KIND,
   DOC_PAGE_KIND,
   DRIVE_FILE_KIND,
+  LINK_KIND,
+  READING_KIND,
 } from "@/lib/model";
 import { eventStore } from "@/lib/nostr";
 import type {
@@ -85,8 +89,14 @@ function versionKey(kind: number, id: string): string {
   return `${kind}:${id}`;
 }
 
-/** Filters for every version of the cards, files and records notifications point at. */
-function versionFilters(notifications: Notification[]): Filter[] {
+/**
+ * Filters for every version of the cards, files, links and records
+ * notifications point at, with the links' readings and catalogs.
+ */
+function versionFilters(
+  notifications: Notification[],
+  catalogs: string[]
+): Filter[] {
   const ids = (type: Notification["type"]) => [
     ...new Set(
       notifications.flatMap((notification) => {
@@ -99,6 +109,9 @@ function versionFilters(notifications: Notification[]): Filter[] {
         if (notification.type === "file") {
           return [notification.fileId];
         }
+        if (notification.type === "link") {
+          return [notification.linkId];
+        }
         return notification.type === "record" ? [notification.recordId] : [];
       })
     ),
@@ -106,6 +119,8 @@ function versionFilters(notifications: Notification[]): Filter[] {
   return [
     { "#d": ids("card"), kinds: [CARD_KIND] },
     { "#d": ids("file"), kinds: [DRIVE_FILE_KIND] },
+    { "#d": ids("link"), kinds: [LINK_KIND, READING_KIND] },
+    { "#d": catalogs, kinds: [CATALOG_KIND] },
     { "#d": ids("record"), kinds: [CRM_RECORD_KIND] },
   ].filter((filter) => filter["#d"].length > 0);
 }
@@ -115,7 +130,9 @@ function useVersions(
   notifications: Notification[],
   docs: Map<string, DocsContent>
 ): Map<string, NostrEvent[]> {
-  const filters = versionFilters(notifications);
+  // Links name their catalog, which is looked for once they're in.
+  const [catalogs, setCatalogs] = useState<string[]>([]);
+  const filters = versionFilters(notifications, catalogs);
   const key = JSON.stringify(filters);
   useObservableValue(() => sync(filters), [key]);
   const events = useObservableValue(
@@ -134,6 +151,16 @@ function useVersions(
     for (const [id, versions] of content.versions) {
       found.set(versionKey(DOC_PAGE_KIND, id), versions);
     }
+  }
+  const named = [
+    ...new Set(
+      (events ?? []).flatMap((event) =>
+        event.kind === LINK_KIND ? (getTagValue(event, "catalog") ?? []) : []
+      )
+    ),
+  ].toSorted();
+  if (named.join(",") !== catalogs.join(",")) {
+    setCatalogs(named);
   }
   return found;
 }
@@ -203,6 +230,7 @@ export function useInbox(pubkey: string, scope: InboxScope): Inbox {
   const known: NotificationScope = {
     boards: scope.boards,
     projects: scope.projects,
+    readers: catalogReaders(),
     tables: (project) => scope.tables.get(project.address) ?? [],
     versions: (kind, id) => versions.get(versionKey(kind, id)) ?? [],
   };

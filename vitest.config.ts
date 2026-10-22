@@ -11,6 +11,7 @@ export default defineConfig({
       "btcmap/**/*.test.ts",
       "connector/**/*.test.ts",
       "notifier/**/*.test.ts",
+      "reader/**/*.test.ts",
     ],
   },
 });

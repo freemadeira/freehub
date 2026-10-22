@@ -18,9 +18,11 @@ import {
 import { BoardDialog } from "@/features/boards/board-dialog";
 import { CustomizeHome } from "@/features/home/customize";
 import { useHome } from "@/features/home/home-context";
+import { Links } from "@/features/home/links";
 import { Mentions } from "@/features/home/mentions";
 import { MyTasks } from "@/features/home/my-tasks";
 import { Pinned } from "@/features/home/pinned";
+import type { CatalogsContent } from "@/lib/catalogs";
 import type { CrmTable } from "@/lib/crm";
 import type { DocsContent } from "@/lib/docs";
 import type { HomeSection } from "@/lib/home";
@@ -76,6 +78,7 @@ interface HomePageProps {
   projects: Project[];
   tables: Map<string, CrmTable[]>;
   docs: Map<string, DocsContent>;
+  catalogs: Map<string, CatalogsContent>;
   loaded: boolean;
   pubkey: string;
   onNewProject: () => void;
@@ -86,6 +89,7 @@ export function HomePage({
   projects,
   tables,
   docs,
+  catalogs,
   loaded,
   pubkey,
   onNewProject,
@@ -108,10 +112,12 @@ export function HomePage({
   const nothingYet = projects.length === 0 && boards.length === 0;
 
   const sections: Record<HomeSection, ReactNode> = {
+    links: <Links pubkey={pubkey} />,
     mentions: <Mentions pubkey={pubkey} />,
     pinned: (
       <Pinned
         boards={boards}
+        catalogs={catalogs}
         docs={docs}
         loaded={loaded}
         projects={projects}

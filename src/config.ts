@@ -13,6 +13,11 @@ export interface NotifierConfig {
   vapidKey: string;
 }
 
+export interface ReaderConfig {
+  /** The reader service's key: only its readings of links are trusted. */
+  pubkey: string;
+}
+
 export interface Config {
   name: string;
   logo: string;
@@ -32,6 +37,11 @@ export interface Config {
   blossom: string[];
   /** The organization's push notifier. Only organizations that run one get pushes. */
   notifier?: NotifierConfig;
+  /**
+   * The organization's reader, which reads, titles and files the links saved
+   * to catalogs. Without one, links show as saved.
+   */
+  reader?: ReaderConfig;
 }
 
 export class ConfigError extends Error {
@@ -180,6 +190,19 @@ function notifierConfig(value: unknown): NotifierConfig | undefined {
   return { pubkey, vapidKey };
 }
 
+function readerConfig(value: unknown): ReaderConfig | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const raw: Record<string, unknown> =
+    typeof value === "object" && value !== null ? { ...value } : {};
+  const pubkey = normalizeToPubkey(String(raw.pubkey ?? ""));
+  if (!pubkey) {
+    throw new ConfigError(`"reader" needs "pubkey": the reader’s npub.`);
+  }
+  return { pubkey };
+}
+
 export async function loadConfig(): Promise<Config> {
   const response = await fetch(`${import.meta.env.BASE_URL}config.json`, {
     cache: "no-cache",
@@ -213,6 +236,7 @@ export async function loadConfig(): Promise<Config> {
     map: mapConfig(raw.map),
     name: text(raw.name) ?? "Kanban",
     notifier: notifierConfig(raw.notifier),
+    reader: readerConfig(raw.reader),
     relays,
     signerRelays: relayList(
       "signerRelays",
