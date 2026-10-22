@@ -17,6 +17,7 @@ import {
   fieldForAttribute,
   hasValues,
   suggestConnection,
+  suggestOptions,
 } from "@/lib/sources";
 
 const NONE = "none";
@@ -84,6 +85,28 @@ function newOption(value: SourceValue, field: Field): FieldOption {
     id: shortId(),
     kind: field.type === "stage" ? value.kind : "open",
     label: value.label,
+  };
+}
+
+/** The connection with the attribute on the field, and its values on the field's options of the same name. */
+function withField(
+  connection: Connection,
+  attribute: SourceAttribute,
+  field: Field | undefined
+): Connection {
+  const fields = without(connection.fields, attribute.id);
+  const options = without(connection.options, attribute.id);
+  if (!field) {
+    return { ...connection, fields, options };
+  }
+  const suggested = suggestOptions(attribute, field);
+  return {
+    ...connection,
+    fields: { ...fields, [attribute.id]: field.id },
+    options:
+      Object.keys(suggested).length > 0
+        ? { ...options, [attribute.id]: suggested }
+        : options,
   };
 }
 
@@ -205,14 +228,15 @@ function AttributeRow({
         </span>
         <MappingSelect
           label={`Field for ${attribute.name}`}
-          onChange={(id) => {
-            const rest = without(connection.fields, attribute.id);
-            onChange({
-              ...connection,
-              fields: id ? { ...rest, [attribute.id]: id } : rest,
-              options: without(connection.options, attribute.id),
-            });
-          }}
+          onChange={(id) =>
+            onChange(
+              withField(
+                connection,
+                attribute,
+                fields.find((item) => item.id === id)
+              )
+            )
+          }
           options={fields
             .filter((item) => canFill(attribute, item))
             .map((item) => ({ label: item.name, value: item.id }))}

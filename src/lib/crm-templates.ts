@@ -62,6 +62,8 @@ export const MERCHANT_PACK: TablePack = {
             ["Onboarding", "orange"],
             ["Accepting bitcoin", "green", "won"],
             ["Not interested", "red", "lost"],
+            ["Relocated", "yellow"],
+            ["Closed", "gray", "lost"],
           ],
           type: "stage",
         },
@@ -80,10 +82,12 @@ export const MERCHANT_PACK: TablePack = {
         },
         OWNER,
         { name: "Location", type: "location" },
+        { name: "Address", type: "text" },
         { name: "Contact person", type: "text" },
         { name: "Phone", type: "phone" },
         { name: "Email", type: "email" },
         { name: "Website", type: "url" },
+        { name: "OSM link", type: "url" },
         {
           name: "Payment setup",
           options: [

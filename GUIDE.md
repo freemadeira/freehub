@@ -21,7 +21,8 @@ Then:
 4. Optionally, give the team a map of your region: see [Map](#map).
 5. Optionally, give each project a Drive for its files: see [Drive](#drive).
 6. Optionally, push notifications to people's phones and computers: see [Notifications](#notifications).
-7. Whitelist the npub of everyone who uses the app, viewers too, on the relay. Anyone who isn't whitelisted gets a "No access" screen showing their npub, ready to copy and send to you. The app can't read the whitelist, so the first time someone joins a project or board, paste their npub (or the whole whitelist file) into its members field; after that they're suggested by name everywhere.
+7. Optionally, keep [BTC Map](https://btcmap.org/) in line with a merchants table: see [BTC Map sync](#btc-map-sync).
+8. Whitelist the npub of everyone who uses the app, viewers too, on the relay. Anyone who isn't whitelisted gets a "No access" screen showing their npub, ready to copy and send to you. The app can't read the whitelist, so the first time someone joins a project or board, paste their npub (or the whole whitelist file) into its members field; after that they're suggested by name everywhere.
 
 ### Configuration
 
@@ -37,7 +38,7 @@ All settings live in `public/config.json`:
 | `signerRelays` | nos.lol, relay.primal.net, relay.damus.io | Relays the app and a signer app talk through when logging in by QR code. |
 | `lookupRelays` | purplepag.es, profiles.nostr1.com, directory.yabu.me | Public relays used to look up members' names and avatars. |
 | `map` | none | `{ "world": "/worlds/<name>/world.json" }`, the address of a world pack. Without it there's no Map tab, and the map's code is never downloaded. See [Map](#map). |
-| `connectors` | none | npubs of the connectors your organization runs. Their sources show up in each table's settings, under **Connections**. See [Connectors](#connectors). |
+| `connectors` | none | npubs of the connectors your organization runs, and of its [BTC Map sync](#btc-map-sync). Their sources show up in each table's settings, under **Connections**. See [Connectors](#connectors). |
 | `blossom` | none | Blossom servers for the team's files, as `https://` URLs. Uploads go to the first; files are read from whichever has them. Without it there's no Drive. See [Drive](#drive). |
 | `notifier` | none | `{ "pubkey": "npub…", "vapidKey": "B…" }`, the notifier's npub and VAPID public key. Without it, notifications only show while the app is open. See [Notifications](#notifications). |
 
@@ -179,6 +180,38 @@ To bring in older items, run `node connector.js backfill <source id> <YYYY-MM-DD
 
 For Shopify, create the app from the store's admin (Settings → Apps → Develop apps → Build apps in Dev Dashboard) with the scopes `read_orders` and `read_customers` (and `read_all_orders` for orders older than 60 days), install it on the store, and put its client ID and secret in the sources with the store's `<handle>.myshopify.com` domain. The connector gets its own access token and sets up the order webhooks itself. An app made in the store's own organization gets protected customer data without asking, but customers' names and emails only on the Grow plan or higher: on other plans the connector leaves Customer and Email out of what tables can map. A legacy custom app's static token works too, as `accessToken`.
 
+### BTC Map sync
+
+[BTC Map](https://btcmap.org/) shows the merchants OpenStreetMap tags as taking bitcoin. The sync keeps those tags in line with a CRM table, such as one made from the **Merchant adoption** template: every night it compares each merchant's record with its OpenStreetMap element, and on the first Monday of each month it lists the merchants OpenStreetMap has in your area that no record links to, as leads. For now it's a dry run: it prints what it would do, and writes nothing to OpenStreetMap or to the records.
+
+It runs next to the app as its own container, built from this repository with `btcmap/Dockerfile`, and shows up in tables as a source, like a connector's:
+
+1. Make a Nostr key for it, with `node btcmap.js key` inside the image, and whitelist its npub on the team relay.
+2. Run the image with these environment variables:
+
+   | Variable | Notes |
+   | --- | --- |
+   | `BTCMAP_KEY` | The sync's nsec or hex key. |
+   | `RELAY_URL` | The team relay. |
+   | `BTCMAP_AREA` | Where discovery looks: south, west, north and east in degrees, such as `32.55,-17.35,33.15,-16.25`. Without it, there's no discovery. |
+   | `ADDRESS_FORMAT` | How records write addresses, so they can go to OpenStreetMap: `pt` reads `Rua da Carreira 12, 9000-042 Funchal`. Without it, no address goes. Other countries' formats go in `btcmap/addresses.ts`. |
+   | `TZ` | The time zone of the nightly run from 23:00 and of discovery from 9:00, such as `Atlantic/Madeira`. Defaults to UTC. A run that fails is tried again every 15 minutes that day. |
+   | `OSM_CONTACT` | An email or web address where OpenStreetMap can reach whoever runs the sync, sent with every request. |
+   | `OSM_API`, `OVERPASS_URL` | Default to OpenStreetMap's own API and to overpass-api.de. |
+
+3. Add its npub to `connectors` in `config.json`. Once it has started, **OpenStreetMap** shows under **Connections** in each table's settings. Switch it on, then pick the fields that hold the OSM link, the stage, the location, a relocated business's new location, the address, the website and the "On BTC Map" checkbox, and which of the stage's options mean Accepting bitcoin, Not interested, Closed and Relocated. Options left out, or picked for two meanings, change nothing.
+
+| Stage | On OpenStreetMap |
+| --- | --- |
+| Accepting bitcoin | Adds `currency:XBT=yes`, and `check_date:currency:XBT` from the newest visit logged since the record took the stage. Fills in the website and the address when OpenStreetMap has none. |
+| Not interested | Takes off `currency:XBT`, `payment:bitcoin`, `payment:lightning`, `payment:onchain` and `payment:lightning_contactless` where they say yes, with the check date. One that says no stays. |
+| Closed | Deletes the node. |
+| Relocated | Once the new location is pinned, moves the node there with the new address, if the node is still at the record's location. |
+
+Before changing anything, the sync checks that the element is still the record's business: its OpenStreetMap name, alone or with its branch, must be the record's title. It never changes a business's name, never replaces a website or address OpenStreetMap already has (other than a relocated business's address), and never clears a tag because a field is empty. What it can't do safely it lists for a mapper to do by hand: a business whose name doesn't match, one drawn as an area or on a node a way uses, a relocated node that isn't where the record had it, or a move whose new address it can't read. A record whose OSM link it can't read, or that links to the same element as another record in any table, is skipped and listed. It reads OpenStreetMap one request a second, as its usage policy asks, and the only thing it writes to the team relay is its source.
+
+Run `node btcmap.js nightly` or `node btcmap.js discover` inside the container to run one now. On Coolify, create it from the repository with the **Dockerfile** build pack and `btcmap/Dockerfile`, with no domain.
+
 ### Notifications
 
 The app installs from the browser as a PWA: from Chrome or Edge's install button or the account menu, and on iPhone and iPad from Share → Add to Home Screen. It opens even without a connection, though boards and tables need the relay to show, and an open app reloads into a new deploy by itself while it's out of view.
@@ -301,7 +334,8 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 | `src/lib/home.ts`, `src/lib/home-store.ts` | Each person's Home: pins, sections, filters and view, kept on the relay |
 | `src/lib/push-devices.ts`, `src/lib/notify.ts` | Devices to push to, and notifications on this one |
 | `src/lib/pwa.ts`, `src/lib/updates.ts`, `public/sw.js` | Installing the app, opening it offline, and updating it |
-| `src/lib/team-relay.ts` | The team relay as the connector and the notifier see it |
+| `src/lib/team-relay.ts` | The team relay as the services see it |
+| `src/lib/connected-tables.ts` | The tables that switched on a service's sources, and their records |
 | `src/lib/relays.ts` | Team relay connections, AUTH and access |
 | `src/lib/publish.ts` | Optimistic edits, signing and the outbox |
 | `src/lib/location.ts` | Reading places typed or pasted into the CRM |
@@ -311,6 +345,8 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 | `tools/world/` | Bakes an OpenStreetMap region into a world pack |
 | `connector/` | The optional service that feeds sources, like a store, into tables |
 | `notifier/` | The optional service that pushes notifications to people's devices |
+| `btcmap/` | The optional service that keeps BTC Map in line with a merchants table |
+| `vite.service.ts`, `tsconfig.service.json` | The build and type settings the services share |
 
 ## Known limits
 
@@ -330,6 +366,8 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 - A record remembers its last 100 stage changes.
 - A connector writes a mapped field only when the source changes it, so a teammate's edit stays until then, and is then replaced.
 - A connector stays allowed to write a table's records after its source is switched off, so the records it wrote stay.
+- The BTC Map sync only reports what it would do. Writing to OpenStreetMap is still to come, and an unattended edit has to follow OpenStreetMap's [Automated Edits code of conduct](https://wiki.openstreetmap.org/wiki/Automated_Edits_code_of_conduct) first: documented, announced to the local community, from an account that says it's a bot.
+- The BTC Map sync reads one address format so far, Portugal's.
 - A doc page is saved whole, as one event, so a long page costs a little more with each save. Edits merge line by line: a paragraph is one line, so two people rewriting the same paragraph at once keep only one version of it.
 - A deleted page can't be brought back. Deleting a page while someone else has it open drops whatever they hadn't saved yet.
 - Pages have no links to other pages yet, other than the ones under them; a link to a page's address works as any web link.

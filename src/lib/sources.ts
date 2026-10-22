@@ -23,6 +23,7 @@ import { parseColor } from "@/lib/palette";
 
 /** Which field types each attribute type can fill, the best fit first. */
 const COMPATIBLE = {
+  checkbox: ["checkbox"],
   currency: ["currency", "number"],
   date: ["date"],
   email: ["email", "text"],
@@ -183,7 +184,10 @@ function sameText(a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
-/** Each value of the attribute to the field's option with the same label. */
+/**
+ * Each value of the attribute to the field's option with the same label. A
+ * stage's option must end the same way too: a won "Closed" isn't a lost one.
+ */
 export function suggestOptions(
   attribute: SourceAttribute,
   field: Field
@@ -193,15 +197,21 @@ export function suggestOptions(
   }
   return Object.fromEntries(
     attribute.values.flatMap((value) => {
-      const option = field.options.find(({ label }) =>
-        sameText(label, value.label)
+      const option = field.options.find(
+        ({ label, kind }) =>
+          sameText(label, value.label) &&
+          (field.type !== "stage" || kind === value.kind)
       );
       return option ? [[value.id, option.id]] : [];
     })
   );
 }
 
-/** A first mapping for a source: fields with the same name and a fitting type. */
+/**
+ * A first mapping for a source: fields with the same name and a fitting type.
+ * A table has one title field and at most one stage field, so those take
+ * their attribute whatever their names.
+ */
 export function suggestConnection(
   source: Source,
   table: Pick<CrmTableFields, "fields">
@@ -210,12 +220,16 @@ export function suggestConnection(
   const options: Record<string, Record<string, string>> = {};
   const used = new Set<string>();
   for (const attribute of source.attributes) {
-    const field = table.fields.find(
-      (item) =>
-        !used.has(item.id) &&
-        canFill(attribute, item) &&
-        (attribute.type === "title" || sameText(item.name, attribute.name))
+    const fits = table.fields.filter(
+      (item) => !used.has(item.id) && canFill(attribute, item)
     );
+    const field =
+      fits.find((item) => sameText(item.name, attribute.name)) ??
+      fits.find(
+        (item) =>
+          item.type === attribute.type &&
+          (item.type === "title" || item.type === "stage")
+      );
     if (field) {
       used.add(field.id);
       fields[attribute.id] = field.id;

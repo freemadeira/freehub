@@ -62,6 +62,7 @@ Log in with a Nostr browser extension or a signer app.
 pnpm typecheck      # type-check only
 pnpm check          # oxlint and oxfmt, through ultracite
 pnpm fix            # the same, fixing what it can
+pnpm test           # unit tests, with Vitest
 pnpm build          # type-check and build to dist/
 pnpm preview        # serve the build on http://localhost:4173
 ```
@@ -76,6 +77,7 @@ Running Freehub for your team, and how it works inside, are in the [guide](GUIDE
 - [Drive](GUIDE.md#drive) — the Blossom server for project files
 - [Deploy](GUIDE.md#deploy) — Coolify, Docker Compose or a static host
 - [Connectors](GUIDE.md#connectors) — feeding a store's orders into CRM tables
+- [BTC Map sync](GUIDE.md#btc-map-sync) — keeping BTC Map in line with a merchants table
 - [Notifications](GUIDE.md#notifications) — installing the app, and pushes through the notifier
 - [How it works](GUIDE.md#how-it-works) — projects, boards, CRM, docs, saving and loading
 - [Events](GUIDE.md#events) — the Nostr kinds and tags
@@ -101,6 +103,7 @@ Running Freehub for your team, and how it works inside, are in the [guide](GUIDE
 - [date-fns](https://date-fns.org/) — dates
 - [Sonner](https://sonner.emilkowal.ski/) — toasts
 - [Caddy](https://caddyserver.com/) — static file server in the production image
+- [Vitest](https://vitest.dev/) — unit tests
 
 ## License
 

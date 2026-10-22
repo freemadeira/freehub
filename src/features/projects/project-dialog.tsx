@@ -195,7 +195,7 @@ function ProjectForm({ project, projects, pubkey, onDone }: ProjectFormProps) {
               setSlug(base && uniqueSlug(base, takenSlugs));
             }
           }}
-          placeholder="Bitcoin Madeira"
+          placeholder="Website relaunch"
           value={title}
         />
       </div>

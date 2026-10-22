@@ -1,50 +1,28 @@
 import { createHash } from "node:crypto";
 
-import type { NostrEvent } from "applesauce-core/helpers/event";
 import { getTagValue } from "applesauce-core/helpers/event";
 import { unixNow } from "applesauce-core/helpers/time";
 
-import type { Connection, CrmTable } from "@/lib/crm";
-import { parseRecord, recordTemplate, resolveTables } from "@/lib/crm";
+import type { Target } from "@/lib/connected-tables";
+import { findTargets } from "@/lib/connected-tables";
+import type { CrmTable } from "@/lib/crm";
+import { parseRecord, recordTemplate } from "@/lib/crm";
 import {
   addressOf,
   CRM_RECORD_KIND,
   CRM_TABLE_KIND,
-  DELETE_KIND,
   isDeleted,
-  newer,
-  PROJECT_KIND,
+  latest,
 } from "@/lib/model";
-import type { Project } from "@/lib/project";
-import { parseProject } from "@/lib/project";
 import type { SourceFields } from "@/lib/sources";
 import type { TeamRelay } from "@/lib/team-relay";
 
 import { mapItem, mergeRecord } from "./merge";
 import type { Item } from "./sources/types";
 
-/** A table that switched a source of this connector on. */
-export interface Target {
-  project: Project;
-  table: CrmTable;
-  connection: Connection;
-}
-
 export type Outcome = "created" | "updated" | "unchanged" | "deleted";
 
 const CACHE_TTL = 30_000;
-/** Longest tag value that relays built on eventstore (Haven among them) index. */
-const MAX_INDEXED_TAG = 100;
-
-function latest(events: NostrEvent[]): NostrEvent | undefined {
-  let found: NostrEvent | undefined;
-  for (const event of events) {
-    if (!found || newer(event, found)) {
-      found = event;
-    }
-  }
-  return found;
-}
 
 /** The same record id for the same item in the same table, every time. */
 export function recordId(table: CrmTable, source: string, key: string): string {
@@ -72,66 +50,10 @@ export class Writer {
     this.cache = undefined;
   }
 
-  private async project(address: string): Promise<Project | undefined> {
-    const [, creator, id] = address.split(":");
-    if (!(creator && id)) {
-      return undefined;
-    }
-    const [versions, deletions] = await Promise.all([
-      this.relay.fetch({
-        "#d": [id],
-        authors: [creator],
-        kinds: [PROJECT_KIND],
-      }),
-      this.relay.fetch({
-        "#a": [address],
-        authors: [creator],
-        kinds: [DELETE_KIND],
-      }),
-    ]);
-    const event = latest(versions);
-    const deleted = latest(deletions);
-    if (!event || (deleted && deleted.created_at >= event.created_at)) {
-      return undefined;
-    }
-    return parseProject(event);
-  }
-
-  private async projectTargets(address: string): Promise<Target[]> {
-    const project = await this.project(address);
-    if (!project) {
-      return [];
-    }
-    const events = await this.relay.fetch(
-      address.length <= MAX_INDEXED_TAG
-        ? { "#a": [address], kinds: [CRM_TABLE_KIND] }
-        : { authors: project.members, kinds: [CRM_TABLE_KIND] }
-    );
-    return resolveTables(project, events).flatMap((table) =>
-      table.connections
-        .filter((connection) => connection.connector === this.me)
-        .map((connection) => ({ connection, project, table }))
-    );
-  }
-
-  private async lookup(): Promise<Target[]> {
-    const tagged = await this.relay.fetch({
-      "#p": [this.me],
-      kinds: [CRM_TABLE_KIND],
-    });
-    const projects = new Set(
-      tagged.flatMap((event) => addressOf(event, PROJECT_KIND) ?? [])
-    );
-    const targets = await Promise.all(
-      [...projects].map((address) => this.projectTargets(address))
-    );
-    return targets.flat();
-  }
-
   /** Tables whose latest version has the source switched on. */
   async targets(source: string): Promise<Target[]> {
     if (!this.cache || Date.now() - this.cache.at > CACHE_TTL) {
-      this.cache = { at: Date.now(), targets: this.lookup() };
+      this.cache = { at: Date.now(), targets: findTargets(this.relay) };
     }
     const { cache } = this;
     let targets: Target[];
