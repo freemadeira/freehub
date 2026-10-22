@@ -22,7 +22,8 @@ export interface Candidate extends ElementRef {
 
 /** Madeira and Porto Santo: south, west, north, east. */
 const MADEIRA_BBOX = "32.55,-17.35,33.15,-16.25";
-const USER_AGENT = "FreeHub-btcmap (FREE Madeira; github.com/freemadeira/freehub)";
+const USER_AGENT =
+  "FreeHub-btcmap (FREE Madeira; github.com/freemadeira/freehub)";
 /** Gap between OSM API reads, to stay well inside its usage policy. */
 const READ_INTERVAL = 1000;
 
@@ -80,7 +81,10 @@ export async function fetchElement(
 }
 
 /** Whether a way or relation uses the node, in which case OSM won't let it be deleted. */
-export async function nodeInUse(api: string, ref: ElementRef): Promise<boolean> {
+export async function nodeInUse(
+  api: string,
+  ref: ElementRef
+): Promise<boolean> {
   if (ref.type !== "node") {
     return true;
   }
@@ -88,9 +92,12 @@ export async function nodeInUse(api: string, ref: ElementRef): Promise<boolean> 
     // oxlint-disable-next-line no-await-in-loop -- one OSM read at a time, per its usage policy
     await sleep(READ_INTERVAL);
     // oxlint-disable-next-line no-await-in-loop -- one OSM read at a time, per its usage policy
-    const response = await fetch(`${api}/api/0.6/${refKey(ref)}/${parent}.json`, {
-      headers: { "User-Agent": USER_AGENT },
-    });
+    const response = await fetch(
+      `${api}/api/0.6/${refKey(ref)}/${parent}.json`,
+      {
+        headers: { "User-Agent": USER_AGENT },
+      }
+    );
     if (!response.ok) {
       throw new Error(`OSM ${refKey(ref)}/${parent}: HTTP ${response.status}`);
     }

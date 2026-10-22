@@ -22,7 +22,7 @@ import { errorMessage } from "@/lib/utils";
 
 import type { BtcmapConfig } from "./config";
 import { loadConfig } from "./config";
-import type { ElementRef } from "./osm";
+import type { ElementRef, OsmElement } from "./osm";
 import {
   bitcoinElements,
   fetchElement,
@@ -31,7 +31,7 @@ import {
   parseOsmLink,
   refKey,
 } from "./osm";
-import type { Merchant, TagChange } from "./plan";
+import type { Merchant, Move, TagChange } from "./plan";
 import { plan, relocation } from "./plan";
 
 const TIME_ZONE = "Europe/Lisbon";
@@ -130,6 +130,10 @@ async function loadMerchants(
   if (!table) {
     throw new Error("The merchants table was deleted or isn't in its project.");
   }
+  // Records point at the table by its creator's address, so another creator finds none.
+  if (table.address !== config.table) {
+    throw new Error(`BTCMAP_TABLE should be ${table.address}.`);
+  }
   const lastVisit = new Map<string, number>();
   for (const event of comments) {
     if (getTagValue(event, "activity") !== "visit") {
@@ -152,7 +156,9 @@ async function loadMerchants(
 
 function fieldNamed(table: CrmTable, name: string): Field | undefined {
   const wanted = name.toLowerCase();
-  return table.fields.find((field) => field.name.trim().toLowerCase() === wanted);
+  return table.fields.find(
+    (field) => field.name.trim().toLowerCase() === wanted
+  );
 }
 
 function valueOf(record: CrmRecord, field: Field | undefined): string {
@@ -169,142 +175,248 @@ function describe(change: TagChange): string {
   return `  ~ ${change.key}: ${change.from} → ${change.to}`;
 }
 
-/** Compares every merchant with its OSM element and prints what would change. Writes nothing. */
-async function nightly(relay: TeamRelay, config: BtcmapConfig): Promise<void> {
-  const { table, records, lastVisit } = await loadMerchants(relay, config);
+function labelOf(record: CrmRecord): string {
+  return record.title || record.id;
+}
+
+function yesNo(value: boolean): string {
+  return value ? "yes" : "no";
+}
+
+function osmField(table: CrmTable): Field {
+  const field = fieldNamed(table, "OSM link");
+  if (!field) {
+    throw new Error(`"${table.title}" needs an "OSM link" field.`);
+  }
+  return field;
+}
+
+/** The fields the sync reads: the stage and Location by type, the rest by name. */
+interface MerchantFields {
+  stage: Field;
+  osm: Field;
+  address: Field | undefined;
+  location: Field | undefined;
+  onBtcMap: Field | undefined;
+  website: Field | undefined;
+}
+
+function merchantFields(table: CrmTable): MerchantFields {
   const stage = table.fields.find((field) => field.type === "stage");
-  const fields = {
+  if (!stage) {
+    throw new Error(`"${table.title}" needs a stage field.`);
+  }
+  return {
     address: fieldNamed(table, "Address"),
     location: table.fields.find((field) => field.type === "location"),
     onBtcMap: fieldNamed(table, "On BTC Map"),
-    osm: fieldNamed(table, "OSM link"),
+    osm: osmField(table),
+    stage,
     website: fieldNamed(table, "Website"),
   };
-  if (!(stage && fields.osm)) {
-    throw new Error(
-      `"${table.title}" needs a stage field and an "OSM link" field.`
-    );
-  }
-  const noLink: string[] = [];
-  const badLink: string[] = [];
-  const gone: string[] = [];
-  const unsplit: string[] = [];
-  const checkbox: string[] = [];
-  const deleted: string[] = [];
-  const moves: string[] = [];
-  const byHand: string[] = [];
-  let changed = 0;
-  let unchanged = 0;
-  let failed = 0;
-  console.log(`Dry run: ${records.length} records in "${table.title}". Nothing is written.`);
-  for (const record of records) {
-    const link = valueOf(record, fields.osm);
-    const label = record.title || record.id;
-    if (!link) {
-      noLink.push(label);
-      continue;
-    }
-    const ref = parseOsmLink(link);
-    if (!ref) {
-      badLink.push(`${label}: ${link}`);
-      continue;
-    }
-    let element: Awaited<ReturnType<typeof fetchElement>>;
-    try {
-      // oxlint-disable-next-line no-await-in-loop -- one OSM read at a time, per its usage policy
-      element = await fetchElement(config.osmApi, ref);
-    } catch (error) {
-      failed += 1;
-      console.error(`${label}: ${errorMessage(error)}`);
-      continue;
-    }
-    if (element === "gone") {
-      gone.push(`${label}: ${osmUrl(ref)}`);
-      continue;
-    }
-    const option = stage.options.find(
-      ({ id }) => id === record.values[stage.id]?.[0]
-    );
-    const stageLabel = option?.label.trim().toLowerCase();
-    const pinned = readLocation(valueOf(record, fields.location));
-    const merchant: Merchant = {
+}
+
+/** The record in the rules' terms, and its stage's label. */
+function merchantOf(
+  record: CrmRecord,
+  fields: MerchantFields,
+  lastVisit: string | undefined
+): { merchant: Merchant; stage: string | undefined } {
+  const option = fields.stage.options.find(
+    ({ id }) => id === record.values[fields.stage.id]?.[0]
+  );
+  const stageLabel = option?.label.trim().toLowerCase();
+  const pinned = readLocation(valueOf(record, fields.location));
+  return {
+    merchant: {
       address: valueOf(record, fields.address),
       // Only these exact labels delete or move a listing, so a renamed stage can't do it by accident.
       closed: option?.kind === "lost" && stageLabel === "closed",
-      lastVisit: lastVisit.get(record.id),
+      lastVisit,
       location: pinned && { lat: pinned.lat, lon: pinned.lng },
       name: record.title,
       relocated: stageLabel === "relocated",
       stage: option?.kind,
       website: valueOf(record, fields.website),
-    };
-    // Deleting or moving a node is only safe when no way or relation uses it.
-    let standalone = false;
-    if (
-      ref.type === "node" &&
-      (merchant.closed || relocation(merchant, element, true)?.kind === "move")
-    ) {
-      try {
-        // oxlint-disable-next-line no-await-in-loop -- one OSM read at a time, per its usage policy
-        standalone = !(await nodeInUse(config.osmApi, ref));
-      } catch (error) {
-        failed += 1;
-        console.error(`${label}: ${errorMessage(error)}`);
-        continue;
-      }
+    },
+    stage: option?.label,
+  };
+}
+
+/** Deleting or moving a node is only safe when no way or relation uses it, so OSM is asked when either is planned. */
+async function standaloneNode(
+  api: string,
+  ref: ElementRef,
+  merchant: Merchant,
+  element: OsmElement
+): Promise<boolean> {
+  const planned =
+    merchant.closed || relocation(merchant, element, true)?.kind === "move";
+  return ref.type === "node" && planned && !(await nodeInUse(api, ref));
+}
+
+function describeMove(
+  label: string,
+  ref: ElementRef,
+  element: OsmElement,
+  move: Move
+): string {
+  if (move.kind === "by hand") {
+    return `${label}: ${osmUrl(ref)}${move.metres === undefined ? " (building outline)" : ` (${Math.round(move.metres)} m away, shared node)`}`;
+  }
+  const from = element.position;
+  return `${label}: ${osmUrl(ref)} ${from?.lat.toFixed(6)},${from?.lon.toFixed(6)} → ${move.to.lat.toFixed(6)},${move.to.lon.toFixed(6)} (${Math.round(move.metres)} m)${move.changes.map((change) => `\n  ${describe(change)}`).join("")}`;
+}
+
+/** What a dry run found, printed at its end. */
+interface Report {
+  deleted: string[];
+  moves: string[];
+  byHand: string[];
+  noLink: string[];
+  badLink: string[];
+  shared: string[];
+  gone: string[];
+  unsplit: string[];
+  checkbox: string[];
+  changed: number;
+  unchanged: number;
+  failed: number;
+}
+
+interface Run {
+  config: BtcmapConfig;
+  fields: MerchantFields;
+  lastVisit: Map<string, string>;
+  report: Report;
+}
+
+/** Compares one merchant with its OSM element and adds what would change to the report. */
+async function compare(
+  run: Run,
+  record: CrmRecord,
+  ref: ElementRef
+): Promise<void> {
+  const { config, report } = run;
+  const label = labelOf(record);
+  const { merchant, stage } = merchantOf(
+    record,
+    run.fields,
+    run.lastVisit.get(record.id)
+  );
+  let element: OsmElement | "gone";
+  let standalone = false;
+  try {
+    element = await fetchElement(config.osmApi, ref);
+    if (element !== "gone") {
+      standalone = await standaloneNode(config.osmApi, ref, merchant, element);
     }
-    const move = relocation(merchant, element, standalone);
-    if (move?.kind === "move") {
-      const from = element.position;
-      moves.push(
-        `${label}: ${osmUrl(ref)} ${from?.lat.toFixed(6)},${from?.lon.toFixed(6)} → ${move.to.lat.toFixed(6)},${move.to.lon.toFixed(6)} (${Math.round(move.metres)} m)${move.changes.map((change) => `\n  ${describe(change)}`).join("")}`
-      );
-    } else if (move?.kind === "by hand") {
-      byHand.push(
-        `${label}: ${osmUrl(ref)}${move.metres === undefined ? " (building outline)" : ` (${Math.round(move.metres)} m away, shared node)`}`
-      );
-    }
-    const result = plan(merchant, element.tags, standalone);
-    if (result.unsplitAddress) {
-      unsplit.push(label);
-    }
-    const checked = valueOf(record, fields.onBtcMap) === "true";
-    if (fields.onBtcMap && checked !== result.onBtcMap) {
-      checkbox.push(`${label}: ${checked ? "yes" : "no"} → ${result.onBtcMap ? "yes" : "no"}`);
-    }
-    if (result.deleteElement) {
-      deleted.push(`${label}: ${osmUrl(ref)}`);
-      continue;
-    }
-    if (result.changes.length === 0) {
-      unchanged += 1;
-      continue;
-    }
-    changed += 1;
-    console.log(`\n${label} [${option?.label ?? "no stage"}] ${osmUrl(ref)}`);
-    for (const change of result.changes) {
-      console.log(describe(change));
+  } catch (error) {
+    report.failed += 1;
+    console.error(`${label}: ${errorMessage(error)}`);
+    return;
+  }
+  if (element === "gone") {
+    report.gone.push(`${label}: ${osmUrl(ref)}`);
+    return;
+  }
+  const move = relocation(merchant, element, standalone);
+  if (move) {
+    report[move.kind === "move" ? "moves" : "byHand"].push(
+      describeMove(label, ref, element, move)
+    );
+  }
+  const result = plan(merchant, element.tags, standalone);
+  if (result.unsplitAddress) {
+    report.unsplit.push(label);
+  }
+  const checked = valueOf(record, run.fields.onBtcMap) === "true";
+  if (run.fields.onBtcMap && checked !== result.onBtcMap) {
+    report.checkbox.push(
+      `${label}: ${yesNo(checked)} → ${yesNo(result.onBtcMap)}`
+    );
+  }
+  if (result.deleteElement) {
+    report.deleted.push(`${label}: ${osmUrl(ref)}`);
+    return;
+  }
+  if (result.changes.length === 0) {
+    report.unchanged += 1;
+    return;
+  }
+  report.changed += 1;
+  console.log(`\n${label} [${stage ?? "no stage"}] ${osmUrl(ref)}`);
+  for (const change of result.changes) {
+    console.log(describe(change));
+  }
+}
+
+function list(title: string, items: string[]): void {
+  if (items.length > 0) {
+    console.log(`\n${title} (${items.length}):`);
+    for (const item of items) {
+      console.log(`  ${item}`);
     }
   }
-  const list = (title: string, items: string[]) => {
-    if (items.length > 0) {
-      console.log(`\n${title} (${items.length}):`);
-      for (const item of items) {
-        console.log(`  ${item}`);
-      }
-    }
-  };
-  list("Closed: would be deleted from OSM", deleted);
-  list("Relocated: would move to the pinned location", moves);
-  list("Relocated: move by hand on OSM", byHand);
-  list("No OSM link, skipped", noLink);
-  list("OSM link not understood", badLink);
-  list("Deleted on OSM", gone);
-  list("Address not split, left alone", unsplit);
-  list('"On BTC Map" would change', checkbox);
+}
+
+function printReport(report: Report): void {
+  list("Closed: would be deleted from OSM", report.deleted);
+  list("Relocated: would move to the pinned location", report.moves);
+  list("Relocated: move by hand on OSM", report.byHand);
+  list("No OSM link, skipped", report.noLink);
+  list("OSM link not understood", report.badLink);
+  list("OSM link on more than one record, skipped", report.shared);
+  list("Deleted on OSM", report.gone);
+  list("Address not split, left alone", report.unsplit);
+  list('"On BTC Map" would change', report.checkbox);
   console.log(
-    `\n${deleted.length} would be deleted, ${moves.length} would move, ${changed} would change, ${unchanged} already match, ${failed} failed to load.`
+    `\n${report.deleted.length} would be deleted, ${report.moves.length} would move, ${report.changed} would change, ${report.unchanged} already match, ${report.failed} failed to load.`
   );
+}
+
+/** Compares every merchant with its OSM element and prints what would change. Writes nothing. */
+async function nightly(relay: TeamRelay, config: BtcmapConfig): Promise<void> {
+  const { table, records, lastVisit } = await loadMerchants(relay, config);
+  const fields = merchantFields(table);
+  const report: Report = {
+    badLink: [],
+    byHand: [],
+    changed: 0,
+    checkbox: [],
+    deleted: [],
+    failed: 0,
+    gone: [],
+    moves: [],
+    noLink: [],
+    shared: [],
+    unchanged: 0,
+    unsplit: [],
+  };
+  const run: Run = { config, fields, lastVisit, report };
+  // Records sharing an element would ask different things of it, so none of them is applied.
+  const linked = Map.groupBy(records, (record) => {
+    const ref = parseOsmLink(valueOf(record, fields.osm));
+    return ref ? refKey(ref) : "";
+  });
+  console.log(
+    `Dry run: ${records.length} records in "${table.title}". Nothing is written.`
+  );
+  for (const record of records) {
+    const link = valueOf(record, fields.osm);
+    const ref = parseOsmLink(link);
+    if (!link) {
+      report.noLink.push(labelOf(record));
+    } else if (!ref) {
+      report.badLink.push(`${labelOf(record)}: ${link}`);
+    } else if ((linked.get(refKey(ref))?.length ?? 0) > 1) {
+      report.shared.push(`${labelOf(record)}: ${osmUrl(ref)}`);
+    } else {
+      // oxlint-disable-next-line no-await-in-loop -- one OSM read at a time, per its usage policy
+      await compare(run, record, ref);
+    }
+  }
+  printReport(report);
 }
 
 /** Lists merchants OSM says take bitcoin in Madeira that no record links to. Writes nothing. */
@@ -313,7 +425,7 @@ async function discover(relay: TeamRelay, config: BtcmapConfig): Promise<void> {
     loadMerchants(relay, config),
     bitcoinElements(config.overpass),
   ]);
-  const osm = fieldNamed(table, "OSM link");
+  const osm = osmField(table);
   const known = new Set(
     records.flatMap((record) => {
       const ref: ElementRef | undefined = parseOsmLink(valueOf(record, osm));
@@ -324,7 +436,9 @@ async function discover(relay: TeamRelay, config: BtcmapConfig): Promise<void> {
   console.log(
     `Dry run: ${elements.length} bitcoin merchants on OSM in Madeira, ${fresh.length} not in "${table.title}". Nothing is written.`
   );
-  for (const element of fresh.toSorted((a, b) => a.name.localeCompare(b.name))) {
+  for (const element of fresh.toSorted((a, b) =>
+    a.name.localeCompare(b.name)
+  )) {
     console.log(
       `  ${element.name || "(no name)"}  ${osmUrl(element)}  ${element.lat.toFixed(6)},${element.lon.toFixed(6)}`
     );
@@ -334,7 +448,9 @@ async function discover(relay: TeamRelay, config: BtcmapConfig): Promise<void> {
 async function connect(config: BtcmapConfig): Promise<TeamRelay> {
   const pubkey = await config.signer.getPublicKey();
   const relay = new TeamRelay(config.relay, config.signer, pubkey);
-  relay.start([{ "#p": [pubkey], kinds: [CRM_TABLE_KIND] }], () => undefined);
+  relay.start([{ "#p": [pubkey], kinds: [CRM_TABLE_KIND] }], () => {
+    // The subscription only holds the connection, which Haven limits; its events aren't needed.
+  });
   await relay.authenticated();
   return relay;
 }
@@ -386,8 +502,13 @@ async function serve(): Promise<void> {
     }
     running = false;
   };
-  setInterval(() => void tick(), TICK);
-  console.log("Waiting for 23:00 (nightly) and the first Monday 09:00 (discovery), Lisbon time.");
+  // A tick never throws: each job reports its own failure.
+  setInterval(() => {
+    tick();
+  }, TICK);
+  console.log(
+    "Waiting for 23:00 (nightly) and the first Monday 09:00 (discovery), Lisbon time."
+  );
   process.once("SIGTERM", () => {
     relay.close();
     process.exit(0);
@@ -412,7 +533,9 @@ async function main(): Promise<void> {
     return;
   }
   if (command !== undefined) {
-    throw new Error(`Unknown command "${command}". Use key, nightly, discover, or nothing to run on schedule.`);
+    throw new Error(
+      `Unknown command "${command}". Use key, nightly, discover, or nothing to run on schedule.`
+    );
   }
   await serve();
 }

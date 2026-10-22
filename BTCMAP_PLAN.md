@@ -24,7 +24,7 @@ The data flows one way, through three pieces:
 | Field notes | Never parsed. Free text drives nothing. |
 | FM24 list, BTC Map's current state | Not read as inputs. FM24 was a one-time import; BTC Map is what we're correcting. |
 | Closed and moved businesses | Two new stages on the Merchants pack, in this PR: **Closed** (kind `lost`): the business no longer exists, and the sync removes its listing from OSM. **Relocated** (kind `open`): the business moved; once its new location is pinned in Visitas, the sync moves the OSM listing there. |
-| OSM node link | A new **OSM link** (url) field on the Merchants pack, in this PR. The live table already has one from the CSV import; the template didn't. |
+| OSM node link and address | New **OSM link** (url) and **Address** (text) fields on the Merchants pack, in this PR. The live table already has both from the CSV import; the template didn't. |
 | Where the sync runs | A new service, `btcmap/`, beside `notifier/` and `connector/`, built and deployed the same way (its own `vite.config.ts`, `Dockerfile`, `btcmap:build` script). See [Why a new service](#why-a-new-service). |
 | Its Nostr identity | Its own key, whitelisted on the relay and added to the project that holds the Merchants table, so it can read records and, later, update `On BTC Map` on them. |
 | Secrets | Environment variables on the server, read at start, failing loudly if missing: `BTCMAP_KEY` (nsec), and for the write step `OSM_TOKEN` (OAuth 2 token of FREE Madeira's OSM account). No key files in the repo. |
@@ -60,6 +60,7 @@ OSM history keeps everything removed or moved.
 Rules around it:
 
 - A record without an OSM link is skipped and listed in the run report, so the team can link it.
+- Records whose OSM links point at the same element would ask different things of it, so all of them are skipped and listed in the run report.
 - If OSM rejects a write because the element changed meanwhile (version conflict), that merchant is skipped this run and tried again tomorrow. No retry loop.
 - A FreeHub field that's empty never clears an OSM tag: empty means "we don't know", not "remove it".
 
@@ -147,10 +148,10 @@ Checked on this branch, 2026-10-20 and 2026-10-21.
 
 ## Steps
 
-1. **Template (this PR).** Closed and Relocated stages and the OSM link field in the Merchants pack.
+1. **Template (this PR).** Closed and Relocated stages and the OSM link and Address fields in the Merchants pack.
 2. **Dry run (this PR, not yet run against the relay).** `btcmap/` reads the Merchants table and each merchant's OSM element and prints what it would add, remove, delete and move; `discover` lists bitcoin merchants on OSM in Madeira that no record links to. Nothing is written anywhere. To run it:
    1. `pnpm btcmap:build`, then `node btcmap/dist/btcmap.js key` for a new key; whitelist the npub on the team relay.
-   2. Set `RELAY_URL`, `BTCMAP_KEY` and `BTCMAP_TABLE` (the Merchants table's address, `30305:<creator pubkey>:<table id>`).
+   2. Set `RELAY_URL`, `BTCMAP_KEY` and `BTCMAP_TABLE` (the Merchants table's address, `30305:<creator pubkey>:<table id>`; a wrong creator stops the run with the right address).
    3. `node btcmap/dist/btcmap.js nightly` and `node btcmap/dist/btcmap.js discover`. With no command it waits for its schedule.
 
    Checked against live OSM data: Ciao Pizzeria's node (Closed: deleted, nothing else uses it; Not interested: only the Bitcoin tags removed; Relocated: no move while the pin is unchanged, a move with the new address once pinned ~200 m away, "by hand" if the node were shared), an A Confeitaria node (only the check date and name change; its `payment:onchain=no` stays), and the Overpass query (167 bitcoin merchants in Madeira on 2026-10-21).

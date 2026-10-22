@@ -40,14 +40,14 @@ export interface Plan {
 // Only the currency: records don't say lightning vs. on-chain, and OSM often does (a `payment:onchain=no` must stay).
 const BITCOIN_TAGS: Record<string, string> = { "currency:XBT": "yes" };
 const CHECK_DATE = "check_date:currency:XBT";
-const REMOVED_TAGS = [
+const REMOVED_TAGS = new Set([
   ...Object.keys(BITCOIN_TAGS),
   "payment:lightning",
   "payment:onchain",
   "payment:bitcoin",
   "payment:lightning_contactless",
   CHECK_DATE,
-];
+]);
 
 /** What an element that can't be deleted keeps once its business closed: the premises, not the business. */
 const KEPT_WHEN_CLOSED = /^(?:addr:|building|level|entrance|indoor)/u;
@@ -70,15 +70,32 @@ export function splitAddress(text: string): Record<string, string> | undefined {
 }
 
 export function takesBitcoin(tags: Record<string, string>): boolean {
-  return ["currency:XBT", "payment:bitcoin", "payment:lightning", "payment:onchain"].some(
-    (key) => tags[key] === "yes"
-  );
+  return [
+    "currency:XBT",
+    "payment:bitcoin",
+    "payment:lightning",
+    "payment:onchain",
+  ].some((key) => tags[key] === "yes");
 }
 
-function removing(tags: Record<string, string>, keep: (key: string) => boolean): TagChange[] {
+function removing(
+  tags: Record<string, string>,
+  keep: (key: string) => boolean
+): TagChange[] {
   return Object.entries(tags)
     .filter(([key]) => !keep(key))
     .map(([key, value]) => ({ from: value, key }));
+}
+
+/** The addr:* changes the record's Address asks for, when it splits cleanly. */
+export function addressChanges(
+  address: string,
+  tags: Record<string, string>
+): TagChange[] {
+  const parts = address.trim() ? splitAddress(address) : undefined;
+  return Object.entries(parts ?? {})
+    .filter(([key, value]) => tags[key] !== value)
+    .map(([key, value]) => ({ from: tags[key], key, to: value }));
 }
 
 /**
@@ -90,17 +107,24 @@ export function plan(
   tags: Record<string, string>,
   deletable = false
 ): Plan {
-  const result = { deleteElement: false, onBtcMap: false, unsplitAddress: false };
+  const result = {
+    deleteElement: false,
+    onBtcMap: false,
+    unsplitAddress: false,
+  };
   if (merchant.closed) {
     // Closed or moved away: the listing comes off OSM. A building or shared node stays, without the business.
     return deletable
       ? { ...result, changes: [], deleteElement: true }
-      : { ...result, changes: removing(tags, (key) => KEPT_WHEN_CLOSED.test(key)) };
+      : {
+          ...result,
+          changes: removing(tags, (key) => KEPT_WHEN_CLOSED.test(key)),
+        };
   }
   if (merchant.stage === "lost") {
     return {
       ...result,
-      changes: removing(tags, (key) => !REMOVED_TAGS.includes(key)),
+      changes: removing(tags, (key) => !REMOVED_TAGS.has(key)),
     };
   }
   if (merchant.stage !== "won") {
@@ -126,16 +150,9 @@ export function plan(
     ...result,
     changes,
     onBtcMap: true,
-    unsplitAddress: merchant.address.trim() !== "" && !splitAddress(merchant.address),
+    unsplitAddress:
+      merchant.address.trim() !== "" && !splitAddress(merchant.address),
   };
-}
-
-/** The addr:* changes the record's Address asks for, when it splits cleanly. */
-export function addressChanges(address: string, tags: Record<string, string>): TagChange[] {
-  const parts = address.trim() ? splitAddress(address) : undefined;
-  return Object.entries(parts ?? {})
-    .filter(([key, value]) => tags[key] !== value)
-    .map(([key, value]) => ({ from: tags[key], key, to: value }));
 }
 
 /** Closer than this, the record's Location and the OSM pin are the same spot: nothing was re-pinned. */
