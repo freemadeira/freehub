@@ -10,6 +10,7 @@ import type { Project } from "@/lib/project";
 import { addressFilters, sync, whileLoading } from "@/lib/relays";
 
 const KINDS = [CRM_TABLE_KIND, CRM_RECORD_KIND];
+const NO_CONTENTS = new Map<string, ProjectContent>();
 
 /** Tables and records of every project, by project address, for views across them. */
 export function useCrmContents(projects: Project[]): {
@@ -54,8 +55,8 @@ export function useCrmContents(projects: Project[]): {
                 )
             )
           )
-        : of(new Map<string, ProjectContent>()),
+        : of(NO_CONTENTS),
     [key]
   );
-  return { contents: contents ?? new Map(), loaded: loaded ?? false };
+  return { contents: contents ?? NO_CONTENTS, loaded: loaded ?? false };
 }

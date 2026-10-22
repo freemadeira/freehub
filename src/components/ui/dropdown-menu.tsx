@@ -1,6 +1,7 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { cn } from "cn";
 import { CheckIcon } from "lucide-react";
+import type { ComponentProps } from "react";
 
 const ITEM =
   "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none data-disabled:pointer-events-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:opacity-50 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0";
@@ -150,6 +151,20 @@ function DropdownMenuSeparator({
   );
 }
 
+/** The keys that do the same, at the end of an item. */
+function DropdownMenuShortcut({ className, ...props }: ComponentProps<"kbd">) {
+  return (
+    <kbd
+      className={cn(
+        "text-muted-foreground ml-auto pl-4 font-sans text-xs pointer-coarse:hidden",
+        className
+      )}
+      data-slot="dropdown-menu-shortcut"
+      {...props}
+    />
+  );
+}
+
 export {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -160,5 +175,6 @@ export {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 };

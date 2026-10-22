@@ -25,6 +25,7 @@ import { addressFilters, sync, whileLoading } from "@/lib/relays";
 const FOLDERS = [DRIVE_FOLDER_KIND];
 const KINDS = [DRIVE_FOLDER_KIND, DRIVE_FILE_KIND];
 const NO_MARKS: DriveMarks = { opens: [], stars: new Set() };
+const NO_CONTENTS = new Map<string, DriveContent>();
 
 /** Every project's Drive folders out of the trash, keyed by project address, for navigation. */
 export function useDriveTrees(projects: Project[]): Map<string, DriveTree> {
@@ -83,6 +84,42 @@ export function useDriveContent(project: Project): {
     [project.address, project.event.id]
   );
   return { content: content ?? EMPTY_DRIVE, loaded: loaded ?? false };
+}
+
+/** Every project's Drive, folders and files, keyed by project address, for views across them. */
+export function useDriveContents(projects: Project[]): {
+  contents: Map<string, DriveContent>;
+  loaded: boolean;
+} {
+  const addresses = projects.map((project) => project.address);
+  const key = projects.map((project) => project.event.id).join(",");
+  const members = [...new Set(projects.flatMap((project) => project.members))];
+  const feed = () =>
+    addresses.length > 0
+      ? sync(addressFilters("#a", addresses, { kinds: KINDS }, members))
+      : of(true);
+  const loaded = useObservableValue(feed, [key]);
+  const contents = useObservableValue(
+    () =>
+      addresses.length > 0
+        ? whileLoading(
+            eventStore.timeline([{ "#a": addresses, kinds: KINDS }]),
+            feed()
+          ).pipe(
+            map(
+              (events) =>
+                new Map(
+                  projects.map((project) => [
+                    project.address,
+                    resolveDrive(project, events),
+                  ])
+                )
+            )
+          )
+        : of(NO_CONTENTS),
+    [key]
+  );
+  return { contents: contents ?? NO_CONTENTS, loaded: loaded ?? false };
 }
 
 /** What the person starred in the project's Drive, and the files they opened lately. */

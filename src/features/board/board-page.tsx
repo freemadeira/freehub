@@ -19,8 +19,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AssigneeFilter } from "@/features/board/assignee-filter";
 import { BacklogView } from "@/features/board/backlog-view";
-import type { BoardScope } from "@/features/board/board-context";
-import { BoardContext, boardQuery } from "@/features/board/board-context";
+import { useBoardCommands } from "@/features/board/board-commands";
+import type { BoardScope, BoardTab } from "@/features/board/board-context";
+import {
+  BoardContext,
+  boardQuery,
+  DEFAULT_TAB,
+  parseTab,
+} from "@/features/board/board-context";
+import {
+  cardNeighbours,
+  cardOrder,
+  groupedByStatus,
+} from "@/features/board/card-order";
 import { DoneView } from "@/features/board/done-view";
 import { LayoutSwitch, useBoardLayout } from "@/features/board/layout-switch";
 import { SprintView } from "@/features/board/sprint-view";
@@ -30,26 +41,18 @@ import type { NewCardDefaults } from "@/features/card/new-card-dialog";
 import { NewCardDialog } from "@/features/card/new-card-dialog";
 import { PinButton } from "@/features/home/pin-controls";
 import { useBoardContent } from "@/hooks/use-board-content";
-import type { Board } from "@/lib/model";
+import { useVisit } from "@/hooks/use-visit";
+import type { Board, Card } from "@/lib/model";
 import { canEdit, needsCardId } from "@/lib/model";
 import { cardPath } from "@/lib/paths";
 import type { Project } from "@/lib/project";
-
-const TABS = ["backlog", "sprint", "done"] as const;
-const DEFAULT_TAB = "sprint";
-
-type Tab = (typeof TABS)[number];
-
-function parseTab(value: string | null): Tab {
-  return TABS.find((tab) => tab === value) ?? DEFAULT_TAB;
-}
 
 function withQuery(path: string, query: URLSearchParams): string {
   const search = query.toString();
   return search ? `${path}?${search}` : path;
 }
 
-function withTab(query: URLSearchParams, tab: Tab): URLSearchParams {
+function withTab(query: URLSearchParams, tab: BoardTab): URLSearchParams {
   const next = new URLSearchParams(query);
   if (tab !== DEFAULT_TAB) {
     next.set("tab", tab);
@@ -128,9 +131,28 @@ interface OpenCardProps {
   id: string | null;
   crumbs: Crumb[];
   boardHref: string;
+  /** The tab the card was opened from, which its previous and next follow. */
+  tab: BoardTab;
   /** Whether the board's cards have loaded. */
   loaded: boolean;
   onLeave: () => void;
+}
+
+/**
+ * The cards either side of one, as the tab it was opened from lists them. A
+ * card that tab leaves out, like one opened from the inbox, steps through the
+ * whole board instead.
+ */
+function useNeighbours(tab: BoardTab, card: Card | undefined) {
+  const scope = use(BoardContext);
+  if (!(scope && card)) {
+    return {};
+  }
+  return (
+    cardNeighbours(card, cardOrder(tab, scope.content, scope.cards)) ??
+    cardNeighbours(card, groupedByStatus(scope.content.cards)) ??
+    {}
+  );
 }
 
 /** The card a link points at, or back to the board once it turns out to be gone. */
@@ -139,17 +161,27 @@ function OpenCard({
   id,
   crumbs,
   boardHref,
+  tab,
   loaded,
   onLeave,
 }: OpenCardProps) {
-  const content = use(BoardContext)?.content;
+  const scope = use(BoardContext);
+  const content = scope?.content;
   // The id wins: it tells apart cards that share a number.
   const card = content?.cards.find((item) =>
     id === null ? item.number === number : item.id === id
   );
-  if (card) {
+  const { previous, next } = useNeighbours(tab, card);
+  if (scope && card) {
     return (
-      <CardPage card={card} crumbs={crumbs} key={card.id} onLeave={onLeave} />
+      <CardPage
+        card={card}
+        crumbs={crumbs}
+        key={card.id}
+        nextHref={next && scope.cardHref(next)}
+        onLeave={onLeave}
+        previousHref={previous && scope.cardHref(previous)}
+      />
     );
   }
   return loaded && content ? (
@@ -157,6 +189,11 @@ function OpenCard({
   ) : (
     <CardPageSkeleton crumbs={crumbs} />
   );
+}
+
+/** Keeps the board among the places opened lately; an open card keeps itself. */
+function useBoardVisit(pubkey: string, board: Board, cardOpen: boolean) {
+  useVisit(pubkey, cardOpen ? undefined : { id: board.address, kind: "board" });
 }
 
 interface BoardPageProps {
@@ -202,8 +239,20 @@ export function BoardPage({
     cardOpen ? boardHref : undefined
   );
   useBoardScroll(openCard);
+  useBoardVisit(pubkey, board, cardOpen);
 
-  const showTab = (value: Tab) => setParams(withTab(linkQuery, value));
+  const showTab = (value: BoardTab) => setParams(withTab(linkQuery, value));
+  useBoardCommands({
+    board,
+    boards,
+    canChangeSettings: board.creator === pubkey,
+    cardOpen,
+    layout,
+    onLayout: setLayout,
+    onSettings: () => setEditing(true),
+    onTab: showTab,
+    tab,
+  });
 
   const leaveCard = () => {
     if (history.state?.fromBoard) {
@@ -319,6 +368,7 @@ export function BoardPage({
           loaded={loaded}
           number={cardNumber}
           onLeave={leaveCard}
+          tab={tab}
         />
       )}
       {scope && adding && (

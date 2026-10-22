@@ -1,4 +1,4 @@
-import { map } from "rxjs";
+import { map, of } from "rxjs";
 
 import { useObservableValue } from "@/hooks/use-observable-value";
 import type { CardActivity } from "@/lib/card-activity";
@@ -19,6 +19,53 @@ export interface CardThread {
   comments: Comment[];
   /** What happened to the card, oldest first. */
   activity: CardActivity[];
+}
+
+/**
+ * Every comment the boards' members wrote on cards, for search. Comments name
+ * their card, not its board, so they're asked for by author and matched to
+ * cards afterwards. Activity shares the thread and is left out.
+ */
+export function useCardComments(boards: Board[]): {
+  comments: Comment[];
+  loaded: boolean;
+} {
+  const members = [...new Set(boards.flatMap((board) => board.members))];
+  const key = members.toSorted().join(",");
+  const filters = [
+    { "#K": [String(CARD_KIND)], authors: members, kinds: [COMMENT_KIND] },
+  ];
+  const loaded = useObservableValue(
+    () =>
+      members.length > 0
+        ? sync([
+            ...filters,
+            // Comments deleted since, which the store then lets go of.
+            {
+              "#k": [String(COMMENT_KIND)],
+              authors: members,
+              kinds: [DELETE_KIND],
+            },
+          ])
+        : of(true),
+    [key]
+  );
+  const comments = useObservableValue(
+    () =>
+      members.length > 0
+        ? eventStore
+            .timeline(filters)
+            .pipe(
+              map((events) =>
+                events
+                  .filter((event) => !isCardActivity(event))
+                  .map(parseComment)
+              )
+            )
+        : of([]),
+    [key]
+  );
+  return { comments: comments ?? [], loaded: loaded ?? false };
 }
 
 /** The card's comments and activity, which share its NIP-22 thread. */

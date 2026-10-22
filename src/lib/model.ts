@@ -168,6 +168,7 @@ export const RESERVED_CODES: ReadonlySet<string> = new Set([
   "BOARDS",
   "INBOX",
   "MAP",
+  "SEARCH",
 ]);
 
 /**

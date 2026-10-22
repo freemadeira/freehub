@@ -28,6 +28,9 @@ import {
 import { LoginPage } from "@/features/login/login-page";
 import { MAP_PATH } from "@/features/map/map-path";
 import { ProjectDialog } from "@/features/projects/project-dialog";
+import { SearchPage } from "@/features/search/search-page";
+import { SEARCH_PATH } from "@/features/search/search-path";
+import { AppCommandsProvider } from "@/features/shortcuts/app-commands";
 import { useBoards } from "@/hooks/use-boards";
 import { useDocs } from "@/hooks/use-docs";
 import { useDriveTrees } from "@/hooks/use-drive";
@@ -129,97 +132,108 @@ function Workspace({ pubkey }: { pubkey: string }) {
     ? projects.find((project) => inProject(board, project))
     : undefined;
   const newProject = () => setCreatingProject(true);
-  const places: Places = { boards, docs, projects, tables };
+  const places: Places = {
+    boards,
+    docs,
+    drive: drive ? trees : undefined,
+    projects,
+    tables,
+  };
 
   return (
     <InboxContext value={inbox}>
       <PlacesContext value={places}>
         <HomeContext value={home}>
           <SidebarProvider>
-            <AppSidebar
-              boards={boards}
-              docs={docs}
-              drive={drive ? trees : undefined}
-              onNewProject={newProject}
-              projects={projects}
-              pubkey={pubkey}
-              tables={tables}
-              unread={inbox.unread}
-            />
-            <SidebarInset>
-              <Switch>
-                <Route path="/">
-                  <HomePage
-                    boards={boards}
-                    docs={docs}
-                    loaded={boardsLoaded && projectsLoaded}
-                    onNewProject={newProject}
-                    projects={projects}
-                    pubkey={pubkey}
-                    tables={tables}
-                  />
-                </Route>
-                <Route<ProjectParams> path="/p/:project/:table?/:record?">
-                  {(route) => (
-                    <Suspense fallback={<RouteFallback />}>
-                      <ProjectRoute
-                        boards={boards}
-                        docs={docs}
-                        docsLoaded={projectsLoaded && docsLoaded}
-                        loaded={projectsLoaded}
-                        projects={projects}
-                        pubkey={pubkey}
-                        recordId={route.record}
-                        slug={route.project}
-                        tableSlug={route.table}
-                      />
-                    </Suspense>
-                  )}
-                </Route>
-                <Route path={BOARDS_PATH}>
-                  <BoardsPage
-                    boards={boards}
-                    loaded={boardsLoaded && projectsLoaded}
-                    projects={projects}
-                    pubkey={pubkey}
-                  />
-                </Route>
-                <Route path={INBOX_PATH}>
-                  <InboxPage inbox={inbox} pubkey={pubkey} />
-                </Route>
-                {getConfig().map && (
-                  <Route path={MAP_PATH}>
-                    <Suspense fallback={<RouteFallback />}>
-                      <MapRoute projects={projects} pubkey={pubkey} />
-                    </Suspense>
-                  </Route>
-                )}
-                {slug && (
-                  <Route path="/:slug">
-                    <BoardRoute
-                      board={board}
+            <AppCommandsProvider onNewProject={newProject} pubkey={pubkey}>
+              <AppSidebar
+                boards={boards}
+                docs={docs}
+                drive={drive ? trees : undefined}
+                onNewProject={newProject}
+                projects={projects}
+                pubkey={pubkey}
+                tables={tables}
+                unread={inbox.unread}
+              />
+              <SidebarInset>
+                <Switch>
+                  <Route path="/">
+                    <HomePage
                       boards={boards}
-                      cardNumber={slug.number}
-                      code={slug.code}
-                      loaded={boardsLoaded}
-                      project={boardProject}
+                      docs={docs}
+                      loaded={boardsLoaded && projectsLoaded}
+                      onNewProject={newProject}
+                      projects={projects}
+                      pubkey={pubkey}
+                      tables={tables}
+                    />
+                  </Route>
+                  <Route<ProjectParams> path="/p/:project/:table?/:record?">
+                    {(route) => (
+                      <Suspense fallback={<RouteFallback />}>
+                        <ProjectRoute
+                          boards={boards}
+                          docs={docs}
+                          docsLoaded={projectsLoaded && docsLoaded}
+                          loaded={projectsLoaded}
+                          projects={projects}
+                          pubkey={pubkey}
+                          recordId={route.record}
+                          slug={route.project}
+                          tableSlug={route.table}
+                        />
+                      </Suspense>
+                    )}
+                  </Route>
+                  <Route path={BOARDS_PATH}>
+                    <BoardsPage
+                      boards={boards}
+                      loaded={boardsLoaded && projectsLoaded}
                       projects={projects}
                       pubkey={pubkey}
                     />
                   </Route>
-                )}
-                <Route>
-                  <Redirect replace to="/" />
-                </Route>
-              </Switch>
-            </SidebarInset>
-            <ProjectDialog
-              onOpenChange={setCreatingProject}
-              open={creatingProject}
-              projects={projects}
-              pubkey={pubkey}
-            />
-            {drive && <UploadTray trees={trees} />}
+                  <Route path={INBOX_PATH}>
+                    <InboxPage inbox={inbox} pubkey={pubkey} />
+                  </Route>
+                  <Route path={SEARCH_PATH}>
+                    <SearchPage pubkey={pubkey} />
+                  </Route>
+                  {getConfig().map && (
+                    <Route path={MAP_PATH}>
+                      <Suspense fallback={<RouteFallback />}>
+                        <MapRoute projects={projects} pubkey={pubkey} />
+                      </Suspense>
+                    </Route>
+                  )}
+                  {slug && (
+                    <Route path="/:slug">
+                      <BoardRoute
+                        board={board}
+                        boards={boards}
+                        cardNumber={slug.number}
+                        code={slug.code}
+                        loaded={boardsLoaded}
+                        project={boardProject}
+                        projects={projects}
+                        pubkey={pubkey}
+                      />
+                    </Route>
+                  )}
+                  <Route>
+                    <Redirect replace to="/" />
+                  </Route>
+                </Switch>
+              </SidebarInset>
+              <ProjectDialog
+                onOpenChange={setCreatingProject}
+                open={creatingProject}
+                projects={projects}
+                pubkey={pubkey}
+              />
+              {drive && <UploadTray trees={trees} />}
+            </AppCommandsProvider>
           </SidebarProvider>
         </HomeContext>
       </PlacesContext>

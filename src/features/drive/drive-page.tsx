@@ -7,7 +7,7 @@ import {
   UploadIcon,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import type { ChangeEvent, DragEvent, RefObject } from "react";
+import type { ChangeEvent, DragEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Link, useLocation, useSearch } from "wouter";
@@ -65,6 +65,7 @@ import { QuickLook } from "@/features/drive/quick-look";
 import type { DriveEntries } from "@/features/drive/use-drive-entries";
 import { driveEntries } from "@/features/drive/use-drive-entries";
 import { useDriveContent, useDriveMarks } from "@/hooks/use-drive";
+import { useSettled } from "@/hooks/use-settled";
 import type { DriveContent, DriveFolder, DriveTree, Sort } from "@/lib/drive";
 import { DEFAULT_SORT, pathTo, SORTS } from "@/lib/drive";
 import {
@@ -88,7 +89,7 @@ import {
 } from "@/lib/drive-upload";
 import { canEdit } from "@/lib/model";
 import type { Project } from "@/lib/project";
-import { readStorage, writeStorage } from "@/lib/utils";
+import { isTyping, readStorage, writeStorage } from "@/lib/utils";
 
 const SORT_KEY = "drive:sort";
 const LAYOUT_KEY = "drive:layout";
@@ -128,24 +129,6 @@ function useStored<T>(read: () => T, write: (value: T) => void) {
   ] as const;
 }
 
-/** The text searched for, a moment after it's typed. */
-function useSettled(value: string): string {
-  const [settled, setSettled] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setSettled(value.trim()), SEARCH_DELAY);
-    return () => clearTimeout(timer);
-  }, [value]);
-  return value.trim() ? settled : "";
-}
-
-function isTyping(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLElement &&
-    (target.isContentEditable ||
-      target.closest("input, textarea, select, [role=dialog]") !== null)
-  );
-}
-
 /** A pasted screenshot named for when it was pasted; other files keep their names. */
 function named(file: File): File {
   const extension = PASTED.exec(file.name)?.groups?.extension;
@@ -175,23 +158,6 @@ function usePasteUpload(to: Destination | undefined) {
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);
   }, [project, folder]);
-}
-
-/** "/" jumps to the search, as in many apps. */
-function useSlashToSearch(field: RefObject<HTMLInputElement | null>) {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (
-        event.key === "/" &&
-        !(event.metaKey || event.ctrlKey || isTyping(event.target))
-      ) {
-        event.preventDefault();
-        field.current?.focus();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [field]);
 }
 
 /** Files dragged in from the computer, anywhere on the page, upload to `to`. */
@@ -559,7 +525,7 @@ function DrivePage({
     writeStorage(LAYOUT_KEY, value === "grid" ? null : value)
   );
   const [text, setText] = useState("");
-  const query = useSettled(text);
+  const query = useSettled(text, SEARCH_DELAY);
   const [selection, setSelection] = useState<Set<string>>(() => new Set());
   // The entry being renamed in place; empty when none is.
   const [renaming, setRenaming] = useState("");
@@ -595,7 +561,6 @@ function DrivePage({
   const here: Destination | undefined =
     browsing && editable ? { folder: folderId, project } : undefined;
   usePasteUpload(here);
-  useSlashToSearch(searchField);
   const drop = useDropUpload(here);
   const pickFiles = () => filePicker.current?.click();
 

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Link, Redirect, useLocation } from "wouter";
 
+import { usePlaces } from "@/components/app-link";
 import { TopBar } from "@/components/top-bar";
 import { buttonVariants } from "@/components/ui/button";
 import { Empty, EmptyTitle } from "@/components/ui/empty";
@@ -14,16 +15,56 @@ import {
 } from "@/features/docs/docs-context";
 import { DocsPage } from "@/features/docs/docs-page";
 import { PageView } from "@/features/docs/page-view";
-import { DRIVE_SEGMENT } from "@/features/drive/drive-context";
+import {
+  DRIVE_SEGMENT,
+  parseFolderParam,
+} from "@/features/drive/drive-context";
 import { DriveRoute } from "@/features/drive/drive-page";
 import { ProjectPage } from "@/features/projects/project-page";
 import { useProjectContent } from "@/hooks/use-project-content";
 import { useSources } from "@/hooks/use-sources";
+import { useVisit } from "@/hooks/use-visit";
 import { hasBlossom } from "@/lib/blossom";
 import type { DocsContent } from "@/lib/docs";
 import { EMPTY_DOCS } from "@/lib/docs";
 import type { Board } from "@/lib/model";
 import type { Project } from "@/lib/project";
+import type { PlaceKind } from "@/lib/search";
+
+/** The place a link in the project opens, for the places the user opened lately. */
+function usePlaceAt(
+  project: Project | undefined,
+  segment: string | undefined,
+  param: string | undefined
+): { kind: PlaceKind; id: string } | undefined {
+  const { tables } = usePlaces();
+  if (!project) {
+    return undefined;
+  }
+  // Pages, folders and records sit in the project; their ids follow its address.
+  const inside = (kind: PlaceKind, id?: string) =>
+    id ? { id: `${project.address}/${id}`, kind } : undefined;
+  switch (segment) {
+    case undefined: {
+      return { id: project.address, kind: "project" };
+    }
+    case DOCS_SEGMENT: {
+      return inside("doc", param && parsePageParam(param));
+    }
+    case DRIVE_SEGMENT: {
+      return inside("folder", param && parseFolderParam(param));
+    }
+    default: {
+      if (param) {
+        return inside("record", param);
+      }
+      const table = tables
+        .get(project.address)
+        ?.find((item) => item.slug === segment);
+      return table && { id: table.address, kind: "table" };
+    }
+  }
+}
 
 function NotFound({
   title,
@@ -185,6 +226,7 @@ export function ProjectRoute({
 }: ProjectRouteProps) {
   const project = projects.find((item) => item.slug === slug.toLowerCase());
   const segment = props.tableSlug?.toLowerCase();
+  useVisit(props.pubkey, usePlaceAt(project, segment, props.recordId));
   if (project && segment === DRIVE_SEGMENT) {
     // Only teams with somewhere to keep files have a Drive.
     return hasBlossom() ? (

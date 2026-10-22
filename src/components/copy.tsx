@@ -22,6 +22,13 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
+/** Copies the text, and says so. */
+export async function copyAndTell(text: string, told: string): Promise<void> {
+  if (await copyText(text)) {
+    toast.success(told);
+  }
+}
+
 export function useCopy(): { copied: boolean; copy: (text: string) => void } {
   const [copied, setCopied] = useState(false);
 

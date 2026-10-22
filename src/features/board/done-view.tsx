@@ -1,42 +1,20 @@
 import { Empty, EmptyTitle } from "@/components/ui/empty";
 import { useBoard } from "@/features/board/board-context";
 import { Bucket } from "@/features/board/bucket";
+import { doneGroups } from "@/features/board/card-order";
 import { CardRow } from "@/features/board/card-tile";
-import { activeSprint, isClosed } from "@/lib/model";
 
 export function DoneView() {
   const { content, cards } = useBoard();
-  const active = activeSprint(content);
-  const done = cards
-    .filter(
-      (card) => isClosed(card.status) && !(active && card.sprint === active.id)
-    )
-    .toSorted((a, b) => b.event.created_at - a.event.created_at);
+  const groups = doneGroups(content, cards);
 
-  if (done.length === 0) {
+  if (groups.length === 0) {
     return (
       <Empty>
         <EmptyTitle>Nothing done yet</EmptyTitle>
       </Empty>
     );
   }
-
-  const sprints = content.sprints
-    .filter((sprint) => sprint !== active)
-    .toReversed();
-  const known = new Set(sprints.map((sprint) => sprint.id));
-  const groups = [
-    ...sprints.map((sprint) => ({
-      cards: done.filter((card) => card.sprint === sprint.id),
-      id: sprint.id,
-      title: sprint.title,
-    })),
-    {
-      cards: done.filter((card) => !(card.sprint && known.has(card.sprint))),
-      id: "none",
-      title: "No sprint",
-    },
-  ].filter((group) => group.cards.length > 0);
 
   return (
     <div className="flex flex-col gap-3">

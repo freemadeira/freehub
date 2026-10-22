@@ -21,6 +21,7 @@ import type { CrmTable, ProjectContent } from "@/lib/crm";
 import { recordTitle } from "@/lib/crm";
 import type { DocsContent } from "@/lib/docs";
 import { pageTitle } from "@/lib/docs";
+import type { DriveTree } from "@/lib/drive";
 import type { Board, BoardContent } from "@/lib/model";
 import { RESERVED_CODES } from "@/lib/model";
 import type { Project } from "@/lib/project";
@@ -33,6 +34,8 @@ export interface Places {
   tables: Map<string, CrmTable[]>;
   /** Every project's pages, by project address. */
   docs: Map<string, DocsContent>;
+  /** Every project's Drive folders, by project address; none when the team keeps no files. */
+  drive?: Map<string, DriveTree>;
 }
 
 export const PlacesContext = createContext<Places | null>(null);
@@ -183,7 +186,7 @@ type TargetProps<Type extends AppTarget["type"]> = LinkProps & {
   target: Extract<AppTarget, { type: Type }>;
 };
 
-function usePlaces(): Places {
+export function usePlaces(): Places {
   return use(PlacesContext) ?? NO_PLACES;
 }
 

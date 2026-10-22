@@ -37,6 +37,17 @@ export function shortNpub(pubkey: string): string {
   return `${npub.slice(0, 10)}…${npub.slice(-4)}`;
 }
 
+/** Whether keys pressed there are typing, or picking in a popup, rather than shortcuts. */
+export function isTyping(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      target.closest(
+        "input, textarea, select, [role=dialog], [role=alertdialog], [role=menu], [role=listbox]"
+      ) !== null)
+  );
+}
+
 export function readStorage(key: string): string | null {
   try {
     return localStorage.getItem(key);

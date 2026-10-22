@@ -1,3 +1,4 @@
+import type { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { cn } from "cn";
 import { format, parseISO } from "date-fns";
 import type { LucideIcon } from "lucide-react";
@@ -67,6 +68,8 @@ export interface BoardChoice {
   scopes: BoardScope[];
   /** Called with the board picked, so the next card can start there. */
   onPick: (board: Board) => void;
+  /** The sprint the card joins on each board: its active one, unless this says otherwise. */
+  sprintOn?: (scope: BoardScope) => string | undefined;
 }
 
 type Properties = CardPlacement &
@@ -74,18 +77,22 @@ type Properties = CardPlacement &
 
 /**
  * The properties as they carry over to another board: a status it uses, only
- * its people, and its active sprint.
+ * its people, and its active sprint, or the one the choice picks there.
  */
 function onBoard(
   properties: Properties,
-  { board, content }: BoardScope
+  scope: BoardScope,
+  choice: BoardChoice
 ): Properties {
+  const { board, content } = scope;
   return {
     ...properties,
     assignees: properties.assignees.filter((pubkey) =>
       board.members.includes(pubkey)
     ),
-    sprint: activeSprint(content)?.id,
+    sprint: choice.sprintOn
+      ? choice.sprintOn(scope)
+      : activeSprint(content)?.id,
     status: nearestStatus(board.statuses, properties.status),
   };
 }
@@ -359,6 +366,7 @@ function NewCardForm({
   defaults,
   start,
   choice,
+  announce,
   titleField,
   onClose,
 }: {
@@ -366,6 +374,7 @@ function NewCardForm({
   /** The board the card starts on. */
   start: BoardScope;
   choice?: BoardChoice;
+  announce: boolean;
   titleField: RefObject<HTMLTextAreaElement | null>;
   onClose: () => void;
 }) {
@@ -386,7 +395,7 @@ function NewCardForm({
   const [properties, setProperties] = useState<Properties>(() => {
     const { assignees, sprint, status } = defaults;
     const placed = { assignees, labels: [], sprint, status };
-    return choice ? onBoard(placed, start) : placed;
+    return choice ? onBoard(placed, start, choice) : placed;
   });
   const [createMore, setCreateMore] = useState(false);
   const ready = title.trim() !== "";
@@ -396,9 +405,12 @@ function NewCardForm({
     setProperties((current) => ({ ...current, ...changes }));
 
   const pick = (next: BoardScope) => {
+    if (!choice) {
+      return;
+    }
     setPicked(next.board.address);
-    setProperties((current) => onBoard(current, next));
-    choice?.onPick(next.board);
+    setProperties((current) => onBoard(current, next, choice));
+    choice.onPick(next.board);
   };
 
   // Mod+Enter in the description passes its text, since the state it just
@@ -417,6 +429,9 @@ function NewCardForm({
     if (!createMore) {
       setDraft({ description: "", title: "" });
       onClose();
+      if (announce) {
+        toast.success(`${key} created`);
+      }
       return;
     }
     // Properties carry over, so a run of similar cards is quick to enter.
@@ -544,6 +559,12 @@ interface NewCardDialogProps {
   onOpenChange: (open: boolean) => void;
   /** The boards to pick from; the card goes on the board in context otherwise. */
   choice?: BoardChoice;
+  /** Says each card was created, for cards added away from where they show. */
+  announce?: boolean;
+  /** Once it has closed, animation and all. */
+  onClosed?: () => void;
+  /** Where focus goes once it has closed. */
+  finalFocus?: DialogPrimitive.Popup.Props["finalFocus"];
 }
 
 export function NewCardDialog({
@@ -551,6 +572,9 @@ export function NewCardDialog({
   open,
   onOpenChange,
   choice,
+  announce = false,
+  onClosed,
+  finalFocus,
 }: NewCardDialogProps) {
   const titleField = useRef<HTMLTextAreaElement>(null);
   const here = use(BoardContext);
@@ -559,14 +583,24 @@ export function NewCardDialog({
       choice.scopes[0])
     : here;
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
+    <Dialog
+      onOpenChange={onOpenChange}
+      onOpenChangeComplete={(isOpen) => {
+        if (!isOpen) {
+          onClosed?.();
+        }
+      }}
+      open={open}
+    >
       <DialogContent
         className="max-w-2xl gap-0 p-0"
+        finalFocus={finalFocus}
         initialFocus={titleField}
         showCloseButton={false}
       >
         {start && (
           <NewCardForm
+            announce={announce}
             choice={choice}
             defaults={defaults}
             onClose={() => onOpenChange(false)}

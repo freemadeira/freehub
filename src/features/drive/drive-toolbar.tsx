@@ -164,6 +164,8 @@ function SearchField({
       <input
         aria-label="Search the Drive"
         className="placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-sm outline-none"
+        // "/" comes here, not to search of everything.
+        data-page-search
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Escape" && value) {

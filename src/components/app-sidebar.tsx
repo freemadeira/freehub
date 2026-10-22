@@ -5,15 +5,19 @@ import {
   KanbanIcon,
   MapIcon,
   PlusIcon,
+  SearchIcon,
   SquareArrowOutUpRightIcon,
   SquareKanbanIcon,
+  SquarePenIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useLocation, useSearchParams } from "wouter";
+import { useLocation } from "wouter";
 
+import { IconButton } from "@/components/icon-button";
 import { Logo } from "@/components/logo";
 import { NavLink } from "@/components/nav-link";
 import { ProjectAvatar } from "@/components/project-avatar";
+import { KeyHint } from "@/components/shortcut-keys";
 import {
   Collapsible,
   CollapsibleContent,
@@ -46,11 +50,7 @@ import {
 } from "@/components/ui/sidebar";
 import { UserMenu } from "@/components/user-menu";
 import { getConfig } from "@/config";
-import {
-  boardPath,
-  findBoard,
-  parseSlug,
-} from "@/features/board/board-context";
+import { boardPath, useOpenBoard } from "@/features/board/board-context";
 import { BOARDS_PATH } from "@/features/boards/boards-page";
 import { TableIcon } from "@/features/crm/table-icon";
 import { SidebarDocs } from "@/features/docs/sidebar-docs";
@@ -58,6 +58,8 @@ import { SidebarDrive } from "@/features/drive/sidebar-drive";
 import { PinMenuItem } from "@/features/home/pin-controls";
 import { INBOX_PATH } from "@/features/inbox/inbox-page";
 import { MAP_PATH } from "@/features/map/map-path";
+import { SEARCH_PATH } from "@/features/search/search-path";
+import { useAppCommands } from "@/features/shortcuts/app-commands";
 import type { CrmTable } from "@/lib/crm";
 import type { DocsContent } from "@/lib/docs";
 import { EMPTY_DOCS } from "@/lib/docs";
@@ -69,21 +71,12 @@ import type { Board } from "@/lib/model";
 import { canEdit } from "@/lib/model";
 import type { Project } from "@/lib/project";
 import { inProject, outsideProjects } from "@/lib/project";
+import { SHORTCUTS } from "@/lib/shortcuts";
 import { readStorage, writeStorage } from "@/lib/utils";
 
 /** Projects shown open until the user folds them. */
 const OPEN_BY_DEFAULT = 3;
 const MAX_BADGE = 99;
-
-/** The board the current page shows, if any. */
-function useOpenBoard(boards: Board[]): Board | undefined {
-  const [location] = useLocation();
-  const [search] = useSearchParams();
-  // Board pages sit one level deep: `/FREE` or `/FREE-12`.
-  const [, segment = "", ...rest] = location.split("/");
-  const slug = rest.length === 0 ? parseSlug(segment) : undefined;
-  return slug ? findBoard(boards, slug.code, search.get("board")) : undefined;
-}
 
 /** Projects opened or folded by address, as kept on this device. */
 function readOpened(key: string): Record<string, boolean> {
@@ -255,6 +248,7 @@ export function AppSidebar({
   const [location] = useLocation();
   const openBoard = useOpenBoard(boards);
   const { isMobile } = useSidebar();
+  const { canAddCards, newCard, showShortcuts } = useAppCommands();
   const storageKey = `sidebar-open:${pubkey}`;
   const [opened, setOpened] = useState(() => readOpened(storageKey));
 
@@ -295,7 +289,30 @@ export function AppSidebar({
         >
           <Logo className="h-7" />
         </NavLink>
-        {!isMobile && <SidebarTrigger />}
+        <div className="flex items-center gap-0.5">
+          <IconButton
+            className="text-muted-foreground"
+            label="Search"
+            nativeButton={false}
+            render={<NavLink href={SEARCH_PATH} />}
+            tooltip={<KeyHint keys={SHORTCUTS["search.open"]} label="Search" />}
+          >
+            <SearchIcon />
+          </IconButton>
+          {canAddCards && (
+            <IconButton
+              className="text-muted-foreground"
+              label="New card"
+              onClick={newCard}
+              tooltip={
+                <KeyHint keys={SHORTCUTS["card.new"]} label="New card" />
+              }
+            >
+              <SquarePenIcon />
+            </IconButton>
+          )}
+          {!isMobile && <SidebarTrigger />}
+        </div>
       </SidebarHeader>
       <ContextMenu>
         <ContextMenuTrigger
@@ -456,7 +473,7 @@ export function AppSidebar({
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <UserMenu pubkey={pubkey} />
+            <UserMenu onShowShortcuts={showShortcuts} pubkey={pubkey} />
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

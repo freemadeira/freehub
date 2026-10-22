@@ -5,15 +5,7 @@ import type { VariantProps } from "class-variance-authority";
 import { cn } from "cn";
 import { PanelLeftIcon } from "lucide-react";
 import type * as React from "react";
-import {
-  createContext,
-  use,
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useMemo,
-  useState,
-} from "react";
+import { createContext, use, useCallback, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -30,13 +22,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useShortcut } from "@/hooks/use-shortcut";
+import { SHORTCUTS } from "@/lib/shortcuts";
 import { readStorage, writeStorage } from "@/lib/utils";
 
 const SIDEBAR_KEY = "sidebar";
 const SIDEBAR_WIDTH = "16rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
-const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
 interface SidebarContextProps {
   state: "expanded" | "collapsed";
@@ -83,23 +76,8 @@ function SidebarProvider({
     }
   }, [isMobile, open, persistOpen]);
 
-  const onShortcut = useEffectEvent((event: KeyboardEvent) => {
-    // A focused editor may have used the keys already, for bold.
-    if (
-      !event.defaultPrevented &&
-      event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
-      (event.metaKey || event.ctrlKey)
-    ) {
-      event.preventDefault();
-      toggleSidebar();
-    }
-  });
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => onShortcut(event);
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  // Left alone when a focused editor took the keys already, for bold.
+  useShortcut(SHORTCUTS["sidebar.toggle"], toggleSidebar, { inFields: true });
 
   const context = useMemo<SidebarContextProps>(
     () => ({

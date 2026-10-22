@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useBoard } from "@/features/board/board-context";
 import { Bucket } from "@/features/board/bucket";
+import { backlogGroups } from "@/features/board/card-order";
 import { SortableCardRow } from "@/features/board/card-tile";
 import { AddButton } from "@/features/board/quick-add";
 import { SprintDialog } from "@/features/board/sprint-dialog";
@@ -34,7 +35,7 @@ import {
   updateCard,
 } from "@/lib/actions";
 import type { Card, Sprint } from "@/lib/model";
-import { activeSprint, isClosed, startingStatus } from "@/lib/model";
+import { activeSprint, startingStatus } from "@/lib/model";
 import { plural } from "@/lib/utils";
 
 const BACKLOG = "backlog";
@@ -169,18 +170,7 @@ export function BacklogView({
 }) {
   const { board, canEdit, content, cards } = useBoard();
   const active = activeSprint(content);
-  const future = content.sprints.filter((sprint) => sprint.status === "future");
-
-  const planned = new Map(
-    future.map((sprint): [string, Card[]] => [sprint.id, []])
-  );
-  const backlog: Card[] = [];
-  for (const card of cards) {
-    if (!isClosed(card.status) && !(active && card.sprint === active.id)) {
-      const bucket = card.sprint ? planned.get(card.sprint) : undefined;
-      (bucket ?? backlog).push(card);
-    }
-  }
+  const { backlog, future, planned } = backlogGroups(content, cards);
   const drag = useCardDrag<string>(
     { ...Object.fromEntries(planned), [BACKLOG]: backlog },
     (moves) => {

@@ -2,6 +2,7 @@ import { npubEncode } from "applesauce-core/helpers/pointers";
 import {
   ChevronsUpDownIcon,
   CopyIcon,
+  KeyboardIcon,
   LogOutIcon,
   MonitorDownIcon,
   MonitorIcon,
@@ -31,6 +32,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SidebarMenuButton } from "@/components/ui/sidebar";
@@ -40,6 +42,7 @@ import { useProfile } from "@/hooks/use-profile";
 import { logout } from "@/lib/login";
 import { unsynced$ } from "@/lib/publish";
 import { useInstall } from "@/lib/pwa";
+import { keysText, SHORTCUTS } from "@/lib/shortcuts";
 import type { Theme } from "@/lib/theme";
 import { setTheme, theme$ } from "@/lib/theme";
 import { plural, shortNpub } from "@/lib/utils";
@@ -51,7 +54,7 @@ const THEMES = [
 ] as const;
 
 // Changes the relay hasn't taken yet stay queued under this key, on this device.
-function ConfirmLogout({
+export function ConfirmLogout({
   open,
   onOpenChange,
   pending,
@@ -85,7 +88,14 @@ function ConfirmLogout({
   );
 }
 
-export function UserMenu({ pubkey }: { pubkey: string }) {
+export function UserMenu({
+  pubkey,
+  onShowShortcuts,
+}: {
+  pubkey: string;
+  /** Opens the list of keyboard shortcuts. */
+  onShowShortcuts: () => void;
+}) {
   const { name } = useProfile(pubkey);
   const theme = useObservableValue(theme$);
   const pending = useObservableValue(unsynced$) ?? 0;
@@ -135,6 +145,17 @@ export function UserMenu({ pubkey }: { pubkey: string }) {
               Install app
             </DropdownMenuItem>
           )}
+          {/* Left out where there's no keyboard. */}
+          <DropdownMenuItem
+            className="pointer-coarse:hidden"
+            onClick={onShowShortcuts}
+          >
+            <KeyboardIcon />
+            Keyboard shortcuts
+            <DropdownMenuShortcut>
+              {keysText(SHORTCUTS["shortcuts.show"])}
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
             <DropdownMenuLabel>Theme</DropdownMenuLabel>

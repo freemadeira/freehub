@@ -1,11 +1,13 @@
 import { cn } from "cn";
-import { Trash2Icon } from "lucide-react";
+import { ChevronDownIcon, ChevronUpIcon, Trash2Icon } from "lucide-react";
 import type { ChangeEvent } from "react";
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
+import { useLocation } from "wouter";
 
 import { CopyButton } from "@/components/copy";
 import { IconButton } from "@/components/icon-button";
 import { MarkdownEditor, MarkdownView } from "@/components/markdown-editor";
+import { KeyHint } from "@/components/shortcut-keys";
 import type { Crumb } from "@/components/top-bar";
 import { TopBar } from "@/components/top-bar";
 import {
@@ -20,20 +22,24 @@ import {
 } from "@/components/ui/alert-dialog";
 import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useBoard } from "@/features/board/board-context";
+import { swapCard, useBoard } from "@/features/board/board-context";
 import { CardActivitySection } from "@/features/card/card-activity";
+import { useCardCommands } from "@/features/card/card-commands";
 import { STATUS_STYLES } from "@/features/card/card-fields";
 import { CardProperties } from "@/features/card/card-properties";
 import { AddReaction, Reactions } from "@/features/card/reactions";
 import { SubscribeButton } from "@/features/card/subscribe-button";
 import { useCardThread } from "@/hooks/use-comments";
 import { useCardReactions } from "@/hooks/use-reactions";
+import { useShortcut, useShortcuts } from "@/hooks/use-shortcut";
+import { useVisit } from "@/hooks/use-visit";
 import { deleteCard, updateCard } from "@/lib/actions";
 import type { Card } from "@/lib/model";
 import { cardKey } from "@/lib/model";
 import { cardPath } from "@/lib/paths";
 import type { Reaction } from "@/lib/reactions";
 import { cardReactionTarget, NO_REACTIONS } from "@/lib/reactions";
+import { SHORTCUTS } from "@/lib/shortcuts";
 
 // The text and comments read down a column in the middle, beside a panel of
 // properties. Narrower screens stack them, with the properties between the two.
@@ -126,41 +132,37 @@ function DescriptionField({ card }: { card: Card }) {
 
 function DeleteCard({
   card,
+  open,
+  onOpenChange,
   onDeleted,
 }: {
   card: Card;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onDeleted: () => void;
 }) {
   const { board } = useBoard();
-  const [open, setOpen] = useState(false);
   return (
-    <>
-      <IconButton label="Delete card" onClick={() => setOpen(true)}>
-        <Trash2Icon />
-      </IconButton>
-      <AlertDialog onOpenChange={setOpen} open={open}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {cardKey(board, card)}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This can’t be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                onDeleted();
-                deleteCard(board, card);
-              }}
-              variant="destructive"
-            >
-              Delete card
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+    <AlertDialog onOpenChange={onOpenChange} open={open}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete {cardKey(board, card)}?</AlertDialogTitle>
+          <AlertDialogDescription>This can’t be undone.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              onDeleted();
+              deleteCard(board, card);
+            }}
+            variant="destructive"
+          >
+            Delete card
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -214,19 +216,58 @@ function CardReactions({
  * a field blurs, and a menu closes, before the next Escape leaves.
  */
 function useEscapeToLeave(onLeave: () => void) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key === "Escape" &&
-        !event.defaultPrevented &&
-        event.target === document.body
-      ) {
-        onLeave();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onLeave]);
+  useShortcut(SHORTCUTS["card.leave"], (event) => {
+    if (event.target === document.body) {
+      onLeave();
+    }
+  });
+}
+
+interface CardStepsProps {
+  previousHref?: string;
+  nextHref?: string;
+}
+
+/**
+ * Steps to the card before or after this one, as the board lists them, by
+ * button or with K and J.
+ */
+function CardSteps({ previousHref, nextHref }: CardStepsProps) {
+  const [, navigate] = useLocation();
+  useShortcuts([
+    {
+      enabled: nextHref !== undefined,
+      keys: SHORTCUTS["card.next"],
+      run: () => nextHref && swapCard(navigate, nextHref),
+    },
+    {
+      enabled: previousHref !== undefined,
+      keys: SHORTCUTS["card.previous"],
+      run: () => previousHref && swapCard(navigate, previousHref),
+    },
+  ]);
+  return (
+    <>
+      <IconButton
+        disabled={!previousHref}
+        label="Previous card"
+        onClick={() => previousHref && swapCard(navigate, previousHref)}
+        tooltip={
+          <KeyHint keys={SHORTCUTS["card.previous"]} label="Previous card" />
+        }
+      >
+        <ChevronUpIcon />
+      </IconButton>
+      <IconButton
+        disabled={!nextHref}
+        label="Next card"
+        onClick={() => nextHref && swapCard(navigate, nextHref)}
+        tooltip={<KeyHint keys={SHORTCUTS["card.next"]} label="Next card" />}
+      >
+        <ChevronDownIcon />
+      </IconButton>
+    </>
+  );
 }
 
 function cardCrumb(card: Card, label: string): Crumb {
@@ -242,7 +283,7 @@ function cardCrumb(card: Card, label: string): Crumb {
   };
 }
 
-interface CardPageProps {
+interface CardPageProps extends CardStepsProps {
   card: Card;
   /** The way to the board, which the card's own crumb ends. */
   crumbs: Crumb[];
@@ -251,16 +292,26 @@ interface CardPageProps {
 }
 
 /** A card on a page of its own: its text and comments, with its properties beside them. */
-export function CardPage({ card, crumbs, onLeave }: CardPageProps) {
+export function CardPage({
+  card,
+  crumbs,
+  onLeave,
+  previousHref,
+  nextHref,
+}: CardPageProps) {
   const id = useId();
-  const { board, boardQuery, canEdit } = useBoard();
+  const { board, boardQuery, canEdit, pubkey } = useBoard();
   const thread = useCardThread(board, card);
   const reactions = useCardReactions(board, card, thread.comments);
+  const [deleting, setDeleting] = useState(false);
   useEscapeToLeave(onLeave);
+  useVisit(pubkey, { id: `${board.address}/${card.id}`, kind: "card" });
+  useCardCommands({ card, onDelete: () => setDeleting(true) });
   return (
     <>
       <TopBar crumbs={[...crumbs, cardCrumb(card, cardKey(board, card))]}>
         <FluidTooltip.Group>
+          <CardSteps nextHref={nextHref} previousHref={previousHref} />
           <CopyButton
             label="Copy link"
             // A shared link outlives today's board: another card may get this number later.
@@ -272,9 +323,21 @@ export function CardPage({ card, crumbs, onLeave }: CardPageProps) {
             }
           />
           <SubscribeButton card={card} />
-          {canEdit && <DeleteCard card={card} onDeleted={onLeave} />}
+          {canEdit && (
+            <IconButton label="Delete card" onClick={() => setDeleting(true)}>
+              <Trash2Icon />
+            </IconButton>
+          )}
         </FluidTooltip.Group>
       </TopBar>
+      {canEdit && (
+        <DeleteCard
+          card={card}
+          onDeleted={onLeave}
+          onOpenChange={setDeleting}
+          open={deleting}
+        />
+      )}
       <main className={LAYOUT}>
         <div className={cn(COLUMN, "flex flex-col gap-1 pt-6 sm:pt-10")}>
           {canEdit ? (
