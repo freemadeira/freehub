@@ -231,7 +231,7 @@ For Shopify, create the app from the store's admin (Settings → Apps → Develo
 
 ### BTC Map sync
 
-[BTC Map](https://btcmap.org/) shows the merchants OpenStreetMap tags as taking bitcoin. The sync keeps those tags in line with a CRM table, such as one made from the **Merchant adoption** template: every night it compares each merchant's record with its OpenStreetMap element, and on the first Monday of each month it lists the merchants OpenStreetMap has in your area that no record links to, as leads. For now it's a dry run: it prints what it would do, and writes nothing to OpenStreetMap or to the records.
+[BTC Map](https://btcmap.org/) shows the merchants OpenStreetMap tags as taking bitcoin. The sync keeps those tags in line with a CRM table, such as one made from the **Merchant adoption** template: every night it compares each merchant's record with its OpenStreetMap element, and on the first Monday of each month it lists the merchants OpenStreetMap has in your area that no record links to, as leads. Without an OpenStreetMap token it's a dry run: it prints what it would do and writes nothing. Run it like that first and read the report; setting `OSM_TOKEN` then makes the nightly run carry it out.
 
 It runs next to the app as its own container, built from this repository with `btcmap/Dockerfile`, and shows up in tables as a source, like a connector's:
 
@@ -246,6 +246,7 @@ It runs next to the app as its own container, built from this repository with `b
    | `ADDRESS_FORMAT` | How records write addresses, so they can go to OpenStreetMap: `pt` reads `Rua da Carreira 12, 9000-042 Funchal`. Without it, no address goes. Other countries' formats go in `btcmap/addresses.ts`. |
    | `TZ` | The time zone of the nightly run from 23:00 and of discovery from 9:00, such as `Atlantic/Madeira`. Defaults to UTC. A run that fails is tried again every 15 minutes that day. |
    | `OSM_CONTACT` | An email or web address where OpenStreetMap can reach whoever runs the sync, sent with every request. |
+   | `OSM_TOKEN` | An OAuth 2 token, with the **Modify the map** scope, of the OpenStreetMap account the sync edits as. Without it, nothing is written. Use an account of its own whose name says it's a bot. |
    | `OSM_API`, `OVERPASS_URL` | Default to OpenStreetMap's own API and to overpass-api.de. |
 
 3. Add its npub to `connectors` in `config.json`. Once it has started, **OpenStreetMap** shows under **Connections** in each table's settings. Switch it on, then pick the fields that hold the OSM link, the stage, the location, a relocated business's new location, the address, the website and the "On BTC Map" checkbox, and which of the stage's options mean Accepting bitcoin, Not interested, Closed and Relocated. Options left out, or picked for two meanings, change nothing.
@@ -258,6 +259,10 @@ It runs next to the app as its own container, built from this repository with `b
 | Relocated | Once the new location is pinned, moves the node there with the new address, if the node is still at the record's location. |
 
 Before changing anything, the sync checks that the element is still the record's business: its OpenStreetMap name, alone or with its branch, must be the record's title. It never changes a business's name, never replaces a website or address OpenStreetMap already has (other than a relocated business's address), and never clears a tag because a field is empty. What it can't do safely it lists for a mapper to do by hand: a business whose name doesn't match, one drawn as an area or on a node a way uses, a relocated node that isn't where the record had it, or a move whose new address it can't read. A record whose OSM link it can't read, or that links to the same element as another record in any table, is skipped and listed. It reads OpenStreetMap one request a second, as its usage policy asks, and the only thing it writes to the team relay is its source.
+
+With `OSM_TOKEN` set, each nightly run opens one changeset (`bot=yes`, `source=survey`) and uploads each element's change on its own: an element someone edited on OpenStreetMap since the sync read it is skipped and tried again the next night. A run makes at most 50 changes; the rest wait for the next night. The report lists what was written, with a link to the changeset.
+
+To get the token, sign in to openstreetmap.org as the sync's account, register an application under **My Settings → OAuth 2 applications** with the **Modify the map** scope and the redirect URI `urn:ietf:wg:oauth:2.0:oob`, open its authorization URL, and exchange the code it shows for a token at `https://www.openstreetmap.org/oauth2/token`. Before the first run with a token, follow OpenStreetMap's [Automated Edits code of conduct](https://wiki.openstreetmap.org/wiki/Automated_Edits_code_of_conduct): document the sync on the wiki and tell your local community.
 
 Run `node btcmap.js nightly` or `node btcmap.js discover` inside the container to run one now. On Coolify, create it from the repository with the **Dockerfile** build pack and `btcmap/Dockerfile`, with no domain.
 

@@ -12,6 +12,10 @@ export interface OsmElement extends ElementRef {
   tags: Record<string, string>;
   /** A node's position; ways and relations have none of their own. */
   position?: { lat: number; lon: number };
+  /** A way's nodes, which an edit of its tags sends back unchanged. */
+  nodes?: number[];
+  /** A relation's members, which an edit of its tags sends back unchanged. */
+  members?: { type: ElementType; ref: number; role: string }[];
 }
 
 export interface Candidate extends ElementRef {
@@ -73,6 +77,8 @@ export async function fetchElement(
       tags?: Record<string, string>;
       lat?: number;
       lon?: number;
+      nodes?: number[];
+      members?: { type: ElementType; ref: number; role: string }[];
     }[];
   };
   const element = body.elements?.[0];
@@ -82,6 +88,8 @@ export async function fetchElement(
   const { lat, lon } = element;
   return {
     ...ref,
+    members: element.members,
+    nodes: element.nodes,
     position: lat !== undefined && lon !== undefined ? { lat, lon } : undefined,
     tags: element.tags ?? {},
     version: element.version,
