@@ -109,6 +109,21 @@ export const SHORTCUTS = defineAppHotkeys({
     hotkey: "A",
     meta: { group: "Cards", name: "Assign…" },
   },
+  "card.related": {
+    hotkey: ["M", "R"],
+    meta: { group: "Cards", name: "Mark as related to…" },
+    options: SEQUENCE,
+  },
+  "card.blockedBy": {
+    hotkey: ["M", "B"],
+    meta: { group: "Cards", name: "Mark as blocked by…" },
+    options: SEQUENCE,
+  },
+  "card.blocking": {
+    hotkey: ["M", "X"],
+    meta: { group: "Cards", name: "Mark as blocking…" },
+    options: SEQUENCE,
+  },
 });
 
 /** Ctrl or ⌘ and a number go to that project, in the sidebar's order. */

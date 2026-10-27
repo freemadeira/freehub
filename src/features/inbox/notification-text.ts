@@ -6,6 +6,7 @@
 import { differenceInCalendarDays, format, parseISO } from "date-fns";
 
 import type { CardChange } from "@/lib/card-activity";
+import { isRelationChange, RELATION_WORDS } from "@/lib/card-activity";
 import { recordTitle } from "@/lib/crm";
 import { mentionExcerpt, pageTitle } from "@/lib/docs";
 import { excerptText, splitMentions } from "@/lib/mentions";
@@ -39,6 +40,18 @@ function changeWords(
   const mine: string[] = [];
   const rest: string[] = [];
   for (const change of changes) {
+    if (isRelationChange(change)) {
+      const words = RELATION_WORDS[change.field];
+      const keys = (cards: { key: string }[]) =>
+        joinWords(cards.map(({ key }) => key));
+      if (change.added.length > 0) {
+        rest.push(`${words.added} ${keys(change.added)}`);
+      }
+      if (change.removed.length > 0) {
+        rest.push(`${words.removed} ${keys(change.removed)}`);
+      }
+      continue;
+    }
     switch (change.field) {
       case "status": {
         rest.push(`moved it to ${statusLabel(change.to)}`);

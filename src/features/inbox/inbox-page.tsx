@@ -27,7 +27,11 @@ import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/user-avatar";
 import { OPENED_FROM_BOARD } from "@/features/board/board-context";
-import { PRIORITY_STYLES, STATUS_STYLES } from "@/features/card/card-fields";
+import {
+  PRIORITY_STYLES,
+  RELATION_STYLES,
+  STATUS_STYLES,
+} from "@/features/card/card-fields";
 import { PlatformIcon } from "@/features/catalogs/platform-icon";
 import { TableIcon } from "@/features/crm/table-icon";
 import { REVEAL_MENTION } from "@/features/docs/docs-context";
@@ -43,6 +47,7 @@ import { NotificationsButton } from "@/features/inbox/notifications-button";
 import type { Inbox, InboxGroup, InboxItem } from "@/hooks/use-inbox";
 import { useProfileNames } from "@/hooks/use-profile-names";
 import { useSubscriptions } from "@/hooks/use-subscriptions";
+import { isRelationChange } from "@/lib/card-activity";
 import { pageTitle } from "@/lib/docs";
 import { cardKey } from "@/lib/model";
 import { setSubscribed } from "@/lib/subscribe";
@@ -118,6 +123,9 @@ function newsIcon(
     return {
       icon: mine.added.includes(pubkey) ? UserPlusIcon : UserMinusIcon,
     };
+  }
+  if (first && isRelationChange(first)) {
+    return RELATION_STYLES[first.field];
   }
   switch (first?.field) {
     case "status": {

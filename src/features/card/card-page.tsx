@@ -1,42 +1,34 @@
 import { cn } from "cn";
-import { ChevronDownIcon, ChevronUpIcon, Trash2Icon } from "lucide-react";
+import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import type { ChangeEvent } from "react";
 import { useId, useState } from "react";
 import { useLocation } from "wouter";
 
-import { CopyButton } from "@/components/copy";
 import { IconButton } from "@/components/icon-button";
 import { MarkdownEditor, MarkdownView } from "@/components/markdown-editor";
 import { KeyHint } from "@/components/shortcut-keys";
 import type { Crumb } from "@/components/top-bar";
 import { TopBar } from "@/components/top-bar";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { swapCard, useBoard } from "@/features/board/board-context";
 import { CardActivitySection } from "@/features/card/card-activity";
-import { useCardCommands } from "@/features/card/card-commands";
-import { STATUS_STYLES } from "@/features/card/card-fields";
+import { CardMenu } from "@/features/card/card-menu";
 import { CardProperties } from "@/features/card/card-properties";
+import {
+  CardRelations,
+  StatusIcon,
+  useBlocked,
+} from "@/features/card/card-relations";
 import { AddReaction, Reactions } from "@/features/card/reactions";
 import { SubscribeButton } from "@/features/card/subscribe-button";
 import { useCardThread } from "@/hooks/use-comments";
 import { useCardReactions } from "@/hooks/use-reactions";
 import { useShortcut, useShortcuts } from "@/hooks/use-shortcut";
 import { useVisit } from "@/hooks/use-visit";
-import { deleteCard, updateCard } from "@/lib/actions";
+import { updateCard } from "@/lib/actions";
 import type { Card } from "@/lib/model";
 import { cardKey } from "@/lib/model";
-import { cardPath } from "@/lib/paths";
 import type { Reaction } from "@/lib/reactions";
 import { cardReactionTarget, NO_REACTIONS } from "@/lib/reactions";
 import { SHORTCUTS } from "@/lib/shortcuts";
@@ -128,42 +120,6 @@ function DescriptionField({ card }: { card: Card }) {
       placeholder="Add a description…"
       value={card.description}
     />
-  );
-}
-
-function DeleteCard({
-  card,
-  open,
-  onOpenChange,
-  onDeleted,
-}: {
-  card: Card;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onDeleted: () => void;
-}) {
-  const { board } = useBoard();
-  return (
-    <AlertDialog onOpenChange={onOpenChange} open={open}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete {cardKey(board, card)}?</AlertDialogTitle>
-          <AlertDialogDescription>This can’t be undone.</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={() => {
-              onDeleted();
-              deleteCard(board, card);
-            }}
-            variant="destructive"
-          >
-            Delete card
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }
 
@@ -276,15 +232,9 @@ function CardSteps({ previousHref, nextHref }: CardStepsProps) {
   );
 }
 
-function cardCrumb(card: Card, label: string): Crumb {
-  const status = STATUS_STYLES[card.status];
+function cardCrumb(card: Card, label: string, blocked: boolean): Crumb {
   return {
-    icon: (
-      <status.icon
-        aria-hidden
-        className={cn("size-4 shrink-0", status.className)}
-      />
-    ),
+    icon: <StatusIcon blocked={blocked} status={card.status} />,
     label: `${label} ${card.title || "Untitled"}`,
   };
 }
@@ -306,44 +256,23 @@ export function CardPage({
   nextHref,
 }: CardPageProps) {
   const id = useId();
-  const { board, boardQuery, canEdit, pubkey } = useBoard();
+  const { board, canEdit, pubkey } = useBoard();
   const thread = useCardThread(board, card);
   const reactions = useCardReactions(board, card, thread.comments);
-  const [deleting, setDeleting] = useState(false);
+  const blocked = useBlocked(card);
   useEscapeToLeave(onLeave);
   useVisit(pubkey, { id: `${board.address}/${card.id}`, kind: "card" });
-  useCardCommands({ card, onDelete: () => setDeleting(true) });
   return (
     <>
-      <TopBar crumbs={[...crumbs, cardCrumb(card, cardKey(board, card))]}>
+      <TopBar
+        crumbs={[...crumbs, cardCrumb(card, cardKey(board, card), blocked)]}
+      >
         <FluidTooltip.Group>
-          <CardSteps nextHref={nextHref} previousHref={previousHref} />
-          <CopyButton
-            label="Copy link"
-            // A shared link outlives today's board: another card may get this number later.
-            value={
-              new URL(
-                cardPath(board, card, { query: boardQuery, withId: true }),
-                window.location.origin
-              ).href
-            }
-          />
           <SubscribeButton card={card} />
-          {canEdit && (
-            <IconButton label="Delete card" onClick={() => setDeleting(true)}>
-              <Trash2Icon />
-            </IconButton>
-          )}
+          <CardMenu card={card} onDeleted={onLeave} />
+          <CardSteps nextHref={nextHref} previousHref={previousHref} />
         </FluidTooltip.Group>
       </TopBar>
-      {canEdit && (
-        <DeleteCard
-          card={card}
-          onDeleted={onLeave}
-          onOpenChange={setDeleting}
-          open={deleting}
-        />
-      )}
       <main className={LAYOUT}>
         <div className={cn(COLUMN, "flex flex-col gap-1 pt-6 sm:pt-10")}>
           {canEdit ? (
@@ -356,12 +285,15 @@ export function CardPage({
           )}
           <CardReactions card={card} reactions={reactions.get(card.id)} />
         </div>
-        <aside aria-labelledby={id} className={ASIDE}>
-          <div className="flex flex-col gap-3 lg:sticky lg:top-20">
-            <h2 className="text-muted-foreground text-sm font-medium" id={id}>
-              Properties
-            </h2>
-            <CardProperties card={card} />
+        <aside className={ASIDE}>
+          <div className="flex flex-col gap-6 lg:sticky lg:top-20">
+            <section aria-labelledby={id} className="flex flex-col gap-3">
+              <h2 className="text-muted-foreground text-sm font-medium" id={id}>
+                Properties
+              </h2>
+              <CardProperties card={card} />
+            </section>
+            <CardRelations card={card} />
           </div>
         </aside>
         <div className={cn(COLUMN, "pb-10")}>

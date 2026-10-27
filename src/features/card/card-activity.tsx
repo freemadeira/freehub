@@ -12,19 +12,36 @@ import {
 import type { ReactNode } from "react";
 import { Fragment, useId } from "react";
 
+import { usePlaces } from "@/components/app-link";
 import { Timeline, TimelineMarker, TimelineTime } from "@/components/timeline";
 import { UserAvatar } from "@/components/user-avatar";
 import { useBoard } from "@/features/board/board-context";
-import { PRIORITY_STYLES, STATUS_STYLES } from "@/features/card/card-fields";
+import {
+  PRIORITY_STYLES,
+  RELATION_STYLES,
+  STATUS_STYLES,
+} from "@/features/card/card-fields";
+import { RelatedCardLink } from "@/features/card/card-relations";
 import { CommentEntry, Composer } from "@/features/card/comments";
 import { useReadSubject } from "@/features/inbox/inbox-context";
 import type { CardThread } from "@/hooks/use-comments";
 import { useProfile } from "@/hooks/use-profile";
-import type { CardActivity, CardChange, ChangeOf } from "@/lib/card-activity";
-import { foldChanges } from "@/lib/card-activity";
+import type {
+  CardActivity,
+  CardChange,
+  ChangeOf,
+  RelatedRef,
+  RelationChange,
+} from "@/lib/card-activity";
+import {
+  foldChanges,
+  isRelationChange,
+  RELATION_WORDS,
+} from "@/lib/card-activity";
 import type { Card, Comment } from "@/lib/model";
 import { priorityLabel, statusLabel } from "@/lib/model";
 import type { Reaction } from "@/lib/reactions";
+import { relatedKey } from "@/lib/relations";
 import { cardSubject } from "@/lib/subscriptions";
 
 /** Someone's changes this close together are told as one entry. */
@@ -163,7 +180,62 @@ function dueChange({ from, to }: ChangeOf<"due">): Told {
   };
 }
 
+/** Another card as the change named it, linked while it's still around, under its key and title now. */
+function RelatedName({ named }: { named: RelatedRef }) {
+  const { findCard } = useBoard();
+  const { boards } = usePlaces();
+  const item = findCard(named);
+  // A card not found was deleted, or is on a board the reader isn't on: then
+  // it goes by its key alone.
+  const seen = boards.some(({ address }) => address === named.board);
+  let text = named.key;
+  if (item) {
+    text = `${relatedKey(item)} ${item.card.title || "Untitled"}`;
+  } else if (seen) {
+    text = `${named.key} ${named.title || "Untitled"}`;
+  }
+  return item ? (
+    <RelatedCardLink
+      className="text-foreground font-medium underline-offset-2 hover:underline"
+      item={item}
+    >
+      {text}
+    </RelatedCardLink>
+  ) : (
+    <Value>{text}</Value>
+  );
+}
+
+function relationChange({ added, field, removed }: RelationChange): Told {
+  const words = RELATION_WORDS[field];
+  const named = (cards: RelatedRef[]) =>
+    joined(
+      cards.map((card) => (
+        <RelatedName key={`${card.board}/${card.card}`} named={card} />
+      ))
+    );
+  const parts = [
+    added.length > 0 && (
+      <>
+        {words.added} {named(added)}
+      </>
+    ),
+    removed.length > 0 && (
+      <>
+        {words.removed} {named(removed)}
+      </>
+    ),
+  ].filter(Boolean);
+  return {
+    marker: <MarkerIcon {...RELATION_STYLES[field]} />,
+    text: joined(parts),
+  };
+}
+
 function describe(change: CardChange, author: string): Told {
+  if (isRelationChange(change)) {
+    return relationChange(change);
+  }
   switch (change.field) {
     case "status": {
       return statusChange(change);

@@ -41,6 +41,7 @@ import type { NewCardDefaults } from "@/features/card/new-card-dialog";
 import { NewCardDialog } from "@/features/card/new-card-dialog";
 import { PinButton } from "@/features/home/pin-controls";
 import { useBoardContent } from "@/hooks/use-board-content";
+import { useCardFinder } from "@/hooks/use-card-finder";
 import { useVisit } from "@/hooks/use-visit";
 import type { Board, Card } from "@/lib/model";
 import { canEdit, needsCardId } from "@/lib/model";
@@ -215,6 +216,7 @@ export function BoardPage({
   cardNumber,
 }: BoardPageProps) {
   const { content, loaded } = useBoardContent(board);
+  const findCard = useCardFinder(board, content, boards);
   const [params, setParams] = useSearchParams();
   const [, navigate] = useLocation();
   const [assignee, setAssignee] = useState<string>();
@@ -276,6 +278,7 @@ export function BoardPage({
           ? content.cards.filter((card) => card.assignees.includes(assignee))
           : content.cards,
         content,
+        findCard,
         layout,
         newCard: (placement) =>
           setAdding({

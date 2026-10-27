@@ -2,11 +2,16 @@ import { map } from "rxjs";
 
 import { useObservableValue } from "@/hooks/use-observable-value";
 import type { Board, BoardContent } from "@/lib/model";
-import { CARD_KIND, resolveBoard, SPRINT_KIND } from "@/lib/model";
+import {
+  CARD_KIND,
+  RELATION_KIND,
+  resolveBoard,
+  SPRINT_KIND,
+} from "@/lib/model";
 import { eventStore } from "@/lib/nostr";
 import { addressFilters, sync, whileLoading } from "@/lib/relays";
 
-const KINDS = [CARD_KIND, SPRINT_KIND];
+const KINDS = [CARD_KIND, SPRINT_KIND, RELATION_KIND];
 
 /** Cards and sprints of a board, resolved across every member's versions. */
 export function useBoardContent(board: Board): {

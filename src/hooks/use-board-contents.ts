@@ -4,16 +4,16 @@ import { map } from "rxjs";
 import { useObservableValue } from "@/hooks/use-observable-value";
 import type { Board, BoardContent } from "@/lib/model";
 import {
-  addressOf,
-  BOARD_KIND,
+  boardsOf,
   CARD_KIND,
+  RELATION_KIND,
   resolveBoard,
   SPRINT_KIND,
 } from "@/lib/model";
 import { eventStore } from "@/lib/nostr";
 import { addressFilters, sync, whileLoading } from "@/lib/relays";
 
-const KINDS = [CARD_KIND, SPRINT_KIND];
+const KINDS = [CARD_KIND, SPRINT_KIND, RELATION_KIND];
 
 function resolveBoards(
   boards: Board[],
@@ -21,8 +21,8 @@ function resolveBoards(
 ): Map<string, BoardContent> {
   const byBoard = new Map<string, NostrEvent[]>();
   for (const event of events) {
-    const address = addressOf(event, BOARD_KIND);
-    if (address) {
+    // Cards related across boards count on both.
+    for (const address of boardsOf(event)) {
       byBoard.set(address, [...(byBoard.get(address) ?? []), event]);
     }
   }

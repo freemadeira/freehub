@@ -1,6 +1,8 @@
 import { useBoardContents } from "@/hooks/use-board-contents";
 import type { Board, BoardContent, Card } from "@/lib/model";
 import { isClosed } from "@/lib/model";
+import type { CardFinder } from "@/lib/relations";
+import { cardFinder } from "@/lib/relations";
 
 /** An open card of the person's, with the board it's on. */
 export interface MyCard {
@@ -14,12 +16,13 @@ export interface MyCard {
 /**
  * Open cards assigned to the person or made by them, on every board they're
  * on. Each board is resolved whole, across every member's versions, so a
- * newer version that took them off a card counts.
+ * newer version that took them off a card counts. Any card on those boards
+ * can be found, as the cards related to them are.
  */
 export function useMyCards(
   boards: Board[],
   pubkey: string
-): { cards: MyCard[]; loaded: boolean } {
+): { cards: MyCard[]; findCard: CardFinder; loaded: boolean } {
   const { contents, loaded } = useBoardContents(boards);
   const cards = boards.flatMap((board) => {
     const content = contents?.get(board.address);
@@ -34,5 +37,5 @@ export function useMyCards(
         : [];
     });
   });
-  return { cards, loaded };
+  return { cards, findCard: cardFinder(boards, contents), loaded };
 }

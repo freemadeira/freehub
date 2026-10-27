@@ -1,16 +1,23 @@
+import type { NostrEvent } from "applesauce-core/helpers/event";
 import { unixNow } from "applesauce-core/helpers/time";
 import { addDays, format } from "date-fns";
 
 import { descriptionMentionTemplate } from "@/lib/card-activity";
-import { noteCardChange, tellChanges } from "@/lib/card-changes";
+import {
+  noteCardChange,
+  noteRelationChange,
+  tellChanges,
+} from "@/lib/card-changes";
 import { mentionedPubkeys } from "@/lib/mentions";
 import type {
   Board,
   BoardContent,
+  BoardRelation,
   Card,
   CardFields,
   CardRef,
   Comment,
+  Relation,
   Sprint,
   SprintFields,
   StatusMove,
@@ -22,7 +29,14 @@ import {
   deleteBoardTemplate,
   deleteCommentTemplate,
   isClosed,
+  latest,
   newId,
+  relationFrom,
+  relationId,
+  relationKind,
+  RELATION_KIND,
+  relationTemplate,
+  samePlace,
   sprintTemplate,
   startingStatus,
   statusKind,
@@ -39,6 +53,8 @@ import {
   reactionEmoji,
   reactionTemplate,
 } from "@/lib/reactions";
+import type { RelatedCard } from "@/lib/relations";
+import { placeOf, relatedRef } from "@/lib/relations";
 import { setSubscribed, subscriptionsOf } from "@/lib/subscribe";
 import { cardSubscribers, isSubscribed } from "@/lib/subscriptions";
 
@@ -205,6 +221,104 @@ export async function updateCard(
 
 export function deleteCard(board: Board, card: Card): Promise<boolean> {
   return publish(tombstoneTemplate(board, card), card.event);
+}
+
+/**
+ * The newest version of two cards' relation from anyone, undone or not, for
+ * the next to follow even within the same second.
+ */
+function lastRelation(
+  relation: Pick<BoardRelation, "from" | "to">
+): NostrEvent | undefined {
+  return latest(
+    eventStore.getByFilters({
+      "#d": [relationId(relation.from, relation.to)],
+      kinds: [RELATION_KIND],
+    })
+  );
+}
+
+/**
+ * Tells both cards' subscribers, once each card's run of changes settles,
+ * how the cards were marked, or unmarked, as it reads from each.
+ */
+function noteRelation(
+  relation: Pick<BoardRelation, "kind" | "from">,
+  cards: readonly [RelatedCard, RelatedCard],
+  removed: boolean,
+  foldOnly = false
+): void {
+  const [a, b] = cards;
+  for (const [item, other] of [
+    [a, b],
+    [b, a],
+  ] as const) {
+    const ref = relatedRef(other);
+    noteRelationChange(
+      item.board,
+      item.card,
+      {
+        added: removed ? [] : [ref],
+        field: relationFrom(relation, placeOf(item)),
+        removed: removed ? [ref] : [],
+      },
+      { foldOnly }
+    );
+  }
+}
+
+/**
+ * Marks how a card stands to another of its project. Two cards stand one way
+ * only, so a new way replaces the old; but blocking already relates them, so
+ * cards that block stay so when marked related.
+ */
+export async function relateCards(
+  relations: BoardRelation[],
+  item: RelatedCard,
+  other: RelatedCard,
+  relation: Relation
+): Promise<boolean> {
+  const kind = relationKind(relation);
+  const [from, to] = relation === "blockedBy" ? [other, item] : [item, other];
+  const marked = { from: placeOf(from), kind, to: placeOf(to) };
+  const existing = relations.find(
+    ({ id }) => id === relationId(marked.from, marked.to)
+  );
+  if (
+    existing &&
+    (kind === "related" ||
+      (existing.kind === kind && samePlace(existing.from, marked.from)))
+  ) {
+    return true;
+  }
+  if (!(await publish(relationTemplate(marked), lastRelation(marked)))) {
+    return false;
+  }
+  if (existing) {
+    // Related cards marked blocking were related all along: only a run of
+    // changes that just related them is told otherwise.
+    noteRelation(existing, [item, other], true, existing.kind === "related");
+  }
+  noteRelation(marked, [item, other], false);
+  return true;
+}
+
+/** Undoes whatever relates two cards. */
+export async function unrelateCards(
+  pair: BoardRelation,
+  item: RelatedCard,
+  other: RelatedCard
+): Promise<boolean> {
+  if (
+    !(await publish(
+      relationTemplate(pair, { deleted: true }),
+      lastRelation(pair)
+    ))
+  ) {
+    return false;
+  }
+  noteRelation(pair, [item, other], true);
+  return true;
 }
 
 function newSprint(number: number): SprintFields {

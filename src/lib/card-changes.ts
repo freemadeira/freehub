@@ -1,7 +1,12 @@
-import type { CardChange } from "@/lib/card-activity";
-import { cardChangeTemplate, cardChanges } from "@/lib/card-activity";
+import type { CardChange, RelationChange } from "@/lib/card-activity";
+import {
+  cardChangeTemplate,
+  cardChanges,
+  foldChanges,
+} from "@/lib/card-activity";
 import { onLeave } from "@/lib/leaving";
 import type { Board, Card, CardFields, CardRef } from "@/lib/model";
+import { samePlace } from "@/lib/model";
 import { accounts } from "@/lib/nostr";
 import { publish } from "@/lib/publish";
 import { subscriptionsOf } from "@/lib/subscribe";
@@ -20,6 +25,8 @@ interface Pending {
   before: Card;
   /** The card after the last of them. */
   after: Card;
+  /** How it was marked against other cards, or unmarked, in order. */
+  relations: RelationChange[];
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -52,14 +59,19 @@ function settle(key: string): void {
   clearTimeout(entry.timer);
   pending.delete(key);
   // Subscribers as the card is now, which takes in new assignees.
-  tellChanges(entry.board, entry.after, cardChanges(entry.before, entry.after));
+  tellChanges(entry.board, entry.after, [
+    ...cardChanges(entry.before, entry.after),
+    ...foldChanges(entry.relations),
+  ]);
 }
 
-/** Notes a change to the card, to tell once its run of changes settles. */
-export function noteCardChange(
+/** Notes changes to the card, to tell once its run of changes settles. */
+function note(
   board: Board,
   card: Card,
-  changes: Partial<CardFields>
+  changes: Partial<CardFields>,
+  relations: (earlier: RelationChange[]) => RelationChange[] = (earlier) =>
+    earlier
 ): void {
   const key = `${board.address}:${card.id}`;
   const entry = pending.get(key);
@@ -68,8 +80,46 @@ export function noteCardChange(
     after: { ...(entry?.after ?? card), ...changes },
     before: entry?.before ?? card,
     board,
+    relations: relations(entry?.relations ?? []),
     timer: setTimeout(() => settle(key), SETTLE),
   });
+}
+
+/** Notes a change to the card, to tell once its run of changes settles. */
+export function noteCardChange(
+  board: Board,
+  card: Card,
+  changes: Partial<CardFields>
+): void {
+  note(board, card, changes);
+}
+
+/**
+ * Notes the card marked against others, or unmarked, to tell with the rest of
+ * its run. A change only worth telling as part of the run, `foldOnly`, just
+ * undoes what the run marked, and is otherwise left out.
+ */
+export function noteRelationChange(
+  board: Board,
+  card: Card,
+  change: RelationChange,
+  { foldOnly = false } = {}
+): void {
+  note(board, card, {}, (earlier) =>
+    foldOnly
+      ? earlier.map((item) =>
+          item.field === change.field
+            ? {
+                ...item,
+                added: item.added.filter(
+                  (added) =>
+                    !change.removed.some((removed) => samePlace(removed, added))
+                ),
+              }
+            : item
+        )
+      : [...earlier, change]
+  );
 }
 
 function settleAll(): void {

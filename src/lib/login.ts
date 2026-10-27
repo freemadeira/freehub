@@ -22,6 +22,7 @@ import {
   DRIVE_FOLDER_KIND,
   PROJECT_KIND,
   REACTION_KIND,
+  RELATION_KIND,
   SPRINT_KIND,
 } from "@/lib/model";
 import { accounts } from "@/lib/nostr";
@@ -33,6 +34,7 @@ const PERMISSIONS = [
     BOARD_KIND,
     CARD_KIND,
     SPRINT_KIND,
+    RELATION_KIND,
     PROJECT_KIND,
     CRM_TABLE_KIND,
     CRM_RECORD_KIND,

@@ -36,9 +36,10 @@ import {
   useOptionShortcuts,
 } from "@/features/card/card-options";
 import { LabelDot, Muted, People, Person } from "@/features/card/card-parts";
+import { StatusIcon, useBlocked } from "@/features/card/card-relations";
 import { updateCard } from "@/lib/actions";
 import type { Card, CardFields } from "@/lib/model";
-import { isClosed, LABELS } from "@/lib/model";
+import { isClosed, LABELS, statusLabel } from "@/lib/model";
 
 const NAME = "font-normal text-muted-foreground";
 const VALUE =
@@ -68,6 +69,8 @@ interface PropertySelectProps<T> {
   value: T;
   options: Option<T>[];
   onChange: (value: T | null) => void;
+  /** What the field shows for the value, when not the option's own label. */
+  children?: (value: T) => ReactNode;
 }
 
 function PropertySelect<T>({
@@ -76,6 +79,7 @@ function PropertySelect<T>({
   value,
   options,
   onChange,
+  children,
 }: PropertySelectProps<T>) {
   const { onKeyDown, ...open } = useOptionShortcuts(options, onChange);
   return (
@@ -85,7 +89,10 @@ function PropertySelect<T>({
       </Label>
       <Select {...open} items={options} onValueChange={onChange} value={value}>
         <SelectTrigger className={SELECT_VALUE} id={id}>
-          <SelectValue className="items-center gap-2" />
+          {/* Room above the value, which clips, for the blocked badge on the status icon. */}
+          <SelectValue className="items-center gap-2 py-1">
+            {children}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent onKeyDown={onKeyDown}>
           {options.map((option) => (
@@ -209,12 +216,15 @@ function Property({ label, children }: { label: string; children: ReactNode }) {
 
 /** The properties as text, for viewers of the board. */
 function PropertyList({ card, className }: { card: Card; className?: string }) {
-  const { board, content } = useBoard();
+  const { content } = useBoard();
+  const blocked = useBlocked(card);
   const sprints = sprintOptions(sprintChoices(content.sprints, card.sprint));
-  const statuses = statusOptions(board.statuses, card.status);
   return (
     <dl className={cn(GRID, className)}>
-      <Property label="Status">{labelOf(statuses, card.status)}</Property>
+      <Property label="Status">
+        <StatusIcon blocked={blocked} status={card.status} />
+        {statusLabel(card.status)}
+      </Property>
       <Property label="Assignees">
         <People pubkeys={card.assignees} />
       </Property>
@@ -260,6 +270,7 @@ export function CardProperties({
 }) {
   const id = useId();
   const { board, canEdit, content } = useBoard();
+  const blocked = useBlocked(card);
   const save = (changes: Partial<CardFields>) =>
     updateCard(board, card, changes);
   const sprints = sprintChoices(content.sprints, card.sprint);
@@ -280,7 +291,14 @@ export function CardProperties({
         }}
         options={statusOptions(board.statuses, card.status)}
         value={card.status}
-      />
+      >
+        {(status) => (
+          <>
+            <StatusIcon blocked={blocked} status={status} />
+            {statusLabel(status)}
+          </>
+        )}
+      </PropertySelect>
       <Assignees
         id={`${id}-assignees`}
         onChange={(assignees) => save({ assignees })}

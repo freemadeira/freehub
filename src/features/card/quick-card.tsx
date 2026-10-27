@@ -23,6 +23,7 @@ import {
 import { cardPath } from "@/lib/paths";
 import type { Project } from "@/lib/project";
 import { inProject } from "@/lib/project";
+import { cardFinder } from "@/lib/relations";
 import { readStorage, writeStorage } from "@/lib/utils";
 
 /** The boards the user can add cards to. */
@@ -94,6 +95,7 @@ function QuickCardDialog({
           cardPath(board, card, { query, withId: needsCardId(content, card) }),
         cards: content.cards,
         content,
+        findCard: cardFinder(editable, contents),
         // No board shows here to lay out.
         layout: "kanban",
         // Only this dialog adds cards here.

@@ -21,6 +21,8 @@ export const CATALOG_KIND = 30_320;
 export const LINK_KIND = 30_321;
 /** What the reader service made of a link, or how sorting a catalog went. */
 export const READING_KIND = 30_322;
+/** Two cards marked as related, or one as blocking the other. */
+export const RELATION_KIND = 30_323;
 /** NIP-78 app data: each person's own inbox marks, follows and devices. */
 export const APP_DATA_KIND = 30_078;
 export const COMMENT_KIND = 1111;
@@ -66,11 +68,31 @@ export const LABELS = [
   "purple",
 ] as const;
 
+/**
+ * How a card stands to another: blocked by it, blocking it, or just related.
+ * Two cards stand one way only, and blocking is a kind of related, so marking
+ * cards that block related again leaves them as they are. In the order a
+ * card's page lists them.
+ */
+export const RELATIONS = [
+  { id: "blockedBy", label: "Blocked by" },
+  { id: "blocking", label: "Blocking" },
+  { id: "related", label: "Related" },
+] as const;
+
+/**
+ * How two related cards are kept: once, from the blocking card to the blocked
+ * one, or either way round for related ones.
+ */
+export const RELATION_KINDS = [{ id: "blocks" }, { id: "related" }] as const;
+
 export type Status = (typeof STATUSES)[number]["id"];
 export type StatusKind = (typeof STATUSES)[number]["kind"];
 export type Priority = (typeof PRIORITIES)[number]["id"];
 export type Label = (typeof LABELS)[number];
 export type SprintStatus = (typeof SPRINT_STATUSES)[number]["id"];
+export type Relation = (typeof RELATIONS)[number]["id"];
+export type RelationKind = (typeof RELATION_KINDS)[number]["id"];
 
 /**
  * The statuses a new board uses until its creator picks others. No backlog:
@@ -141,9 +163,31 @@ export interface SprintFields {
 
 export type Sprint = SprintFields & { event: NostrEvent };
 
+/** A card on any board: the board's address and the card's `d` tag. */
+export interface CardPlace {
+  board: string;
+  card: string;
+}
+
+/** Two cards marked as related, or one as blocking the other. */
+export interface BoardRelation {
+  /** The pair's `d` tag, the same whichever card it was marked from. */
+  id: string;
+  kind: RelationKind;
+  /** The blocking card, or the one two related cards were marked from. */
+  from: CardPlace;
+  /** The blocked card, or the other of two related ones. */
+  to: CardPlace;
+  /** Who marked them, which counts only if they're on both cards' boards. */
+  author: string;
+  event: NostrEvent;
+}
+
 export interface BoardContent {
   cards: Card[];
   sprints: Sprint[];
+  /** Those of its cards, whichever end they're at, some maybe on other boards. */
+  relations: BoardRelation[];
   nextNumber: number;
   nextSprintNumber: number;
   /** Numbers on more than one card, since each device picks them on its own. */
@@ -274,6 +318,14 @@ export function addressOf(event: NostrEvent, kind: number): string | undefined {
   )?.[1];
 }
 
+/** Every board the event's `a` tags name: a card's one, or both of two related cards'. */
+export function boardsOf(event: NostrEvent): string[] {
+  const prefix = `${BOARD_KIND}:`;
+  return event.tags.flatMap(([name, address]) =>
+    name === "a" && address?.startsWith(prefix) ? [address] : []
+  );
+}
+
 export function statusLabel(status: Status): string {
   return STATUSES.find(({ id }) => id === status)?.label ?? status;
 }
@@ -294,6 +346,34 @@ export function isClosed(status: Status): boolean {
 
 export function priorityLabel(priority: Priority): string {
   return PRIORITIES.find(({ id }) => id === priority)?.label ?? priority;
+}
+
+export function isRelation(value: string | undefined): value is Relation {
+  return RELATIONS.some(({ id }) => id === value);
+}
+
+export function relationLabel(relation: Relation): string {
+  return RELATIONS.find(({ id }) => id === relation)?.label ?? relation;
+}
+
+/** How a relation is kept, and so which card it runs from. */
+export function relationKind(relation: Relation): RelationKind {
+  return relation === "related" ? "related" : "blocks";
+}
+
+export function samePlace(a: CardPlace, b: CardPlace): boolean {
+  return a.board === b.board && a.card === b.card;
+}
+
+/** How a kept relation reads from one of its cards. */
+export function relationFrom(
+  relation: Pick<BoardRelation, "kind" | "from">,
+  place: CardPlace
+): Relation {
+  if (relation.kind === "related") {
+    return "related";
+  }
+  return samePlace(relation.from, place) ? "blocking" : "blockedBy";
 }
 
 /** Lowercase without spaces, so "To do", as cards used to say, reads as todo. */
@@ -503,6 +583,33 @@ function parseSprint(event: NostrEvent, id: string): Sprint {
   };
 }
 
+/** The `d` tag of two cards' relation: both ids in order, so it's one whichever side marks it. */
+export function relationId(a: CardPlace, b: CardPlace): string {
+  return [a.card, b.card].toSorted().join(":");
+}
+
+function placeTag(event: NostrEvent, name: string): CardPlace | undefined {
+  const [, card, board] = event.tags.find(([tag]) => tag === name) ?? [];
+  return card && board?.startsWith(`${BOARD_KIND}:`)
+    ? { board, card }
+    : undefined;
+}
+
+function parseRelation(event: NostrEvent): BoardRelation | undefined {
+  const id = getTagValue(event, "d");
+  const kind = oneOf(RELATION_KINDS, getTagValue(event, "rel"));
+  const from = placeTag(event, "from");
+  const to = placeTag(event, "to");
+  if (
+    !(id && kind && from && to) ||
+    samePlace(from, to) ||
+    id !== relationId(from, to)
+  ) {
+    return undefined;
+  }
+  return { author: event.pubkey, event, from, id, kind, to };
+}
+
 export function parseComment(event: NostrEvent): Comment {
   return {
     author: event.pubkey,
@@ -569,6 +676,28 @@ function findSharedNumbers(cards: Card[]): Set<number> {
   return shared;
 }
 
+/**
+ * Relations of the board's cards: each pair's newest version from a member,
+ * unless it was undone. Whether its author is on the other card's board too
+ * is for whoever finds that card to check.
+ */
+function resolveRelations(
+  board: Board,
+  events: NostrEvent[],
+  authors: Set<string>
+): BoardRelation[] {
+  return [...latestVersions(events, RELATION_KIND, authors).values()].flatMap(
+    (event) => {
+      const relation = isDeleted(event) ? undefined : parseRelation(event);
+      return relation &&
+        (relation.from.board === board.address ||
+          relation.to.board === board.address)
+        ? [relation]
+        : [];
+    }
+  );
+}
+
 export function resolveBoard(board: Board, events: NostrEvent[]): BoardContent {
   const authors = new Set(board.members);
   const cardVersions = latestVersions(events, CARD_KIND, authors);
@@ -590,6 +719,7 @@ export function resolveBoard(board: Board, events: NostrEvent[]): BoardContent {
         )
       ) + 1,
     nextSprintNumber: highestNumber(sprintVersions.values()) + 1,
+    relations: resolveRelations(board, events, authors),
     sharedNumbers: findSharedNumbers(cards),
     sprints,
   };
@@ -689,6 +819,35 @@ export function sprintTemplate(board: Board, sprint: SprintFields): Template {
   }
   tags.push(["alt", `Sprint: ${sprint.title}`]);
   return { content: "", kind: SPRINT_KIND, tags };
+}
+
+/**
+ * Two cards' relation, or its undoing with `deleted`. It names both boards,
+ * so each finds it with the rest of its cards.
+ */
+export function relationTemplate(
+  relation: Pick<BoardRelation, "kind" | "from" | "to">,
+  { deleted = false } = {}
+): Template {
+  const { from, kind, to } = relation;
+  return {
+    content: "",
+    kind: RELATION_KIND,
+    tags: [
+      ["d", relationId(from, to)],
+      ...[...new Set([from.board, to.board])].map((board) => ["a", board]),
+      ["rel", kind],
+      ["from", from.card, from.board],
+      ["to", to.card, to.board],
+      ...(deleted ? [["deleted"]] : []),
+      [
+        "alt",
+        kind === "blocks"
+          ? "A kanban card blocking another"
+          : "Two related kanban cards",
+      ],
+    ],
+  };
 }
 
 export function tombstoneTemplate(board: Board, item: Card | Sprint): Template {

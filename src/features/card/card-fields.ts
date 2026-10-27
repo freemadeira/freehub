@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import { ArrowLeftRightIcon } from "lucide-react";
 
 import {
   PriorityHighIcon,
@@ -6,6 +7,7 @@ import {
   PriorityMediumIcon,
   PriorityUrgentIcon,
 } from "@/features/card/priority-icons";
+import { BlockedIcon, BlockingIcon } from "@/features/card/relation-icons";
 import {
   StatusBacklogIcon,
   StatusCanceledIcon,
@@ -16,7 +18,14 @@ import {
   StatusTodoIcon,
   StatusTriageIcon,
 } from "@/features/card/status-icons";
-import type { Board, Label, Priority, Sprint, Status } from "@/lib/model";
+import type {
+  Board,
+  Label,
+  Priority,
+  Relation,
+  Sprint,
+  Status,
+} from "@/lib/model";
 
 interface IconStyle {
   icon: LucideIcon;
@@ -42,6 +51,12 @@ export const PRIORITY_STYLES: Record<Priority, IconStyle> = {
   low: { className: "text-muted-foreground", icon: PriorityLowIcon },
   medium: { className: "text-muted-foreground", icon: PriorityMediumIcon },
   urgent: { className: "text-foreground", icon: PriorityUrgentIcon },
+};
+
+export const RELATION_STYLES: Record<Relation, IconStyle> = {
+  blockedBy: { className: "text-red-500", icon: BlockedIcon },
+  blocking: { className: "text-red-500", icon: BlockingIcon },
+  related: { className: "text-muted-foreground", icon: ArrowLeftRightIcon },
 };
 
 export const LABEL_COLORS: Record<Label, string> = {

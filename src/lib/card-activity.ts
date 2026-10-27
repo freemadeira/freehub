@@ -10,19 +10,25 @@ import { getTagValue } from "applesauce-core/helpers/event";
 import { mentionReference } from "@/lib/mentions";
 import type {
   CardFields,
+  CardPlace,
   CardRef,
   Priority,
+  Relation,
   Status,
   Template,
 } from "@/lib/model";
 import {
+  BOARD_KIND,
   CARD_KIND,
   commentPeopleTags,
   COMMENT_KIND,
   date,
   isPubkey,
+  isRelation,
   PRIORITIES,
   priorityLabel,
+  RELATIONS,
+  samePlace,
   STATUSES,
   statusLabel,
 } from "@/lib/model";
@@ -32,12 +38,48 @@ export const CHANGE = "change";
 /** Someone picked people from the "@" list in the card's description. */
 export const DESCRIPTION_MENTION = "mention";
 
+/**
+ * The card at the other end of a relation, as a change names it: where it is,
+ * and its key and title then, should it be renamed or deleted later.
+ */
+export interface RelatedRef extends CardPlace {
+  key: string;
+  title: string;
+}
+
+/** Cards marked, or no longer marked, as standing to this one in one way. */
+export interface RelationChange {
+  field: Relation;
+  added: RelatedRef[];
+  removed: RelatedRef[];
+}
+
 export type CardChange =
   | { field: "status"; from?: Status; to: Status }
   | { field: "assignees"; added: string[]; removed: string[] }
   | { field: "priority"; from?: Priority; to?: Priority }
   | { field: "due"; from?: string; to?: string }
-  | { field: "title"; from: string; to: string };
+  | { field: "title"; from: string; to: string }
+  | RelationChange;
+
+/** How marking reads for each relation, and unmarking, after who did it. */
+export const RELATION_WORDS: Record<
+  Relation,
+  { added: string; removed: string }
+> = {
+  blockedBy: {
+    added: "marked it as blocked by",
+    removed: "marked it as no longer blocked by",
+  },
+  blocking: {
+    added: "marked it as blocking",
+    removed: "marked it as no longer blocking",
+  },
+  related: {
+    added: "marked it as related to",
+    removed: "removed its relation to",
+  },
+};
 
 export type ChangeOf<Field extends CardChange["field"]> = Extract<
   CardChange,
@@ -96,8 +138,42 @@ function without(people: string[], gone: string[]): string[] {
   return people.filter((pubkey) => !gone.includes(pubkey));
 }
 
+function withoutCards(cards: RelatedRef[], gone: RelatedRef[]): RelatedRef[] {
+  return cards.filter((card) => !gone.some((other) => samePlace(other, card)));
+}
+
+/** The cards, once each. */
+function eachCard(cards: RelatedRef[]): RelatedRef[] {
+  return cards.filter(
+    (card, index) =>
+      cards.findIndex((other) => samePlace(other, card)) === index
+  );
+}
+
+export function isRelationChange(change: CardChange): change is RelationChange {
+  return isRelation(change.field);
+}
+
 /** Two changes to the same field, one after the other, as one. */
 function merge(first: CardChange, then: CardChange): CardChange {
+  if (
+    isRelationChange(first) &&
+    isRelationChange(then) &&
+    first.field === then.field
+  ) {
+    // A card marked then unmarked, or the other way round, drops out.
+    return {
+      added: eachCard([
+        ...withoutCards(first.added, then.removed),
+        ...withoutCards(then.added, first.removed),
+      ]),
+      field: then.field,
+      removed: eachCard([
+        ...withoutCards(first.removed, then.added),
+        ...withoutCards(then.removed, first.added),
+      ]),
+    };
+  }
   if (first.field === "assignees" && then.field === "assignees") {
     return {
       added: [
@@ -131,7 +207,7 @@ function merge(first: CardChange, then: CardChange): CardChange {
 }
 
 function changesSomething(change: CardChange): boolean {
-  return change.field === "assignees"
+  return change.field === "assignees" || isRelationChange(change)
     ? change.added.length > 0 || change.removed.length > 0
     : change.from !== change.to;
 }
@@ -149,7 +225,10 @@ export function foldChanges(changes: CardChange[]): CardChange[] {
   return [...folded.values()].filter(changesSomething);
 }
 
-/** One `change` tag per value: field, from, to, with "" for none. */
+/**
+ * One `change` tag per value: field, from, to, with "" for none. A related
+ * card goes by its `d` tag, followed by its board, key and title.
+ */
 function changeTags(change: CardChange): string[][] {
   if (change.field === "assignees") {
     return [
@@ -157,11 +236,48 @@ function changeTags(change: CardChange): string[][] {
       ...change.removed.map((pubkey) => ["change", "assignee", pubkey, ""]),
     ];
   }
+  if (isRelationChange(change)) {
+    const named = ({ board, key, title }: RelatedRef) => [board, key, title];
+    return [
+      ...change.added.map((card) => [
+        "change",
+        change.field,
+        "",
+        card.card,
+        ...named(card),
+      ]),
+      ...change.removed.map((card) => [
+        "change",
+        change.field,
+        card.card,
+        "",
+        ...named(card),
+      ]),
+    ];
+  }
   return [["change", change.field, change.from ?? "", change.to ?? ""]];
+}
+
+function upperFirst(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** What the change says, for other Nostr clients, which show it as a comment. */
 function changeText(change: CardChange): string {
+  if (isRelationChange(change)) {
+    const words = RELATION_WORDS[change.field];
+    // By key alone: whoever reads this card may not be on the other's board.
+    const named = (cards: RelatedRef[]) =>
+      cards.map(({ key }) => key).join(", ");
+    return [
+      ...(change.added.length > 0
+        ? [`${upperFirst(words.added)} ${named(change.added)}`]
+        : []),
+      ...(change.removed.length > 0
+        ? [`${upperFirst(words.removed)} ${named(change.removed)}`]
+        : []),
+    ].join("\n");
+  }
   switch (change.field) {
     case "status": {
       return `Moved to ${statusLabel(change.to)}`;
@@ -253,15 +369,33 @@ function oneOf<T extends string>(
   return options.find(({ id }) => id === value)?.id;
 }
 
+/** A relation tag's card, from its `d` tag and the board, key and title after it. */
+function relatedRef(
+  card: string,
+  [board = "", key = "", title = ""]: string[]
+): RelatedRef | undefined {
+  return card && board.startsWith(`${BOARD_KIND}:`)
+    ? { board, card, key, title }
+    : undefined;
+}
+
 function parseChanges(event: NostrEvent): CardChange[] {
   const changes: CardChange[] = [];
   const added: string[] = [];
   const removed: string[] = [];
-  for (const [name, field, from = "", to = ""] of event.tags) {
+  const relations = new Map<Relation, RelationChange>();
+  for (const [name, field, from = "", to = "", ...named] of event.tags) {
     if (name !== "change") {
       continue;
     }
-    if (field === "assignee") {
+    if (isRelation(field)) {
+      const change = relations.get(field) ?? { added: [], field, removed: [] };
+      const card = relatedRef(to || from, named);
+      if (card) {
+        (to ? change.added : change.removed).push(card);
+        relations.set(field, change);
+      }
+    } else if (field === "assignee") {
       if (isPubkey(to)) {
         added.push(to);
       } else if (isPubkey(from)) {
@@ -287,7 +421,15 @@ function parseChanges(event: NostrEvent): CardChange[] {
   if (added.length > 0 || removed.length > 0) {
     changes.push({ added, field: "assignees", removed });
   }
-  const order = ["status", "assignees", "priority", "due", "title"];
+  changes.push(...relations.values());
+  const order = [
+    "status",
+    "assignees",
+    "priority",
+    "due",
+    "title",
+    ...RELATIONS.map(({ id }) => id),
+  ];
   return changes.toSorted(
     (a, b) => order.indexOf(a.field) - order.indexOf(b.field)
   );

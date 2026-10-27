@@ -3,6 +3,7 @@ import { useLocation, useSearchParams } from "wouter";
 
 import type { BoardLayout } from "@/features/board/layout-switch";
 import type { Board, BoardContent, Card, CardFields } from "@/lib/model";
+import type { CardFinder } from "@/lib/relations";
 
 /** The tabs a board shows its cards in. */
 export const BOARD_TABS = ["backlog", "sprint", "done"] as const;
@@ -31,6 +32,8 @@ export interface BoardScope {
   /** Whether the user is a member, not just a viewer, of the board. */
   canEdit: boolean;
   cardHref: (card: Card) => string;
+  /** Finds this board’s cards, and those on other boards its cards are related to. */
+  findCard: CardFinder;
   /** Names the board in links when another board the user sees shares its code. */
   boardQuery: URLSearchParams;
   /** Opens the new card dialog. */

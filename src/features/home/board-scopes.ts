@@ -4,6 +4,7 @@ import type { MyCard } from "@/hooks/use-my-cards";
 import type { Board } from "@/lib/model";
 import { canEdit, needsCardId } from "@/lib/model";
 import { cardPath } from "@/lib/paths";
+import type { CardFinder } from "@/lib/relations";
 
 /**
  * What each board's cards need to show and edit from Home, as they would on
@@ -12,7 +13,8 @@ import { cardPath } from "@/lib/paths";
 export function boardScopes(
   cards: MyCard[],
   boards: Board[],
-  pubkey: string
+  pubkey: string,
+  findCard: CardFinder
 ): Map<string, BoardScope> {
   const scopes = new Map<string, BoardScope>();
   for (const { board, content } of cards) {
@@ -28,6 +30,7 @@ export function boardScopes(
         cardPath(board, card, { query, withId: needsCardId(content, card) }),
       cards: content.cards,
       content,
+      findCard,
       layout: "list",
       // Home adds no cards; boards do.
       newCard: () => {

@@ -60,7 +60,7 @@ export function MyTasks({ boards, projects, pubkey, loaded }: MyTasksProps) {
   // Until the boards and projects load, none would count as known.
   const filters = loaded ? liveFilters(prefs.filters, known) : prefs.filters;
   const tasks = filterTasks(mine.cards, filters, projects);
-  const scopes = boardScopes(mine.cards, boards, pubkey);
+  const scopes = boardScopes(mine.cards, boards, pubkey, mine.findCard);
   const setFilters = (next: TaskFilters) => set("filters", next);
 
   let body: ReactNode;

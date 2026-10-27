@@ -34,6 +34,7 @@ import {
 } from "@/lib/model";
 import { cardPath } from "@/lib/paths";
 import type { Project } from "@/lib/project";
+import { cardFinder } from "@/lib/relations";
 import { readStorage, writeStorage } from "@/lib/utils";
 
 /** Shares the top-level path with board codes, so BOARDS is a reserved code. */
@@ -155,6 +156,8 @@ export function BoardsPage({
     placesOf(board, projects).some((place) => places.has(place));
   const { assignee } = filters;
 
+  // Every board here has its cards loaded, those its cards are related to too.
+  const findCard = cardFinder(boards, contents);
   const scopes = boards.flatMap((board): BoardScope[] => {
     const content = contents?.get(board.address);
     if (!content) {
@@ -170,6 +173,7 @@ export function BoardsPage({
           cardPath(board, card, { query, withId: needsCardId(content, card) }),
         cards: content.cards,
         content,
+        findCard,
         layout,
         // Cards are added from the columns, where the board can be picked.
         newCard: () => {

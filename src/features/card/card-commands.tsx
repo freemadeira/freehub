@@ -14,16 +14,18 @@ import { useBoard } from "@/features/board/board-context";
 import {
   assignable,
   PRIORITY_STYLES,
+  RELATION_STYLES,
   STATUS_STYLES,
 } from "@/features/card/card-fields";
 import { PriorityNoneIcon } from "@/features/card/priority-icons";
+import { MARK_AS } from "@/features/card/relation-picker";
 import { usePageCommands } from "@/features/palette/page-commands";
 import { useOpenPalette } from "@/features/palette/palette-context";
 import type { SearchItem, SearchPage } from "@/features/search/search-item";
 import { useProfileNames } from "@/hooks/use-profile-names";
 import { useShortcuts } from "@/hooks/use-shortcut";
 import { updateCard } from "@/lib/actions";
-import type { Card } from "@/lib/model";
+import type { Card, Relation } from "@/lib/model";
 import { cardKey, inStatusOrder, PRIORITIES, statusLabel } from "@/lib/model";
 import { cardPath } from "@/lib/paths";
 import { SHORTCUTS } from "@/lib/shortcuts";
@@ -33,15 +35,17 @@ const NOW = "Now";
 
 /**
  * What can be done to the open card from the command palette: its status,
- * priority and people, copying it and deleting it. S, P and A open the
- * palette straight on its status, priority and people.
+ * priority and people, marking it, copying it and deleting it. S, P and A
+ * open the palette straight on its status, priority and people.
  */
 export function useCardCommands({
   card,
   onDelete,
+  onMark,
 }: {
   card: Card;
   onDelete: () => void;
+  onMark: (relation: Relation) => void;
 }) {
   const { board, boardQuery, canEdit, pubkey } = useBoard();
   const openPalette = useOpenPalette();
@@ -141,6 +145,17 @@ export function useCardCommands({
       run: () => toggle(pubkey),
       title: mine ? "Unassign me" : "Assign to me",
     },
+    ...MARK_AS.map(({ label, relation, shortcut }) => {
+      const { icon: Icon, className } = RELATION_STYLES[relation];
+      return {
+        icon: <Icon className={cn("size-4", className)} />,
+        key: `cmd:mark:${relation}`,
+        keys: shortcut,
+        keywords: "relation link",
+        run: () => onMark(relation),
+        title: `Mark as ${label.toLowerCase()}…`,
+      };
+    }),
   ];
   const always: SearchItem[] = [
     {

@@ -13,6 +13,7 @@ import {
   isControlClick,
 } from "@/features/board/inline-pickers";
 import { LABEL_COLORS } from "@/features/card/card-fields";
+import { HoldUpChips } from "@/features/card/card-relations";
 import type { Card, Label } from "@/lib/model";
 import { cardKey } from "@/lib/model";
 
@@ -34,10 +35,19 @@ function LabelDots({ labels }: { labels: Label[] }) {
   );
 }
 
-function CardMeta({ card, unsetDue }: { card: Card; unsetDue?: boolean }) {
+function CardMeta({
+  card,
+  unsetDue,
+  counted,
+}: {
+  card: Card;
+  unsetDue?: boolean;
+  counted?: boolean;
+}) {
   return (
     <>
       <CardPriority card={card} />
+      <HoldUpChips card={card} counted={counted} />
       <CardDue card={card} unset={unsetDue} />
       {card.labels.length > 0 && <LabelDots labels={card.labels} />}
       <CardAssignees card={card} className="ml-auto" />
@@ -157,7 +167,7 @@ export function CardRow({
       <CardStatus card={card} />
       <CardTitle className="min-w-0 flex-1 truncate" title={card.title} />
       <span className="flex shrink-0 items-center gap-2">
-        <CardMeta card={card} unsetDue={unsetDue} />
+        <CardMeta card={card} counted unsetDue={unsetDue} />
       </span>
     </CardLink>
   );
