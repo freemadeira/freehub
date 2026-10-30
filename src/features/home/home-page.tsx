@@ -21,6 +21,7 @@ import { useHome } from "@/features/home/home-context";
 import { Links } from "@/features/home/links";
 import { Mentions } from "@/features/home/mentions";
 import { MyTasks } from "@/features/home/my-tasks";
+import { NeedsYou } from "@/features/home/needs-you";
 import { Pinned } from "@/features/home/pinned";
 import type { CatalogsContent } from "@/lib/catalogs";
 import type { CrmTable } from "@/lib/crm";
@@ -112,6 +113,7 @@ export function HomePage({
   const nothingYet = projects.length === 0 && boards.length === 0;
 
   const sections: Record<HomeSection, ReactNode> = {
+    focus: <NeedsYou boards={boards} pubkey={pubkey} />,
     links: <Links pubkey={pubkey} />,
     mentions: <Mentions pubkey={pubkey} />,
     pinned: (

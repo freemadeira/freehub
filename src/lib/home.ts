@@ -17,6 +17,7 @@ const MAX_UNPINNED = 100;
 
 export const HOME_SECTIONS = [
   { id: "pinned", label: "Pinned" },
+  { id: "focus", label: "Needs you" },
   { id: "tasks", label: "My tasks" },
   { id: "mentions", label: "Mentions" },
   { id: "links", label: "Links" },
@@ -184,22 +185,28 @@ function parseMarks(value: unknown): PinMark[] {
   );
 }
 
-/** The sections saved, then any added since, each once. */
+/** The sections saved, each once, and any added since after the one they follow by default. */
 function parseSections(value: unknown): SectionSetting[] {
-  const sections = new Map<HomeSection, SectionSetting>();
+  const sections: SectionSetting[] = [];
+  const place = (id: HomeSection | undefined) =>
+    sections.findIndex((section) => section.id === id);
   for (const item of Array.isArray(value) ? value : []) {
     const { id, hidden } = record(item);
     const section = HOME_SECTIONS.find((known) => known.id === id);
-    if (section && !sections.has(section.id)) {
-      sections.set(section.id, { hidden: hidden === true, id: section.id });
+    if (section && place(section.id) === -1) {
+      sections.push({ hidden: hidden === true, id: section.id });
     }
   }
-  for (const { id } of HOME_SECTIONS) {
-    if (!sections.has(id)) {
-      sections.set(id, { hidden: false, id });
+  for (const [index, { id }] of HOME_SECTIONS.entries()) {
+    if (place(id) === -1) {
+      // The first section has none before it, and goes first.
+      sections.splice(place(HOME_SECTIONS[index - 1]?.id) + 1, 0, {
+        hidden: false,
+        id,
+      });
     }
   }
-  return [...sections.values()];
+  return sections;
 }
 
 function parseView(value: unknown): TaskView {

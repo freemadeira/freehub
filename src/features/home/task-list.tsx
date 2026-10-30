@@ -1,26 +1,31 @@
 import { startOfToday } from "date-fns";
 import { AnimatePresence, motion } from "motion/react";
+import type { ReactNode } from "react";
 
 import type { BoardScope } from "@/features/board/board-context";
 import { BoardContext } from "@/features/board/board-context";
 import { Bucket } from "@/features/board/bucket";
 import { CardRow } from "@/features/board/card-tile";
-import { compareTasks, DUE_BUCKETS, dueBucket } from "@/features/home/tasks";
+import {
+  compareTasks,
+  DUE_BUCKETS,
+  dueBucket,
+  taskKey,
+} from "@/features/home/tasks";
 import type { MyCard } from "@/hooks/use-my-cards";
 
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
-
-export function taskKey(item: MyCard): string {
-  return `${item.board.address}/${item.card.id}`;
-}
 
 /** A card of the person's on Home, edited as on its board; done, it folds away. */
 export function TaskRow({
   item,
   scopes,
+  children,
 }: {
   item: MyCard;
   scopes: Map<string, BoardScope>;
+  /** Shown after the title. */
+  children?: ReactNode;
 }) {
   return (
     // Clipped only while folding, so the card's shadow shows the rest of the time.
@@ -36,7 +41,9 @@ export function TaskRow({
     >
       <div className="pb-1">
         <BoardContext value={scopes.get(item.board.address) ?? null}>
-          <CardRow card={item.card} unsetDue />
+          <CardRow card={item.card} unsetDue>
+            {children}
+          </CardRow>
         </BoardContext>
       </div>
     </motion.li>

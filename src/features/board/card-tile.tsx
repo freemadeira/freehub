@@ -148,11 +148,14 @@ export function CardRow({
   card,
   unsetDue,
   ref,
+  children,
 }: {
   card: Card;
   /** Shows where to set a due date on cards without one. */
   unsetDue?: boolean;
   ref?: Ref<HTMLAnchorElement>;
+  /** Shown after the title. */
+  children?: ReactNode;
 }) {
   const { board } = useBoard();
   return (
@@ -166,6 +169,7 @@ export function CardRow({
       </span>
       <CardStatus card={card} />
       <CardTitle className="min-w-0 flex-1 truncate" title={card.title} />
+      {children}
       <span className="flex shrink-0 items-center gap-2">
         <CardMeta card={card} counted unsetDue={unsetDue} />
       </span>
