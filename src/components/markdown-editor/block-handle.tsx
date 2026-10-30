@@ -24,6 +24,7 @@ import {
   duplicateBlock,
   selectBlockText,
 } from "@/components/markdown-editor/block-actions";
+import type { BlockType } from "@/components/markdown-editor/blocks";
 import { BLOCK_TYPES } from "@/components/markdown-editor/blocks";
 import {
   DropdownMenu,
@@ -156,7 +157,14 @@ function addBlock(editor: Editor, target: BlockTarget, above: boolean) {
  * Notion's block controls, shown beside the block under the pointer: "+" adds
  * a block below it and the grip drags it elsewhere, or opens its menu.
  */
-export function BlockHandle({ editor }: { editor: Editor }) {
+export function BlockHandle({
+  editor,
+  types = BLOCK_TYPES,
+}: {
+  editor: Editor;
+  /** What a block can turn into: a doc page's unless given. */
+  types?: readonly BlockType[];
+}) {
   const hovered = useRef<BlockTarget | null>(null);
   const grip = useRef<HTMLButtonElement>(null);
   // The block the menu acts on, while it's open.
@@ -164,7 +172,7 @@ export function BlockHandle({ editor }: { editor: Editor }) {
   const active = useEditorState({
     editor,
     selector: ({ editor: current }) =>
-      menu ? BLOCK_TYPES.find((type) => type.isActive(current))?.id : undefined,
+      menu ? types.find((type) => type.isActive(current))?.id : undefined,
   });
 
   const openMenu = () => {
@@ -284,7 +292,7 @@ export function BlockHandle({ editor }: { editor: Editor }) {
               <>
                 <DropdownMenuGroup>
                   <DropdownMenuLabel>Turn into</DropdownMenuLabel>
-                  {BLOCK_TYPES.map((type) => (
+                  {types.map((type) => (
                     <DropdownMenuItem
                       key={type.id}
                       onClick={act((target) => {

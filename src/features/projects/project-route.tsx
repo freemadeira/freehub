@@ -6,6 +6,16 @@ import { TopBar } from "@/components/top-bar";
 import { buttonVariants } from "@/components/ui/button";
 import { Empty, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { WebsiteConfig } from "@/config";
+import {
+  BLOG_SEGMENT,
+  blogPath,
+  parsePostParam,
+  postName,
+  postPath,
+} from "@/features/blog/blog-context";
+import { BlogPage } from "@/features/blog/blog-page";
+import { PostView } from "@/features/blog/post-view";
 import {
   CATALOGS_SEGMENT,
   parseCatalogParam,
@@ -26,9 +36,11 @@ import {
 } from "@/features/drive/drive-context";
 import { DriveRoute } from "@/features/drive/drive-page";
 import { ProjectPage } from "@/features/projects/project-page";
+import { useBlog } from "@/hooks/use-blog";
 import { useProjectContent } from "@/hooks/use-project-content";
 import { useSources } from "@/hooks/use-sources";
 import { useVisit } from "@/hooks/use-visit";
+import { websiteOf } from "@/lib/blog-actions";
 import { hasBlossom } from "@/lib/blossom";
 import type { CatalogsContent } from "@/lib/catalogs";
 import { EMPTY_CATALOGS } from "@/lib/catalogs";
@@ -63,6 +75,9 @@ function usePlaceAt(
     }
     case CATALOGS_SEGMENT: {
       return inside("catalog", param && parseCatalogParam(param));
+    }
+    case BLOG_SEGMENT: {
+      return inside("post", param && parsePostParam(param));
     }
     default: {
       if (param) {
@@ -220,6 +235,71 @@ function DocsView({ project, docs, loaded, pageParam, pubkey }: DocsViewProps) {
   );
 }
 
+interface BlogViewProps {
+  project: Project;
+  website: WebsiteConfig;
+  /** The post part of the link: its title, then its id. */
+  postParam?: string;
+  pubkey: string;
+}
+
+function BlogView({ project, website, postParam, pubkey }: BlogViewProps) {
+  const [, navigate] = useLocation();
+  const { blog, loaded } = useBlog(project, website);
+  const id = postParam ? parsePostParam(postParam) : undefined;
+  const post = id ? blog.byId.get(id) : undefined;
+  const path = post ? postPath(project, post, postName(post)) : undefined;
+  // The link follows the title as it changes; any title before the id still opens the post.
+  useEffect(() => {
+    if (path && postParam && !path.endsWith(`/${postParam}`)) {
+      navigate(path, { replace: true });
+    }
+  }, [navigate, postParam, path]);
+
+  if (!postParam) {
+    return (
+      <BlogPage
+        blog={blog}
+        loaded={loaded}
+        project={project}
+        pubkey={pubkey}
+        website={website}
+      />
+    );
+  }
+  if (post) {
+    return (
+      <PostView
+        blog={blog}
+        key={post.id}
+        post={post}
+        project={project}
+        pubkey={pubkey}
+        website={website}
+      />
+    );
+  }
+  return (
+    <>
+      <TopBar
+        crumbs={[
+          { href: `/p/${project.slug}`, label: project.title },
+          { href: blogPath(project), label: "Blog" },
+        ]}
+      />
+      {loaded ? (
+        <NotFound
+          href={blogPath(project)}
+          label="Blog"
+          title="Post not found"
+        />
+      ) : (
+        <Loading />
+      )}
+    </>
+  );
+}
+
 interface ProjectRouteProps extends Omit<
   ProjectViewProps,
   "project" | "docs" | "catalogs"
@@ -255,6 +335,21 @@ export function ProjectRoute({
         key={project.address}
         project={project}
         pubkey={props.pubkey}
+      />
+    ) : (
+      <Redirect replace to={`/p/${project.slug}`} />
+    );
+  }
+  if (project && segment === BLOG_SEGMENT) {
+    // Only projects a website lists in config.json have a blog.
+    const website = websiteOf(project);
+    return website ? (
+      <BlogView
+        key={project.address}
+        postParam={props.recordId}
+        project={project}
+        pubkey={props.pubkey}
+        website={website}
       />
     ) : (
       <Redirect replace to={`/p/${project.slug}`} />

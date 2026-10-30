@@ -4,16 +4,18 @@ import { Fragment, Slice } from "@tiptap/pm/model";
 import { Plugin } from "@tiptap/pm/state";
 
 import { AppLink, appLinkText } from "@/components/markdown-editor/app-link";
-import {
-  parseMarkdown,
-  serializeMarkdown,
-} from "@/components/markdown-editor/content";
+import type { MarkdownDialect } from "@/components/markdown-editor/content";
+import { CONTENT_MARKDOWN } from "@/components/markdown-editor/content";
 import { Mention, mentionText } from "@/components/markdown-editor/mention";
 
 const LINE_BREAKS = /(?:\r\n?|\n)+/u;
 
-function markdownSlice(text: string, schema: Schema): Slice {
-  return new Slice(schema.nodeFromJSON(parseMarkdown(text)).content, 0, 0);
+function markdownSlice(
+  text: string,
+  schema: Schema,
+  dialect: MarkdownDialect
+): Slice {
+  return new Slice(schema.nodeFromJSON(dialect.parse(text)).content, 0, 0);
 }
 
 // Pasting as plain text keeps the characters as they are, a paragraph per line.
@@ -94,20 +96,25 @@ function vscodeLanguage(data: DataTransfer): string | undefined {
  * Pasted markdown turns into formatting, and copied text reads as markdown
  * elsewhere: plain text from within a block, markdown across blocks.
  */
-export const MarkdownClipboard = Extension.create({
+export const MarkdownClipboard = Extension.create<{
+  /** The editor's Markdown: descriptions' unless it's given. */
+  markdown: MarkdownDialect;
+}>({
+  addOptions: () => ({ markdown: CONTENT_MARKDOWN }),
   addProseMirrorPlugins() {
+    const dialect = this.options.markdown;
     return [
       new Plugin({
         props: {
           clipboardTextParser: (text, $context, plain) =>
             plain
               ? plainSlice(text, $context)
-              : markdownSlice(text, $context.doc.type.schema),
+              : markdownSlice(text, $context.doc.type.schema, dialect),
           clipboardTextSerializer: (slice) => {
             const text = textWithin(slice);
             return text
               ? text.textBetween(0, text.size, "\n\n", leafText)
-              : serializeMarkdown({
+              : dialect.serialize({
                   content: slice.content.toJSON(),
                   type: "doc",
                 });
@@ -125,7 +132,8 @@ export const MarkdownClipboard = Extension.create({
             }
             const pasted = markdownSlice(
               data.getData("text/plain"),
-              view.state.schema
+              view.state.schema,
+              dialect
             );
             const slice = keepBlocks(Slice.maxOpen(pasted.content), $from);
             view.dispatch(

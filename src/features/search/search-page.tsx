@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { getConfig } from "@/config";
 import { useOpenPalette } from "@/features/palette/palette-context";
 import { matching, usePlaceItems } from "@/features/search/items";
 import { useRecentItems } from "@/features/search/recent-items";
@@ -54,6 +55,7 @@ const KINDS: Record<SearchKind, { label: string; plural: string }> = {
   doc: { label: "Docs", plural: "docs" },
   file: { label: "Files", plural: "files" },
   link: { label: "Links", plural: "links" },
+  post: { label: "Posts", plural: "posts" },
   record: { label: "Records", plural: "records" },
 };
 
@@ -253,6 +255,12 @@ function SearchField({
   );
 }
 
+/** The kinds there are to search: posts only where a website's blog is written here. */
+function searchedKinds(): SearchKind[] {
+  const blogs = getConfig().websites.length > 0;
+  return SEARCH_KINDS.filter((kind) => kind !== "post" || blogs);
+}
+
 function KindChips({
   value,
   onChange,
@@ -273,7 +281,7 @@ function KindChips({
       }}
       value={[value]}
     >
-      {(["all", ...SEARCH_KINDS] as const).map((chip) => (
+      {(["all", ...searchedKinds()] as const).map((chip) => (
         <ToggleGroupItem
           className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground data-pressed:bg-foreground/10 data-pressed:text-foreground h-7 shrink-0 rounded-full px-3 text-xs font-medium transition-colors duration-150"
           key={chip}

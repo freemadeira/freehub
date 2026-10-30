@@ -1,11 +1,12 @@
 import type { NostrEvent } from "applesauce-core/helpers/event";
 import { getTagValue } from "applesauce-core/helpers/event";
 import { cn } from "cn";
-import { MessageSquareTextIcon } from "lucide-react";
+import { MessageSquareTextIcon, NewspaperIcon } from "lucide-react";
 import { useMemo } from "react";
 
 import type { Places } from "@/components/app-link";
 import { usePlaces } from "@/components/app-link";
+import { postName, postPath } from "@/features/blog/blog-context";
 import { boardQuery } from "@/features/board/board-context";
 import { STATUS_STYLES } from "@/features/card/card-fields";
 import { linkPath } from "@/features/catalogs/catalogs-context";
@@ -17,11 +18,14 @@ import { fileHref } from "@/features/drive/drive-context";
 import { FileIcon } from "@/features/drive/file-icon";
 import type { SearchItem } from "@/features/search/search-item";
 import { ICON } from "@/features/search/search-item";
+import { useBlogs } from "@/hooks/use-blog";
 import { useBoardContents } from "@/hooks/use-board-contents";
 import { useCardComments } from "@/hooks/use-comments";
 import { useCrmContents } from "@/hooks/use-crm-contents";
 import { useDriveContents } from "@/hooks/use-drive";
 import { useProfileNames } from "@/hooks/use-profile-names";
+import type { BlogContent } from "@/lib/blog";
+import { currentVersion } from "@/lib/blog";
 import { hasBlossom } from "@/lib/blossom";
 import type { CatalogsContent } from "@/lib/catalogs";
 import { hostOf } from "@/lib/catalogs";
@@ -158,6 +162,37 @@ function docEntries({ docs, projects }: Places): Entry[] {
       title: searchable(page.title),
       ...prepare(page.event, page.content),
     }))
+  );
+}
+
+/** A post is found by any of its languages: their titles, summaries and text. */
+function postEntries(
+  projects: Project[],
+  blogs: Map<string, BlogContent>
+): Entry[] {
+  return projects.flatMap((project) =>
+    (blogs.get(project.address)?.posts ?? []).map((post) => {
+      const versions = post.languages.flatMap(
+        (language) => currentVersion(language) ?? []
+      );
+      const text = versions
+        .map((version) => plainText(`${version.summary} ${version.content}`))
+        .join(" · ");
+      return {
+        at: post.updatedAt,
+        item: {
+          context: `Blog · ${project.title}`,
+          href: postPath(project, post, postName(post)),
+          icon: <NewspaperIcon className={ICON} />,
+          key: `post:${project.address}/${post.id}`,
+          project: project.address,
+          title: postName(post) || "Untitled",
+        },
+        text,
+        title: searchable(versions.map((version) => version.title).join(" ")),
+        words: searchable(text),
+      };
+    })
   );
 }
 
@@ -315,8 +350,8 @@ function commentEntries(
 
 /**
  * Everything search looks through, from what the team relays hold: every
- * card, doc page, CRM record, Drive file, catalog link and card comment the
- * user can see.
+ * card, doc page, blog post, CRM record, Drive file, catalog link and card
+ * comment the user can see.
  * Comments and files load only once something searches; `comments` false
  * leaves comments out.
  */
@@ -333,6 +368,7 @@ export function useSearchIndex({
   const { comments, loaded: commentsLoaded } = useCardComments(
     withComments ? boards : []
   );
+  const { blogs, loaded: blogsLoaded } = useBlogs(projects);
   const index = useMemo((): SearchIndex => {
     const onCards = cardPlaces(places, cards);
     const entries: Record<SearchKind, Entry[]> = {
@@ -341,6 +377,7 @@ export function useSearchIndex({
       doc: docEntries(places),
       file: fileEntries(projects, drive),
       link: linkEntries(projects, places.catalogs),
+      post: postEntries(projects, blogs),
       record: recordEntries(projects, crm),
     };
     const byCardKey = new Map<string, Entry[]>();
@@ -357,10 +394,16 @@ export function useSearchIndex({
         .map((entry) => [entry.item.key, entry.item])
     );
     return { byCardKey, byKey, entries };
-  }, [places, boards, projects, cards, crm, drive, comments]);
+  }, [places, boards, projects, cards, crm, drive, comments, blogs]);
   return {
     index,
-    loading: !(cardsLoaded && crmLoaded && driveLoaded && commentsLoaded),
+    loading: !(
+      cardsLoaded &&
+      crmLoaded &&
+      driveLoaded &&
+      commentsLoaded &&
+      blogsLoaded
+    ),
   };
 }
 
@@ -437,6 +480,7 @@ export function useFound(
     doc: look("doc").map((entry) => entry.item),
     file: look("file").map((entry) => entry.item),
     link: look("link").map((entry) => entry.item),
+    post: look("post").map((entry) => entry.item),
     record: look("record").map((entry) => entry.item),
   };
 }

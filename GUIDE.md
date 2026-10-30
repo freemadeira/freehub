@@ -7,7 +7,7 @@ How to run Freehub for your team, and how it works inside. To try it on your own
 You need a private Nostr relay for the team. It must:
 
 - require NIP-42 AUTH for reads and writes, and only let whitelisted pubkeys in;
-- store kinds 0, 30078, 30301–30310, 30320–30322, 1111, 7 and 5;
+- store kinds 0, 30078, 30023, 30024, 30301–30310, 30320–30322, 1111, 7 and 5;
 - keep its database on persistent storage, since the relay holds the only copy of the team's data;
 - be reachable over `wss://`.
 
@@ -23,7 +23,8 @@ Then:
 6. Optionally, push notifications to people's phones and computers: see [Notifications](#notifications).
 7. Optionally, have the links people save to catalogs read, titled and filed for them: see [Reader](#reader).
 8. Optionally, keep [BTC Map](https://btcmap.org/) in line with a merchants table: see [BTC Map sync](#btc-map-sync).
-9. Whitelist the npub of everyone who uses the app, viewers too, on the relay. Anyone who isn't whitelisted gets a "No access" screen showing their npub, ready to copy and send to you. The app can't read the whitelist, so the first time someone joins a project or board, paste their npub (or the whole whitelist file) into its members field; after that they're suggested by name everywhere.
+9. Optionally, write the blog of a website in a project: see [Websites](#websites).
+10. Whitelist the npub of everyone who uses the app, viewers too, on the relay. Anyone who isn't whitelisted gets a "No access" screen showing their npub, ready to copy and send to you. The app can't read the whitelist, so the first time someone joins a project or board, paste their npub (or the whole whitelist file) into its members field; after that they're suggested by name everywhere.
 
 ### Configuration
 
@@ -43,6 +44,7 @@ All settings live in `public/config.json`:
 | `blossom` | none | Blossom servers for the team's files, as `https://` URLs. Uploads go to the first; files are read from whichever has them. Without it there's no Drive. See [Drive](#drive). |
 | `notifier` | none | `{ "pubkey": "npub…", "vapidKey": "B…" }`, the notifier's npub and VAPID public key. Without it, notifications only show while the app is open. See [Notifications](#notifications). |
 | `reader` | none | `{ "pubkey": "npub…" }`, the reader's npub. Only its readings of links count. Without it, saved links show by their address until someone titles them. See [Reader](#reader). |
+| `websites` | none | Websites whose blogs are written in a project, each with its `site`, `name`, `url`, `locales`, `project` and `media`. Only the projects they name get a Blog. See [Websites](#websites). |
 
 Relay URLs must start with `wss://`. `ws://` is accepted only for localhost.
 
@@ -129,6 +131,51 @@ list:
 ```
 
 To try it locally, run any Blossom server on your machine and add `"blossom": ["http://localhost:3000"]` (or its port) to `public/config.json`; `http://` is accepted only for localhost.
+
+### Websites
+
+A website can publish a blog written in one of your projects. The project's members write posts in its **Blog**, in each language the website publishes, and press Publish; the website's indexer, which runs with the website, puts them online. List each website in `config.json`:
+
+```json
+"websites": [
+  {
+    "site": "example",
+    "name": "example.org",
+    "url": "https://example.org",
+    "locales": ["pt", "en"],
+    "project": "30304:<owner hex>:<project d>",
+    "media": "https://media.example.org"
+  }
+]
+```
+
+| Field | Notes |
+| --- | --- |
+| `site` | The key the website's indexer files its posts under: lowercase letters, digits and hyphens. |
+| `name` | How the app names the website. Defaults to its host. |
+| `url` | Where the website lives. "View on site" links start from it: `/blog/<link>` in its main language, `/<code>/blog/<link>` in the others. |
+| `locales` | The languages it publishes, as two-letter codes, its main one first. Each post has a tab for each. |
+| `project` | The address of the project whose blog it publishes: `30304`, the hex pubkey of whoever made the project, and the project's `d` tag. Each project writes one website's blog at most. |
+| `media` | The Blossom server the posts' pictures go to, which readers load them from. `http://` is accepted only for localhost. |
+
+A project gets a Blog only through `config.json`, so nobody can point a website at another project from the app. The website's indexer keeps the same mapping in its own settings, and only publishes posts by the project's members.
+
+Each language of a post is a document of its own, written in place like a doc page: a title, then the text, with `/` for blocks, a handle on each block, and Markdown as you type. Beside it are its link, summary, cover, topics, byline and publish date. The text holds what the website shows and nothing that points into the app: headings from the second level down (the title is the first), bold, italic, strikethrough, code, links to web and mail addresses outside the app, lists, quotes, code blocks, dividers, tables and pictures with alt text and a caption, but no mentions, references or to-do lists.
+
+- **Drafts.** What's written is saved as a draft a second after typing pauses. Drafts stay on the team relay; the website never sees them. Editors writing the same language at once are merged as on doc pages.
+- **Publishing.** Publish puts a language's draft on the website, and Update does so again after changes; until then the language shows "Changes not published". Unpublish takes it off, and its draft stays. Each language is published on its own, and keeps the date it was first published unless someone picks another.
+- **Shared fields.** The cover, topics and byline are the post's, not a language's: changing them in one tab saves them in every language written, which then show changes to publish. A language started later begins with them. Each language has its own title, link, summary, text and cover alt text.
+- **Links.** A language's link is made from its title until someone types one by hand or it's published. Changing a published link keeps the old one on the post, so the website sends readers on to the new one, and so does unpublishing it and publishing it again later under another. The app warns when another post uses the link in the same language, and won't publish one that another published post uses or used.
+- **Pictures.** Pictures go in from `/` → Image, by pasting or by dropping them in, and the cover from its settings. The first asks for its alt text. The browser draws each one as WebP at 640, 1280 and 1920 pixels wide, never wider than it is, and uploads them unencrypted to `media` under one signature, showing the progress in the picture's place. They can be up to 25 MB in any format the browser reads, which leaves out HEIC photos in most browsers, and drawing WebP needs Chrome, Edge or Firefox.
+
+**Pictures are public as soon as they're uploaded, drafts included.** Anyone with a picture's address can load it, and it stays on the server after its post is deleted. The media server must:
+
+- take uploads from everyone who writes posts, through BUD-11 authorization (`PUT /upload`), as `image/webp`;
+- serve each picture back with its type, at `/<sha256>.webp`, to the app and to the website's readers;
+- keep blobs for good: no expiry rules;
+- answer cross-origin requests from the app, with the `Authorization`, `Content-Type` and `X-SHA-256` headers allowed.
+
+[blossom-server](https://github.com/hzrd149/blossom-server) does this with a storage rule like the [Drive's](#drive) that lists the writers' pubkeys and lasts for good, and the Drive's server can be the website's as well. To try it on your machine, make a project, add a `websites` entry with its address, and run any Blossom server locally for `media`.
 
 ## Deploy
 
@@ -286,11 +333,12 @@ There is no backend and no database. The app is a static site: every change is a
 - **Connectors.** A connector is an optional service with its own Nostr key that feeds a source, such as an online store, into CRM tables: each order becomes a record. It describes each source in a manifest, and a table only gets records once a member switches the source on in **Table settings → Connections** and picks which field each piece of data goes to. Records keep a stable id per item, so an order changing later updates its record. When the source changes a value, the record takes it; when it doesn't, a teammate's edit to that field stays. A record a member deleted is never brought back.
 - **Map.** With a world pack set up, the Map tab shows the region in 3D: terrain, buildings with their windows and roofs, trees, roads, the sea and its surf, place names and landmarks. It follows the app's theme, with lit windows and streets at night. Records of every table with a Location field show as pins in the color of their stage, and in a list in the corner that filters by table and folds away; clicking either opens the record. A Location field takes coordinates or a pasted Google Maps, Apple Maps or OpenStreetMap link, or a click on the map through the pin button next to the field. Drag to move, right-drag or two fingers to turn and tilt, scroll or pinch to zoom; arrow keys pan and `+`/`-` zoom. The speaker button plays the sounds of what's in view; it starts off.
 - **Drive.** With a Blossom server set up, each project has a Drive: folders and files, shown as a tree under the project in the sidebar and on the project page. Files and whole folders go in by dragging them from the computer, picking them or pasting a screenshot, and upload in the background while you move around the app. Pictures, videos, audio, PDFs, texts and CSVs preview in place, a thumbnail is drawn in the browser for pictures, videos and PDFs, and each file has its details and comments, where `@` mentions someone. Any project member can add, rename, move or delete anything; viewers can browse, preview and download. Deleted things wait in the trash for 30 days, then any member's app deletes them for good when they next open the Drive. Stars and recent files are each person's own.
+- **Blog.** A project that a website lists in `config.json` has a Blog: its posts, each in the website's languages, with whether each language is a draft, published or has changes not published. Members write and publish them; viewers can read them. See [Websites](#websites).
 - **Docs.** Each project has docs: pages that can hold pages of their own, shown as a tree under the project in the sidebar. Any project member can write, move or delete any page. Pages are edited in place, as in Notion. Typing `/` opens a menu of blocks, and `@` mentions someone in the project. Hovering a block shows `+`, which adds a block below it, and a handle that drags it somewhere else or opens its menu. List items move on their own, and `Mod+Shift+↑`/`↓` moves the block the cursor is in. Pages in the sidebar can be dragged before, after or into each other. The text is saved as Markdown a second after typing pauses.
 - **Catalogs.** Each project can keep catalogs of links: videos, posts, articles, podcasts, music, repos and products the team wants to remember. Pasting or dropping links into a catalog saves them, up to 50 at once, each with an optional note; `Ctrl`/`⌘ K` → Save link does it from anywhere. With a [reader](#reader), each link soon shows a picture, a short title and summary, who made it and when, and is filed under up to three of the catalog's categories; until then it shimmers. Categories the reader would add wait at the end of the catalog's categories, with how many links it suggests them for: adding one files those links there, and dismissing it keeps it from coming back. Adding a category by hand offers to sort the links already saved into it, and the reader says how many it filed. Members can change a link's title, summary, type, creator and categories by hand, and what they set stays over the reader's until someone lets the AI fill it in again. Links show as a gallery or a list, filter by category, platform, type and who saved them, sort and group, and download as CSV. Opening one plays it in place where the platform allows (YouTube, Vimeo, TikTok, X, Spotify and Instagram), beside its details, comments, reactions and the places that mention it. Links can be selected together to file, move to another catalog or project, star or delete, with Undo. Stars, and which links are new to you, are your own: a dot marks links others saved since you last looked, the sidebar counts them, and they're kept on the relay, encrypted, so every device agrees.
 - **References.** Typing `#` in a comment, a card's description or a doc page finds a card, page, record, saved link or file of the app by its title, and puts in a link to it that shows as its icon and title. A saved link lists everywhere it's mentioned, under **Mentioned in**: cards and their comments, doc pages, comments on files and other links.
 - **Editing a page together.** When two people edit a page at once, each one's saved edits show up in the other's page as they arrive, without moving their cursor. The two versions are merged line by line, so edits to different lines, even neighbouring list items, are all kept. When both change the same line, the person still typing keeps theirs; between two saved versions, every device picks the same one.
-- **Search and shortcuts.** `Ctrl`/`⌘ K` opens the command palette. It goes to any project, board, table, catalog, doc page or Drive folder, adds a card, a page or a project, saves a link, changes the theme, and finds cards, doc pages, CRM records, Drive files, saved links and comments as you type, a few of each; typing a card's key, like `FREE-12`, finds that card first. On a card it also changes the status, priority and assignees (`S`, `P` and `A` open those lists straight away), marks it as related to, blocked by or blocking another card (`M` then `R`, `B` or `X`), copies the card's ID or link and deletes it; on a board it switches tabs and layout. `/` opens the search page, which shows every match, narrows to one kind or one project, and keeps the words in its link; on the Drive, `/` searches the Drive instead. Both start with your latest searches and the places you opened lately. `C` adds a card from anywhere: on the board in view, or one of the project you're in, and the card can go on another board before it's made; on a board's sprint tab, and on Boards, it joins the running sprint. On a card, `J` and `K` step through the cards as the tab it was opened from lists them, and `Esc` goes back to the board. `G` then `H`, `I`, `M`, `D` or `F` goes Home, to the inbox, the map, or the docs or Drive of the project you're in; `G` then `P` or `B` picks a project or a board; `Ctrl`/`⌘` with 1 to 9 opens a project, in the sidebar's order; and `Ctrl`/`⌘ B` shows or hides the sidebar. `?` lists them all, as does the account menu.
+- **Search and shortcuts.** `Ctrl`/`⌘ K` opens the command palette. It goes to any project, board, table, catalog, doc page, Drive folder or Blog, adds a card, a page, a blog post or a project, saves a link, changes the theme, and finds cards, doc pages, blog posts, CRM records, Drive files, saved links and comments as you type, a few of each; typing a card's key, like `FREE-12`, finds that card first. On a card it also changes the status, priority and assignees (`S`, `P` and `A` open those lists straight away), marks it as related to, blocked by or blocking another card (`M` then `R`, `B` or `X`), copies the card's ID or link and deletes it; on a board it switches tabs and layout. `/` opens the search page, which shows every match, narrows to one kind or one project, and keeps the words in its link; on the Drive, `/` searches the Drive instead. Both start with your latest searches and the places you opened lately. `C` adds a card from anywhere: on the board in view, or one of the project you're in, and the card can go on another board before it's made; on a board's sprint tab, and on Boards, it joins the running sprint. On a card, `J` and `K` step through the cards as the tab it was opened from lists them, and `Esc` goes back to the board. `G` then `H`, `I`, `M`, `D` or `F` goes Home, to the inbox, the map, or the docs or Drive of the project you're in; `G` then `P` or `B` picks a project or a board; `Ctrl`/`⌘` with 1 to 9 opens a project, in the sidebar's order; and `Ctrl`/`⌘ B` shows or hides the sidebar. `?` lists them all, as does the account menu.
 - **Saving.** Changes show up right away, then go to the signer and on to the relay. Once signed, a change is kept in the browser until every team relay has it, so it survives reloads and time offline. A change still waiting on the signer is lost if the tab closes, and the app warns before that happens.
 - **Loading.** Relays only send their newest few hundred events per request, so the app pages back through everything they hold before a board or table counts as loaded, then keeps listening. When a relay drops or closes the connection, it reconnects and catches up on what it missed.
 - **Names.** Members' names and avatars come from the lookup relays. Each browser keeps the last 200 it saw, shows them at once and checks them again in the background, so they also show while those relays are down. A name not found is looked for again, less often as time goes on and right away when the device is back online, for as long as it's on screen. Someone with no Nostr profile shows as a short npub, and an avatar whose host doesn't answer shows as a color.
@@ -311,6 +359,8 @@ Boards and cards follow the draft kanban NIP used by [kanbanstr](https://github.
 | 30307 | Doc page | `d`, `a` (project), `title`, `icon`, `parent`, `rank`, `created`, `creator`, `prev` (the version it was edited from), `p` (one per person mentioned), `mention` (person, who mentioned them, when) |
 | 30309 | Drive folder | `d`, `a` (project), `name`, `parent`, `color`, `icon`, `created`, `creator`, `trashed` (time, who) |
 | 30310 | Drive file | `d`, `a` (project), `name`, `folder`, `size`, `m` (MIME type), `dim`, `duration`, `x` (hash of the encrypted file), `encryption-algorithm`, `decryption-key`, `decryption-nonce`, `thumbnail` (hash, nonce), `creator`, `created`, `updated`, `trashed` (time, who) |
+| 30023 | One language of a blog post, as published ([NIP-23](https://github.com/nostr-protocol/nips/blob/master/23.md)) | `d` (`<post id>-<language>`), `a` (project), `post` (the post's id), `L` and `l` (the language, `ISO-639-1`), `title`, `slug`, `old_slug` (links it was published under before), `summary`, `image` (the cover), `published_at`, `t` (topics), `p` (the byline, as `["p", pubkey, "", "author"]`), `imeta` (one per picture: `url`, `m`, `x`, `dim`, `alt`, `srcset`), `deleted` |
+| 30024 | One language of a blog post, as a draft ([NIP-23](https://github.com/nostr-protocol/nips/blob/master/23.md)) | As 30023, plus `prev` (the draft it was edited from) |
 | 30320 | Catalog | `d`, `a` (project), `title`, `description`, `category` (id, name, color), `dismissed` (a suggested category waved away), `sort` (category, when it was asked for), `created`, `creator` |
 | 30321 | Saved link | `d`, `a` (project), `catalog`, `r` (its address), `creator`, `created`, `read` (when a new reading was asked for), and what members set by hand: `title`, `summary`, `type`, `byline` (name, address), `filed` (category ids) |
 | 30322 | The reader's reading of a link, or how sorting a catalog went | `d` (the link's or the catalog's), `a` (project), `k` (`30321` or `30320`). A reading: `r`, `state`, `read`, `title`, `original`, `summary`, `type`, `byline`, `published`, `duration`, `site`, `thumb` (hash, nonce, key, MIME type), `dim`, `image`, `c` (category ids), `suggest` (category names). A catalog's: `sorted` (category, when, filed, checked) or `unsorted` (category, when, why) |
@@ -343,6 +393,8 @@ Catalog marks are encrypted the same way: the links starred, each with when that
 
 A saved link is versioned like a card, and its content is the note saved with it. What the reader read of it is an event of its own, from the reader's key alone, since only the npub in `config.json` counts: the app shows the link's own tags over the reading's, so a hand edit stays whatever the reader reads later. A `read` tag with the current time asks for a new reading, which the reader answers with a `read` time as late; until then, with a reader set up, the link shows as being read. The picture is sealed with AES-GCM under a key made for it, carried in the `thumb` tag; without a Blossom server, `image` names the picture on the web instead. Asking to sort a catalog's links into a category adds a `sort` tag to the catalog, and the reader files each link it picks by adding the category to the link's reading, then saves how it went in the catalog's report. A suggested category that a member adds files the links that suggested it, unless someone filed them by hand. Moving a link to another project saves it there under a new `d` tag and deletes it where it was. An hour after a link or its catalog is deleted, the reader deletes its reading, and its picture from the Blossom server.
 
+A blog post is one event per language and kind, sharing the post's id: its `d` tag is that id then the language, like `0123456789abcdef-pt`, so it stays put when the title or link changes. For each `d` and kind, the newest version by a member of the project that names it in `a` wins, as for cards. The content is Markdown in the app's dialect, with pictures as `![alt](address "caption")` on lines of their own, each described by an `imeta` tag with its sizes for `srcset`, the cover's too. A draft's `prev` lets editors merge as on doc pages. Publishing writes a 30023 from the draft, always after the language's last one; unpublishing writes one tagged `deleted`, and deleting the post does the same for its drafts. Those keep `d`, `a`, `post` and the language, so the website's indexer knows what to take down, and an unpublished language's also keeps the links it was published under as `old_slug` tags, for when it's published again. A language whose published link changes keeps every link it was published under as an `old_slug` tag, on its draft and every later version, since the relay keeps only the newest; taking a link back drops it from them.
+
 A doc page's text is the event's content, as Markdown. Its `parent` is the `d` tag of the page it sits under, and pages at the top have none. `prev` is the id of the version the editor started from, so a teammate's editor knows what each side changed when it merges two versions saved at once. Deleting a page deletes the pages under it too. Everyone the text mentions gets a `p` tag, and a `mention` tag with who mentioned them and when, in seconds; each version carries these on from the one it was edited from, so every member's version names the same notification, and the newest time wins when they differ.
 
 ## Project layout
@@ -356,6 +408,10 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 | `src/lib/crm-templates.ts` | The table templates offered in "New table" |
 | `src/lib/sources.ts` | Connector sources and how they map onto tables |
 | `src/lib/docs.ts` | Doc pages and how they nest |
+| `src/lib/blog.ts` | Blog posts: their events, how languages and versions resolve, links and pictures |
+| `src/lib/blog-actions.ts`, `src/features/blog/` | Writing, publishing and uploading pictures for posts, and the Blog's screens |
+| `src/components/markdown-editor/article.ts` | What a blog post's text can hold, and its Markdown |
+| `src/lib/images.ts` | Decoding and drawing pictures in the browser, for thumbnails and blog pictures |
 | `src/lib/drive.ts` | Drive folders and files, and how they nest |
 | `src/lib/blossom.ts`, `src/lib/sealing.ts` | Blossom servers, and sealing files before they go there |
 | `src/lib/catalogs.ts` | Catalogs, saved links and the reader's readings, and how they layer; the reader shares it |
@@ -400,6 +456,7 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 - Card numbers are picked as highest + 1 on each device, so two people adding cards at the same moment can get the same number.
 - Board codes and project links are checked against every board and project on the relay, but two made at the same moment can still match. Links then name the board with `?board=`, and one of the projects gets a `-2` link.
 - Removing someone from a board or project, or making them a viewer, hides the cards, sprints, CRM tables, records and doc pages whose newest version is theirs: each falls back to an older version or disappears, a table with its records. Comments on their versions are hidden too, and boards they made in a project move out of it. Adding them back as a member shows it all again.
+- The same goes for blog posts: if whoever unpublished a language, or deleted a post, leaves the project, the version before comes back, in the app and on the website, whose indexer counts members' versions only too.
 - Other clients of the kanban NIP, and copies of this app from before viewers, read a viewer as a member.
 - The statuses are fixed, after Linear's: Triage, Backlog, Todo, In progress, In review, Done, Canceled and Duplicate. Each board picks which of them it uses, but can't rename or reorder them. Boards made before these statuses use To do, In progress and Done until their creator turns more on. Copies of this app from before these statuses read the new ones as Todo.
 - Cards and doc pages can't hold files yet; files go in a project's Drive.
@@ -417,6 +474,9 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 - The BTC Map sync only reports what it would do. Writing to OpenStreetMap is still to come, and an unattended edit has to follow OpenStreetMap's [Automated Edits code of conduct](https://wiki.openstreetmap.org/wiki/Automated_Edits_code_of_conduct) first: documented, announced to the local community, from an account that says it's a bot.
 - The BTC Map sync reads one address format so far, Portugal's.
 - A doc page is saved whole, as one event, so a long page costs a little more with each save. Edits merge line by line: a paragraph is one line, so two people rewriting the same paragraph at once keep only one version of it.
+- A blog picture still uploading isn't saved yet. Links out of the post and closing the tab ask first, but going back, or a keyboard shortcut that opens another page, leaves at once and loses it.
+- Blog pictures are drawn in the browser that adds them, so animated GIFs become still pictures, and Safari can't make the WebP sizes. Pictures pasted from other websites over `https://` stay linked where they are, without sizes, so readers' browsers load them from there; those over plain `http://` are left out.
+- Blog pictures stay on the media server after their post is deleted, and only their uploader's key could delete them.
 - A deleted page can't be brought back. Deleting a page while someone else has it open drops whatever they hadn't saved yet.
 - Only saved links list where they're mentioned; cards, pages, records and files don't yet.
 - The reader reads what a page says about itself in its head, as link previews do, so a page that only fills that in with scripts, or that turns robots away, is read by its address alone.
@@ -426,4 +486,4 @@ A doc page's text is the event's content, as Markdown. Its `parent` is the `d` t
 - Due reminders go out at 9:00 the day before: in each device's own time zone in the app, and in the notifier's `TZ` for pushes.
 - The map needs WebGL 2. It draws one region per app, and a pin per record, so thousands of located records crowd it.
 - The map guesses most building heights, since few are tagged in OpenStreetMap, and builds windows and roofs from rules rather than the real buildings.
-- `INBOX`, `MAP` and `SEARCH` can't be board codes, since the inbox lives at `/inbox`, the map at `/map` and search at `/search`. Likewise a table named "Docs", "Drive" or "Catalogs" gets the link `docs-2`, `drive-2` or `catalogs-2`, since a project's docs, Drive and catalogs live at `/p/<project>/docs`, `/p/<project>/drive` and `/p/<project>/catalogs`.
+- `INBOX`, `MAP` and `SEARCH` can't be board codes, since the inbox lives at `/inbox`, the map at `/map` and search at `/search`. Likewise a table named "Docs", "Drive", "Catalogs" or "Blog" gets the link `docs-2`, `drive-2`, `catalogs-2` or `blog-2`, since a project's docs, Drive, catalogs and blog live at `/p/<project>/docs`, `/p/<project>/drive`, `/p/<project>/catalogs` and `/p/<project>/blog`. A table made before the blog came, with the link `blog`, now gets `blog-2`, so links saved to it go to the project's blog, or to the project when it has none.

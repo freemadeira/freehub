@@ -6,6 +6,7 @@ import { createContext, use } from "react";
 import { Link } from "wouter";
 
 import { ProjectAvatar } from "@/components/project-avatar";
+import { BLOG_SEGMENT } from "@/features/blog/blog-context";
 import {
   BoardContext,
   findBoard,
@@ -159,6 +160,10 @@ export function appTarget(href: string): AppTarget | undefined {
   if (table === DRIVE_SEGMENT) {
     const file = url.searchParams.get(FILE_PARAM);
     return file ? { file, project, type: "file" } : undefined;
+  }
+  // The blog isn't a table; its links show as written.
+  if (table === BLOG_SEGMENT) {
+    return undefined;
   }
   return record
     ? { project, record, table, type: "record" }

@@ -5,6 +5,7 @@ import {
   InboxIcon,
   KanbanIcon,
   MapIcon,
+  NewspaperIcon,
   PlusIcon,
   SearchIcon,
   SquareArrowOutUpRightIcon,
@@ -51,6 +52,7 @@ import {
 } from "@/components/ui/sidebar";
 import { UserMenu } from "@/components/user-menu";
 import { getConfig } from "@/config";
+import { blogPath } from "@/features/blog/blog-context";
 import { boardPath, useOpenBoard } from "@/features/board/board-context";
 import { BOARDS_PATH } from "@/features/boards/boards-page";
 import { countNew } from "@/features/catalogs/catalog-context";
@@ -64,6 +66,7 @@ import { MAP_PATH } from "@/features/map/map-path";
 import { SEARCH_PATH } from "@/features/search/search-path";
 import { useAppCommands } from "@/features/shortcuts/app-commands";
 import { useCatalogMarks } from "@/hooks/use-catalogs";
+import { websiteOf } from "@/lib/blog-actions";
 import type { CatalogsDoc } from "@/lib/catalog-marks";
 import type { CatalogsContent } from "@/lib/catalogs";
 import { EMPTY_CATALOGS } from "@/lib/catalogs";
@@ -169,6 +172,9 @@ function ProjectItem({
   onOpenChange,
 }: ProjectItemProps) {
   const base = `/p/${project.slug}`;
+  // Only projects a website lists write its blog.
+  const website = websiteOf(project);
+  const blog = blogPath(project);
   return (
     <Collapsible
       onOpenChange={onOpenChange}
@@ -262,6 +268,18 @@ function ProjectItem({
             docs={docs}
             project={project}
           />
+          {website && (
+            <SidebarMenuSubItem>
+              <SidebarMenuSubButton
+                isActive={location === blog || location.startsWith(`${blog}/`)}
+                render={<NavLink href={blog} />}
+                title={`Posts on ${website.name}`}
+              >
+                <NewspaperIcon />
+                <span>Blog</span>
+              </SidebarMenuSubButton>
+            </SidebarMenuSubItem>
+          )}
           {drive && (
             <SidebarDrive
               canEdit={canEdit(project, pubkey)}

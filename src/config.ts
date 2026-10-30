@@ -18,6 +18,22 @@ export interface ReaderConfig {
   pubkey: string;
 }
 
+/** A website whose blog is written in a project of the app. */
+export interface WebsiteConfig {
+  /** The key the website's indexer files posts under, like `example`. */
+  site: string;
+  /** How the app names it, like `example.org`. */
+  name: string;
+  /** Its address, which "View on site" links start from. */
+  url: string;
+  /** The languages it publishes, as ISO 639-1 codes, its main one first. */
+  locales: string[];
+  /** Address of the project whose blog it publishes: `30304:<owner>:<d>`. */
+  project: string;
+  /** The Blossom server its posts' pictures go to, and are read from. */
+  media: string;
+}
+
 export interface Config {
   name: string;
   logo: string;
@@ -42,6 +58,8 @@ export interface Config {
    * to catalogs. Without one, links show as saved.
    */
   reader?: ReaderConfig;
+  /** Websites whose blogs are written here. Only the projects they name get a Blog. */
+  websites: WebsiteConfig[];
 }
 
 export class ConfigError extends Error {
@@ -59,6 +77,9 @@ const DEFAULT_LOOKUP_RELAYS = [
   "wss://directory.yabu.me",
 ];
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+const SITE_KEY = /^[a-z0-9][a-z0-9-]*$/u;
+const LOCALE = /^[a-z]{2}$/u;
+const PROJECT_ADDRESS = /^30304:[0-9a-f]{64}:[^:]+$/u;
 
 let current: Config | undefined;
 
@@ -121,6 +142,23 @@ function mapConfig(value: unknown): MapConfig | undefined {
   return { world };
 }
 
+/** An `https://` address, or `http://` on this machine. */
+function webAddress(field: string, value: unknown): URL {
+  let url: URL;
+  try {
+    url = new URL(String(value));
+  } catch {
+    throw new ConfigError(`"${value}" in "${field}" is not a valid URL.`);
+  }
+  const secure =
+    url.protocol === "https:" ||
+    (url.protocol === "http:" && LOCAL_HOSTS.has(url.hostname));
+  if (!secure) {
+    throw new ConfigError(`"${value}" in "${field}" must start with https://.`);
+  }
+  return url;
+}
+
 function serverList(field: string, value: unknown): string[] {
   if (value === undefined) {
     return [];
@@ -128,25 +166,7 @@ function serverList(field: string, value: unknown): string[] {
   if (!Array.isArray(value)) {
     throw new ConfigError(`"${field}" must be a list of server URLs.`);
   }
-  const urls = new Set<string>();
-  for (const entry of value) {
-    let url: URL;
-    try {
-      url = new URL(String(entry));
-    } catch {
-      throw new ConfigError(`"${entry}" in "${field}" is not a valid URL.`);
-    }
-    const secure =
-      url.protocol === "https:" ||
-      (url.protocol === "http:" && LOCAL_HOSTS.has(url.hostname));
-    if (!secure) {
-      throw new ConfigError(
-        `"${entry}" in "${field}" must start with https://.`
-      );
-    }
-    urls.add(url.origin);
-  }
-  return [...urls];
+  return [...new Set(value.map((entry) => webAddress(field, entry).origin))];
 }
 
 function pubkeyList(field: string, value: unknown): string[] {
@@ -203,6 +223,68 @@ function readerConfig(value: unknown): ReaderConfig | undefined {
   return { pubkey };
 }
 
+function website(value: unknown): WebsiteConfig {
+  const raw: Record<string, unknown> =
+    typeof value === "object" && value !== null ? { ...value } : {};
+  const site = text(raw.site);
+  if (!(site && SITE_KEY.test(site))) {
+    throw new ConfigError(
+      `Each of "websites" needs "site": a key of lowercase letters, digits and hyphens, like "example".`
+    );
+  }
+  const field = `websites.${site}`;
+  const locales = Array.isArray(raw.locales)
+    ? [...new Set(raw.locales.map(String))]
+    : [];
+  if (locales.length === 0 || !locales.every((locale) => LOCALE.test(locale))) {
+    throw new ConfigError(
+      `"${field}" needs "locales": the languages it publishes, as two-letter codes like ["pt", "en"].`
+    );
+  }
+  const project = text(raw.project);
+  if (!(project && PROJECT_ADDRESS.test(project))) {
+    throw new ConfigError(
+      `"${field}" needs "project": the address of the project its blog is written in, as 30304:<owner hex>:<project d>.`
+    );
+  }
+  if (raw.media === undefined) {
+    throw new ConfigError(
+      `"${field}" needs "media": the Blossom server its pictures go to.`
+    );
+  }
+  const url = webAddress(field, raw.url);
+  return {
+    locales,
+    media: webAddress(field, raw.media).origin,
+    name: text(raw.name) ?? url.host,
+    project,
+    site,
+    url: url.href.replace(/\/+$/u, ""),
+  };
+}
+
+function websiteList(value: unknown): WebsiteConfig[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new ConfigError(`"websites" must be a list of websites.`);
+  }
+  const websites = value.map(website);
+  for (const [index, { site, project }] of websites.entries()) {
+    const earlier = websites.slice(0, index);
+    if (earlier.some((other) => other.site === site)) {
+      throw new ConfigError(`Two of "websites" are both "${site}".`);
+    }
+    if (earlier.some((other) => other.project === project)) {
+      throw new ConfigError(
+        `"websites.${site}" names a project another website already has: each project writes one website’s blog.`
+      );
+    }
+  }
+  return websites;
+}
+
 export async function loadConfig(): Promise<Config> {
   const response = await fetch(`${import.meta.env.BASE_URL}config.json`, {
     cache: "no-cache",
@@ -243,6 +325,7 @@ export async function loadConfig(): Promise<Config> {
       raw.signerRelays,
       DEFAULT_SIGNER_RELAYS
     ),
+    websites: websiteList(raw.websites),
   };
   return current;
 }

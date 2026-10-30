@@ -4,6 +4,7 @@ import {
   Heading1Icon,
   Heading2Icon,
   Heading3Icon,
+  Heading4Icon,
   ListIcon,
   ListOrderedIcon,
   ListTodoIcon,
@@ -33,11 +34,17 @@ export interface BlockType extends BlockCommand {
 }
 
 const LISTS = ["bulletList", "orderedList", "taskList"] as const;
-const HEADINGS = [
-  [1, Heading1Icon],
-  [2, Heading2Icon],
-  [3, Heading3Icon],
-] as const;
+
+/** The heading levels pages and articles use. */
+export type HeadingLevel = 1 | 2 | 3 | 4;
+
+/** Each heading level's icon. */
+export const HEADING_ICONS: Record<HeadingLevel, LucideIcon> = {
+  1: Heading1Icon,
+  2: Heading2Icon,
+  3: Heading3Icon,
+  4: Heading4Icon,
+};
 
 // Into a list, unless the text already sits in one of that kind.
 function toList(
@@ -48,27 +55,31 @@ function toList(
     editor.isActive(name) ? chain : toggle(chain.clearNodes());
 }
 
-export const BLOCK_TYPES: readonly BlockType[] = [
-  {
-    icon: PilcrowIcon,
-    id: "text",
-    isActive: (editor) =>
-      editor.isActive("paragraph") &&
-      !LISTS.some((list) => editor.isActive(list)) &&
-      !editor.isActive("blockquote"),
-    keywords: ["paragraph", "plain"],
-    label: "Text",
-    run: (chain) => chain.clearNodes(),
-  },
-  ...HEADINGS.map(([level, icon]): BlockType => ({
-    icon,
+const TEXT: BlockType = {
+  icon: PilcrowIcon,
+  id: "text",
+  isActive: (editor) =>
+    editor.isActive("paragraph") &&
+    !LISTS.some((list) => editor.isActive(list)) &&
+    !editor.isActive("blockquote"),
+  keywords: ["paragraph", "plain"],
+  label: "Text",
+  run: (chain) => chain.clearNodes(),
+};
+
+function heading(level: HeadingLevel): BlockType {
+  return {
+    icon: HEADING_ICONS[level],
     id: `heading${level}`,
     isActive: (editor) => editor.isActive("heading", { level }),
     keywords: ["heading", "title", `h${level}`],
     label: `Heading ${level}`,
     markdown: "#".repeat(level),
     run: (chain) => chain.clearNodes().setHeading({ level }),
-  })),
+  };
+}
+
+const LIST_TYPES: readonly BlockType[] = [
   {
     icon: ListIcon,
     id: "bulletList",
@@ -87,15 +98,19 @@ export const BLOCK_TYPES: readonly BlockType[] = [
     markdown: "1.",
     run: toList("orderedList", (chain) => chain.toggleOrderedList()),
   },
-  {
-    icon: ListTodoIcon,
-    id: "taskList",
-    isActive: (editor) => editor.isActive("taskList"),
-    keywords: ["todo", "task", "checkbox", "checklist"],
-    label: "To-do list",
-    markdown: "[]",
-    run: toList("taskList", (chain) => chain.toggleTaskList()),
-  },
+];
+
+const TASK_LIST: BlockType = {
+  icon: ListTodoIcon,
+  id: "taskList",
+  isActive: (editor) => editor.isActive("taskList"),
+  keywords: ["todo", "task", "checkbox", "checklist"],
+  label: "To-do list",
+  markdown: "[]",
+  run: toList("taskList", (chain) => chain.toggleTaskList()),
+};
+
+const QUOTE_AND_CODE: readonly BlockType[] = [
   {
     icon: TextQuoteIcon,
     id: "blockquote",
@@ -114,6 +129,27 @@ export const BLOCK_TYPES: readonly BlockType[] = [
     markdown: "```",
     run: (chain) => chain.clearNodes().setCodeBlock(),
   },
+];
+
+/** What a doc page's blocks can turn into. */
+export const BLOCK_TYPES: readonly BlockType[] = [
+  TEXT,
+  heading(1),
+  heading(2),
+  heading(3),
+  ...LIST_TYPES,
+  TASK_LIST,
+  ...QUOTE_AND_CODE,
+];
+
+/** What an article's blocks can turn into: its title is the only first-level heading, and it has no to-dos. */
+export const ARTICLE_BLOCK_TYPES: readonly BlockType[] = [
+  TEXT,
+  heading(2),
+  heading(3),
+  heading(4),
+  ...LIST_TYPES,
+  ...QUOTE_AND_CODE,
 ];
 
 export const INSERTS: readonly BlockCommand[] = [

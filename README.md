@@ -75,6 +75,7 @@ Running Freehub for your team, and how it works inside, are in the [guide](GUIDE
 - [Configuration](GUIDE.md#configuration) — every field in `public/config.json`
 - [Map](GUIDE.md#map) — baking a 3D world pack of your region
 - [Drive](GUIDE.md#drive) — the Blossom server for project files
+- [Websites](GUIDE.md#websites) — a website's blog, written in a project, and its pictures
 - [Deploy](GUIDE.md#deploy) — Coolify, Docker Compose or a static host
 - [Connectors](GUIDE.md#connectors) — feeding a store's orders into CRM tables
 - [BTC Map sync](GUIDE.md#btc-map-sync) — keeping BTC Map in line with a merchants table

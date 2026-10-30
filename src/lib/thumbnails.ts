@@ -1,4 +1,6 @@
 import type { FileKind } from "@/lib/drive";
+import type { Decoded } from "@/lib/images";
+import { decodeImage, drawImage } from "@/lib/images";
 
 /** What the browser could learn about a file before uploading it. */
 export interface Measured {
@@ -26,65 +28,36 @@ function fit(width: number, height: number): [number, number] {
   ];
 }
 
-/**
- * Draws the source small, as WebP where the browser can write it and PNG
- * otherwise, which keeps transparency too.
- */
-export async function draw(
+/** Draws the source small, as a thumbnail for tiles. */
+export function draw(
   source: CanvasImageSource,
   width: number,
   height: number
 ): Promise<Blob | undefined> {
-  if (typeof OffscreenCanvas === "undefined") {
-    return undefined;
-  }
   const [w, h] = fit(width, height);
-  const canvas = new OffscreenCanvas(w, h);
-  const context = canvas.getContext("2d");
-  if (!context) {
-    return undefined;
-  }
-  context.imageSmoothingQuality = "high";
-  context.drawImage(source, 0, 0, w, h);
-  return await canvas.convertToBlob({ quality: 0.82, type: "image/webp" });
-}
-
-function loadImage(url: string): Promise<HTMLImageElement> {
-  const image = new Image();
-  image.decoding = "async";
-  image.src = url;
-  return image.decode().then(() => image);
+  return drawImage(source, w, h);
 }
 
 async function measureImage(file: File): Promise<Measured> {
   if (file.size > MAX_IMAGE_BYTES) {
     return {};
   }
-  const url = URL.createObjectURL(file);
+  let decoded: Decoded | undefined;
   try {
-    // SVGs need an <img> to have a size; bitmaps decode faster off the main thread.
-    const source =
-      file.type === "image/svg+xml"
-        ? await loadImage(url)
-        : await createImageBitmap(file).catch(() => loadImage(url));
-    const width = "naturalWidth" in source ? source.naturalWidth : source.width;
-    const height =
-      "naturalHeight" in source ? source.naturalHeight : source.height;
+    decoded = await decodeImage(file);
+    const { source, width, height } = decoded;
     const small =
       Math.max(width, height) <= THUMB_SIDE && file.size <= OWN_THUMB_BYTES;
     const thumbnail =
       small || !width || !height
         ? undefined
         : await draw(source, width, height);
-    if ("close" in source) {
-      source.close();
-    }
     return { height, thumbnail, width };
   } catch {
     // HEIC photos and the like: the browser can't draw them, the icon stands in.
     return {};
   } finally {
-    URL.revokeObjectURL(url);
+    decoded?.close();
   }
 }
 

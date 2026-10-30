@@ -10,6 +10,7 @@ const SNIPPET = 140;
 export const SEARCH_KINDS = [
   "card",
   "doc",
+  "post",
   "record",
   "file",
   "link",
@@ -27,6 +28,7 @@ export const PLACE_KINDS = [
   "record",
   "folder",
   "catalog",
+  "post",
 ] as const;
 export type PlaceKind = (typeof PLACE_KINDS)[number];
 
