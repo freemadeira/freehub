@@ -18,6 +18,11 @@ import { firstDayOfWeek } from "@/lib/utils";
 /** Weeks start where they do for the person, as their calendars show it. */
 export const WEEK_STARTS_ON = firstDayOfWeek();
 
+/** Tells a card apart among every board's. */
+export function taskKey({ board, card }: Pick<MyCard, "board" | "card">) {
+  return `${board.address}/${card.id}`;
+}
+
 export const DUE_BUCKETS = [
   { id: "overdue", label: "Overdue" },
   { id: "today", label: "Today" },
