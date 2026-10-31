@@ -10,6 +10,7 @@ import {
   LogOutIcon,
   MonitorIcon,
   MoonIcon,
+  NewspaperIcon,
   PanelLeftIcon,
   SearchIcon,
   SquareKanbanIcon,
@@ -24,6 +25,7 @@ import { usePlaces } from "@/components/app-link";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
 import { useSidebar } from "@/components/ui/sidebar";
+import { postPath } from "@/features/blog/blog-context";
 import { pagePath } from "@/features/docs/docs-context";
 import { usePageCommandGroups } from "@/features/palette/page-commands";
 import type { PaletteStart, Picker } from "@/features/palette/palette-context";
@@ -40,6 +42,7 @@ import { SEARCH_PATH, searchHref } from "@/features/search/search-path";
 import type { SearchIndex } from "@/features/search/use-found";
 import { useFound, useSearchIndex } from "@/features/search/use-found";
 import { useObservableValue } from "@/hooks/use-observable-value";
+import { createPost, websiteOf } from "@/lib/blog-actions";
 import { EMPTY_DOCS } from "@/lib/docs";
 import { createPage } from "@/lib/docs-actions";
 import { canEdit } from "@/lib/model";
@@ -77,7 +80,7 @@ const THEMES: { value: Theme; label: string; icon: ReactNode }[] = [
 ];
 
 /** Kinds of items found in what the team wrote, whose searches are worth keeping. */
-const FOUND = /^(?:card|doc|record|file|link|comment):/u;
+const FOUND = /^(?:card|doc|post|record|file|link|comment):/u;
 
 function few(items: SearchItem[]): SearchItem[] {
   return items.slice(0, FEW);
@@ -141,6 +144,20 @@ function useAppGroups(
         navigate(pagePath(here, { id, title: "" }));
       },
       title: "New page",
+    });
+  }
+  const website = here && websiteOf(here);
+  if (here && website && canEdit(here, pubkey)) {
+    create.push({
+      context: website.name,
+      icon: <NewspaperIcon className={ICON} />,
+      key: "new-post",
+      keywords: "add create blog article write website",
+      run: () => {
+        const { id } = createPost(here, website);
+        navigate(postPath(here, { id }));
+      },
+      title: "New post",
     });
   }
   if (commands.saveLink) {
@@ -281,6 +298,7 @@ function useFoundGroups(
     { items: commands, label: "Commands", value: "commands" },
     { items: few(found.card), label: "Cards", value: "cards" },
     { items: few(found.doc), label: "Docs", value: "docs" },
+    { items: few(found.post), label: "Posts", value: "posts" },
     { items: few(found.record), label: "Records", value: "records" },
     { items: few(found.file), label: "Files", value: "files" },
     { items: few(found.link), label: "Links", value: "links" },

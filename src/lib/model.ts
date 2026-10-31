@@ -23,6 +23,10 @@ export const LINK_KIND = 30_321;
 export const READING_KIND = 30_322;
 /** Two cards marked as related, or one as blocking the other. */
 export const RELATION_KIND = 30_323;
+/** NIP-23: one language of a blog post, as published on its website. */
+export const POST_KIND = 30_023;
+/** NIP-23: one language of a blog post as it's being written, never published. */
+export const POST_DRAFT_KIND = 30_024;
 /** NIP-78 app data: each person's own inbox marks, follows and devices. */
 export const APP_DATA_KIND = 30_078;
 export const COMMENT_KIND = 1111;

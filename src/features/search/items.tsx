@@ -6,12 +6,14 @@ import {
   InboxIcon,
   KanbanIcon,
   MapIcon,
+  NewspaperIcon,
   SquareKanbanIcon,
 } from "lucide-react";
 
 import { usePlaces } from "@/components/app-link";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { getConfig } from "@/config";
+import { blogPath } from "@/features/blog/blog-context";
 import { boardPath } from "@/features/board/board-context";
 import { BOARDS_PATH } from "@/features/boards/boards-page";
 import { catalogPath } from "@/features/catalogs/catalogs-context";
@@ -23,6 +25,7 @@ import { INBOX_PATH } from "@/features/inbox/inbox-page";
 import { MAP_PATH } from "@/features/map/map-path";
 import type { SearchItem } from "@/features/search/search-item";
 import { ICON } from "@/features/search/search-item";
+import { websiteOf } from "@/lib/blog-actions";
 import type { Board } from "@/lib/model";
 import { tablePath } from "@/lib/paths";
 import type { Project } from "@/lib/project";
@@ -124,6 +127,18 @@ export function usePlaceItems(): SearchItem[] {
       project: address,
       title: "Docs",
     });
+    const website = websiteOf(project);
+    if (website) {
+      items.push({
+        context: `${website.name} · ${where}`,
+        href: blogPath(project),
+        icon: <NewspaperIcon className={ICON} />,
+        key: `blog:${address}`,
+        keywords: "posts articles website news",
+        project: address,
+        title: "Blog",
+      });
+    }
     if (drive) {
       items.push({
         context: where,

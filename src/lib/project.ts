@@ -39,26 +39,26 @@ export type ProjectFields = Pick<
 >;
 
 /** Lowercase words joined by hyphens, safe for a URL path segment. */
-export function slugify(value: string): string {
+export function slugify(value: string, max = MAX_SLUG): string {
   return value
     .normalize("NFD")
     .replace(DIACRITICS, "")
     .toLowerCase()
     .replaceAll(/[^a-z0-9]+/gu, "-")
     .replaceAll(/^-+|-+$/gu, "")
-    .slice(0, MAX_SLUG)
+    .slice(0, max)
     .replace(/-+$/u, "");
 }
 
 /** Like `slugify`, but keeps a trailing hyphen so it can be typed. */
-export function cleanSlugInput(value: string): string {
+export function cleanSlugInput(value: string, max = MAX_SLUG): string {
   return value
     .normalize("NFD")
     .replace(DIACRITICS, "")
     .toLowerCase()
     .replaceAll(/[^a-z0-9]+/gu, "-")
     .replace(/^-+/u, "")
-    .slice(0, MAX_SLUG);
+    .slice(0, max);
 }
 
 /** Appends -2, -3, … until the slug is free. */

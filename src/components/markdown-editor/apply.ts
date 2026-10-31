@@ -4,7 +4,11 @@ import { Fragment } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
 import { diffIndices } from "node-diff3";
 
-import { parseMarkdown } from "@/components/markdown-editor/content";
+import type { MarkdownDialect } from "@/components/markdown-editor/content";
+import { CONTENT_MARKDOWN } from "@/components/markdown-editor/content";
+
+/** Marks a change that shows Markdown from elsewhere, like a teammate's edit: not one to save. */
+export const SHOWN = "shownMarkdown";
 
 function blocks(doc: Node): Node[] {
   return Array.from({ length: doc.childCount }, (_, index) => doc.child(index));
@@ -16,6 +20,57 @@ function keys(nodes: Node[]): string[] {
 
 function isBlank(node: Node): boolean {
   return node.type.name === "paragraph" && node.content.size === 0;
+}
+
+/**
+ * The new blocks with the current blocks that Markdown can't hold yet, like a
+ * picture still uploading, kept after the block they followed, or where they
+ * were when that block is gone.
+ */
+function keepUnwritten(
+  current: Node[],
+  next: Node[],
+  unwritten: (node: Node) => boolean
+): Node[] {
+  const written = current.filter((node) => !unwritten(node));
+  if (written.length === current.length) {
+    return next;
+  }
+  // Where what follows each written block goes among the new ones: right
+  // after it when it's unchanged, after whatever replaced it otherwise.
+  const after: number[] = [];
+  let a = 0;
+  let b = 0;
+  for (const hunk of diffIndices(keys(written), keys(next))) {
+    const [from, removed] = hunk.buffer1;
+    const [start, added] = hunk.buffer2;
+    for (; a < from; a += 1, b += 1) {
+      after[a] = b + 1;
+    }
+    for (let offset = 0; offset < removed; offset += 1) {
+      after[from + offset] = start + added;
+    }
+    a = from + removed;
+    b = start + added;
+  }
+  for (; a < written.length; a += 1, b += 1) {
+    after[a] = b + 1;
+  }
+  const kept = [...next];
+  let seen = -1;
+  for (const node of current) {
+    if (unwritten(node)) {
+      const inserted = kept.length - next.length;
+      kept.splice(
+        (seen < 0 ? 0 : (after[seen] ?? next.length)) + inserted,
+        0,
+        node
+      );
+    } else {
+      seen += 1;
+    }
+  }
+  return kept;
 }
 
 // Where the `index`th block of the document starts.
@@ -53,10 +108,18 @@ function replaceWithin(tr: Transaction, at: number, before: Node, after: Node) {
  * so the cursor and the rest of the text stay where they are. The change
  * isn't undoable: undo still steps back through the person's own edits.
  */
-export function replaceMarkdown(editor: Editor, markdown: string): void {
+export function replaceMarkdown(
+  editor: Editor,
+  markdown: string,
+  dialect: MarkdownDialect = CONTENT_MARKDOWN
+): void {
   const { state } = editor;
   const current = blocks(state.doc);
-  let next = blocks(state.schema.nodeFromJSON(parseMarkdown(markdown)));
+  let next = keepUnwritten(
+    current,
+    blocks(state.schema.nodeFromJSON(dialect.parse(markdown))),
+    (node) => dialect.unwritten(node.toJSON())
+  );
   if (next.every(isBlank)) {
     next = [];
   }
@@ -94,7 +157,10 @@ export function replaceMarkdown(editor: Editor, markdown: string): void {
   }
   if (tr.docChanged) {
     editor.view.dispatch(
-      tr.setMeta("addToHistory", false).setMeta("preventAutolink", true)
+      tr
+        .setMeta("addToHistory", false)
+        .setMeta("preventAutolink", true)
+        .setMeta(SHOWN, true)
     );
   }
 }

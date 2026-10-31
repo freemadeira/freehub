@@ -1,4 +1,4 @@
-import type { Editor } from "@tiptap/core";
+import type { Editor, Extensions } from "@tiptap/core";
 import { Placeholder } from "@tiptap/extensions";
 import type { Node } from "@tiptap/pm/model";
 import { EditorContent, useEditor } from "@tiptap/react";
@@ -13,16 +13,20 @@ import {
 } from "react";
 
 import { InternalLinks } from "@/components/markdown-editor/app-link";
-import { replaceMarkdown } from "@/components/markdown-editor/apply";
+import { replaceMarkdown, SHOWN } from "@/components/markdown-editor/apply";
 import { MoveBlock } from "@/components/markdown-editor/block-actions";
 import { BlockHandle } from "@/components/markdown-editor/block-handle";
-import type { BlockCommand } from "@/components/markdown-editor/blocks";
+import type {
+  BlockCommand,
+  BlockType,
+  HeadingLevel,
+} from "@/components/markdown-editor/blocks";
 import { BLOCK_TYPES, INSERTS } from "@/components/markdown-editor/blocks";
 import { MarkdownClipboard } from "@/components/markdown-editor/clipboard";
+import type { MarkdownDialect } from "@/components/markdown-editor/content";
 import {
   CONTENT,
-  parseMarkdown,
-  serializeMarkdown,
+  CONTENT_MARKDOWN,
 } from "@/components/markdown-editor/content";
 import {
   MentionCommand,
@@ -49,11 +53,36 @@ import { useProfileNames } from "@/hooks/use-profile-names";
 import { onLeave } from "@/lib/leaving";
 import { mentionNames } from "@/lib/mentions";
 
+/** What a page's text holds, and what its editor offers to add. */
+export interface PageSchema {
+  /** The blocks and marks, as they show while editing. */
+  extensions: Extensions;
+  /** How the text reads and writes as Markdown. */
+  markdown: MarkdownDialect;
+  /** What the "/" menu and the block handle's "Turn into" offer. */
+  types: readonly BlockType[];
+  /** What else the "/" menu adds, before the page's own commands. */
+  inserts: readonly BlockCommand[];
+  /** The heading levels the selection toolbar offers. */
+  headings: readonly HeadingLevel[];
+}
+
+/** A doc page: what descriptions hold, with links to the app opening in place. */
+export const DOC_PAGE: PageSchema = {
+  extensions: [...CONTENT, InternalLinks],
+  headings: [1, 2, 3],
+  inserts: INSERTS,
+  markdown: CONTENT_MARKDOWN,
+  types: BLOCK_TYPES,
+};
+
 export interface PageEditorHandle {
   /** Something besides the text changed, like the title: save it with the next save. */
   changed: () => void;
   /** Saves pending edits now. */
   save: () => void;
+  /** The text as it stands, as Markdown, saved or not. */
+  read: () => string;
   /** Puts the cursor at the start or the end of the text. */
   focus: (at: "start" | "end") => void;
 }
@@ -64,10 +93,14 @@ interface PageEditorProps {
   /** Every member's newest version of the page, to merge as they arrive. */
   versions: NostrEvent[];
   pubkey: string;
-  /** People who can be mentioned. */
-  people: string[];
-  /** Address of the project whose things "#" offers to reference. */
-  project: string;
+  /** What the text holds: a doc page's unless given. */
+  schema?: PageSchema;
+  /** What the text is, for screen readers. */
+  label?: string;
+  /** People who can be mentioned. Without them, "@" is just text. */
+  people?: string[];
+  /** Address of the project whose things "#" offers to reference. Without it, "#" is just text. */
+  project?: string;
   /**
    * Saves the text as a new version of the page, edited from `prev`.
    * `picked` are the people picked from the "@" list since the last save.
@@ -107,6 +140,8 @@ export function PageEditor({
   opened,
   versions,
   pubkey,
+  schema = DOC_PAGE,
+  label = "Page",
   people,
   project,
   onPublish,
@@ -116,31 +151,31 @@ export function PageEditor({
   const slash = useMemo(() => new SlashMenuStore(), []);
   const mentionMenu = useMemo(() => new MentionMenuStore(), []);
   const refMenu = useMemo(() => new RefMenuStore(), []);
-  const profileNames = useProfileNames(people);
-  const names = mentionNames(people, profileNames);
+  const mentioning = people !== undefined;
+  const profileNames = useProfileNames(people ?? []);
+  const names = mentionNames(people ?? [], profileNames);
   const toolbar = useRef<HTMLDivElement>(null);
   const sync = useRef<PageSync | null>(null);
   const publishRef = useRef(onPublish);
   const extensions = useMemo(
     () => [
-      ...CONTENT,
-      MarkdownClipboard,
-      InternalLinks,
+      ...schema.extensions,
+      MarkdownClipboard.configure({ markdown: schema.markdown }),
       LinkTarget,
       MoveBlock,
       SlashCommand.configure({ store: slash }),
-      MentionCommand.configure({ store: mentionMenu }),
-      RefCommand.configure({ store: refMenu }),
+      MentionCommand.configure({ store: mentioning ? mentionMenu : null }),
+      RefCommand.configure({ store: project === undefined ? null : refMenu }),
       Placeholder.configure({ includeChildren: true, placeholder }),
     ],
-    [slash, mentionMenu, refMenu]
+    [schema, slash, mentioning, mentionMenu, project, refMenu]
   );
 
   const editor = useEditor({
-    content: parseMarkdown(opened.content),
+    content: schema.markdown.parse(opened.content),
     editorProps: {
       attributes: {
-        "aria-label": "Page",
+        "aria-label": label,
         "aria-multiline": "true",
         class: "rich-text page-text",
         role: "textbox",
@@ -157,8 +192,9 @@ export function PageEditor({
       }
     },
     onUpdate: ({ transaction }) => {
-      // Teammates' edits shown in the text are theirs to save.
-      if (transaction.getMeta("addToHistory") !== false) {
+      // Teammates' edits shown in the text are theirs to save; the rest,
+      // like a picture that finished uploading, is ours.
+      if (!transaction.getMeta(SHOWN)) {
         sync.current?.changed();
       }
     },
@@ -169,8 +205,8 @@ export function PageEditor({
   });
 
   useEffect(() => {
-    slash.setCommands([...BLOCK_TYPES, ...INSERTS, ...commands]);
-  }, [slash, commands]);
+    slash.setCommands([...schema.types, ...schema.inserts, ...commands]);
+  }, [slash, schema, commands]);
 
   // Starts keeping the text and the relays in step, once the editor is up.
   const connect = useEffectEvent((current: Editor) => {
@@ -189,8 +225,8 @@ export function PageEditor({
           }
           return saved;
         },
-        read: () => serializeMarkdown(current.getJSON()),
-        show: (markdown) => replaceMarkdown(current, markdown),
+        read: () => schema.markdown.serialize(current.getJSON()),
+        show: (markdown) => replaceMarkdown(current, markdown, schema.markdown),
       },
       versions
     );
@@ -255,9 +291,11 @@ export function PageEditor({
         }
         editor.chain().focus(at).run();
       },
+      read: () =>
+        editor ? schema.markdown.serialize(editor.getJSON()) : opened.content,
       save: () => sync.current?.save(),
     }),
-    [editor]
+    [editor, schema, opened]
   );
 
   return (
@@ -265,12 +303,17 @@ export function PageEditor({
       <EditorContent editor={editor} />
       {editor && (
         <>
-          <BlockHandle editor={editor} />
+          <BlockHandle editor={editor} types={schema.types} />
           <SlashMenu editor={editor} store={slash} />
-          <MentionMenu editor={editor} names={names} store={mentionMenu} />
-          <RefMenu editor={editor} project={project} store={refMenu} />
+          {mentioning && (
+            <MentionMenu editor={editor} names={names} store={mentionMenu} />
+          )}
+          {project !== undefined && (
+            <RefMenu editor={editor} project={project} store={refMenu} />
+          )}
           <SelectionToolbar
             editor={editor}
+            headings={schema.headings}
             onLeave={() => {
               hideSelectionToolbar(editor);
               sync.current?.save();

@@ -7,6 +7,8 @@ import { TimeoutError, withTimeout } from "@/lib/utils";
  * Files on the team's Blossom servers (BUD-01, 02 and 11), sealed with
  * AES-GCM in the browser first (see sealing.ts): the servers hand any blob to
  * whoever asks for its hash, so they only ever hold what they can't read.
+ * Blog pictures are the exception: they go as they are to their website's
+ * media server, for its readers to load.
  */
 
 const SIGN_TIMEOUT = 60_000;
@@ -66,8 +68,10 @@ function reason(response: { status: number; header: string | null }): string {
 }
 
 /**
- * Sends a blob to the team's first Blossom server, telling how far it got as
- * it goes. Only XMLHttpRequest reports upload progress.
+ * Sends a blob to a Blossom server, the team's first unless another is
+ * given, telling how far it got as it goes. Blobs are sealed, so they go as
+ * bytes unless another type is given. Only XMLHttpRequest reports upload
+ * progress.
  */
 export function uploadBlob(
   data: Blob | ArrayBuffer,
@@ -76,9 +80,15 @@ export function uploadBlob(
   {
     onProgress,
     signal,
-  }: { onProgress?: (loaded: number) => void; signal?: AbortSignal } = {}
+    server = getConfig().blossom[0],
+    type = "application/octet-stream",
+  }: {
+    onProgress?: (loaded: number) => void;
+    signal?: AbortSignal;
+    server?: string;
+    type?: string;
+  } = {}
 ): Promise<void> {
-  const [server] = getConfig().blossom;
   if (!server) {
     return Promise.reject(new Error("There’s no file server to upload to."));
   }
@@ -87,7 +97,7 @@ export function uploadBlob(
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", `${server}/upload`);
     xhr.setRequestHeader("Authorization", auth);
-    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.setRequestHeader("Content-Type", type);
     xhr.setRequestHeader("X-SHA-256", hash);
     xhr.upload.addEventListener("progress", (event) =>
       onProgress?.(event.loaded)

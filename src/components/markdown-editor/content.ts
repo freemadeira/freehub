@@ -1,4 +1,4 @@
-import type { JSONContent, MarkdownToken } from "@tiptap/core";
+import type { Extensions, JSONContent, MarkdownToken } from "@tiptap/core";
 import { getSchema, InputRule, mergeAttributes } from "@tiptap/core";
 import { Image } from "@tiptap/extension-image";
 import { OrderedList, TaskItem, TaskList } from "@tiptap/extension-list";
@@ -16,8 +16,13 @@ const SCHEME = /^(?<scheme>[a-z][a-z\d+.-]*):/iu;
 // Only addresses typed in full link up, so a file name like index.md stays text.
 const FULL_ADDRESS = /^(?:[a-z][a-z\d+.-]*:|www\.)/iu;
 
-function schemeOf(url: string): string | undefined {
+export function schemeOf(url: string): string | undefined {
   return SCHEME.exec(url.trim())?.groups?.scheme?.toLowerCase();
+}
+
+/** Whether a link or picture address is typed in full, for auto-linking. */
+export function isFullAddress(url: string): boolean {
+  return FULL_ADDRESS.test(url);
 }
 
 // Links go to web and mail addresses, or stay relative.
@@ -58,7 +63,7 @@ function escapeBlockMarkers(markdown: string): string {
     .replace(LIST_NUMBER, "$<number>\\");
 }
 
-const MarkdownParagraph = Paragraph.extend({
+export const MarkdownParagraph = Paragraph.extend({
   parseMarkdown(token, helpers) {
     const tokens = token.tokens ?? [];
     // Images are inline, so one alone on a line stays in its paragraph;
@@ -91,7 +96,7 @@ function keepBox(item: MarkdownToken): MarkdownToken {
 // that misplaces what's nested in items: code gains a space on every save and
 // blocks under a nested list vanish. Marked's CommonMark lists, and the
 // markdown paste, read them like any other list.
-const CommonMarkOrderedList = OrderedList.extend({
+export const CommonMarkOrderedList = OrderedList.extend({
   addProseMirrorPlugins: () => [],
   markdownTokenizer: {
     level: "block",
@@ -156,7 +161,7 @@ export const CONTENT = [
     link: {
       isAllowedUri: (url, { defaultValidate }) =>
         defaultValidate(url) && isWebOrMail(url),
-      shouldAutoLink: (url) => FULL_ADDRESS.test(url),
+      shouldAutoLink: isFullAddress,
     },
     orderedList: false,
     paragraph: false,
@@ -198,19 +203,26 @@ const htmlTagAsText: TokenizerExtension = {
   },
 };
 
-// A single newline breaks the line, as descriptions have always shown it.
-const parser = new Marked({
-  breaks: true,
-  extensions: [htmlBlockAsText, htmlTagAsText],
-});
+/** Blocks and marks, and how their Markdown reads and writes. */
+export interface MarkdownDialect {
+  extensions: Extensions;
+  /** Markdown as editor content. What can't be read shows line by line, as plain text. */
+  parse: (source: string) => JSONContent;
+  /** Editor content as Markdown, without blank lines around it. */
+  serialize: (doc: JSONContent) => string;
+  /**
+   * Blocks not ready to be written, like a picture still uploading: left out
+   * of the Markdown, and kept in place when new Markdown is shown.
+   */
+  unwritten: (node: JSONContent) => boolean;
+}
 
-const markdown = new MarkdownManager({
-  extensions: CONTENT,
-  // Typed for the `marked` function; only the API a `Marked` instance shares is used.
-  marked: parser as unknown as typeof marked,
-});
-
-const schema = getSchema(CONTENT);
+interface DialectOptions {
+  /** Puts content just read right, before it's checked against the schema. */
+  read?: (doc: JSONContent) => JSONContent;
+  /** Blocks not ready to be written yet. */
+  unwritten?: (node: JSONContent) => boolean;
+}
 
 function plainDoc(source: string): JSONContent {
   return {
@@ -222,28 +234,75 @@ function plainDoc(source: string): JSONContent {
   };
 }
 
-/** A description's markdown as editor content. */
-export function parseMarkdown(source: string): JSONContent {
-  try {
-    const doc = markdown.parse(source);
-    schema.nodeFromJSON(doc).check();
-    return doc;
-  } catch {
-    // What the parser can't fit still shows, line by line.
-    return plainDoc(source);
-  }
-}
-
 function isBlank(node: JSONContent): boolean {
   return node.type === "paragraph" && !node.content?.length;
 }
 
+/** The content without the nodes that aren't ready to be written, at any depth. */
+function withoutUnwritten(
+  node: JSONContent,
+  unwritten: (node: JSONContent) => boolean
+): JSONContent {
+  return node.content
+    ? {
+        ...node,
+        content: node.content
+          .filter((child) => !unwritten(child))
+          .map((child) => withoutUnwritten(child, unwritten)),
+      }
+    : node;
+}
+
+/** The Markdown of an editor with these extensions, read as descriptions have always been. */
+export function markdownDialect(
+  extensions: Extensions,
+  { read = (doc) => doc, unwritten = () => false }: DialectOptions = {}
+): MarkdownDialect {
+  // A single newline breaks the line, as descriptions have always shown it.
+  // Each dialect has its own parser, since extensions add tokenizers to it.
+  const parser = new Marked({
+    breaks: true,
+    extensions: [htmlBlockAsText, htmlTagAsText],
+  });
+  const markdown = new MarkdownManager({
+    extensions,
+    // Typed for the `marked` function; only the API a `Marked` instance shares is used.
+    marked: parser as unknown as typeof marked,
+  });
+  const schema = getSchema(extensions);
+  return {
+    extensions,
+    parse(source) {
+      try {
+        const doc = read(markdown.parse(source));
+        schema.nodeFromJSON(doc).check();
+        return doc;
+      } catch {
+        // What the parser can't fit still shows, line by line.
+        return plainDoc(source);
+      }
+    },
+    serialize(doc) {
+      const content = withoutUnwritten(doc, unwritten).content ?? [];
+      const first = content.findIndex((node) => !isBlank(node));
+      const last = content.findLastIndex((node) => !isBlank(node));
+      return markdown
+        .serialize({ ...doc, content: content.slice(first, last + 1) })
+        .trim();
+    },
+    unwritten,
+  };
+}
+
+/** Descriptions, comments and doc pages. */
+export const CONTENT_MARKDOWN = markdownDialect(CONTENT);
+
+/** A description's markdown as editor content. */
+export function parseMarkdown(source: string): JSONContent {
+  return CONTENT_MARKDOWN.parse(source);
+}
+
 /** Editor content as a description's markdown, without blank lines around it. */
 export function serializeMarkdown(doc: JSONContent): string {
-  const content = doc.content ?? [];
-  const first = content.findIndex((node) => !isBlank(node));
-  const last = content.findLastIndex((node) => !isBlank(node));
-  return markdown
-    .serialize({ ...doc, content: content.slice(first, last + 1) })
-    .trim();
+  return CONTENT_MARKDOWN.serialize(doc);
 }

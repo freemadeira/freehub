@@ -13,9 +13,6 @@ import {
   CheckIcon,
   ChevronDownIcon,
   CodeIcon,
-  Heading1Icon,
-  Heading2Icon,
-  Heading3Icon,
   ItalicIcon,
   LinkIcon,
   ListIcon,
@@ -31,6 +28,8 @@ import type { RefObject } from "react";
 import { useEffect, useEffectEvent, useState } from "react";
 
 import { IconButton } from "@/components/icon-button";
+import type { HeadingLevel } from "@/components/markdown-editor/blocks";
+import { HEADING_ICONS } from "@/components/markdown-editor/blocks";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -77,12 +76,8 @@ function toHref(value: string): string {
     : `https://${text}`;
 }
 
-const STYLES = [
-  { icon: PilcrowIcon, label: "Text", level: 0 },
-  { icon: Heading1Icon, label: "Heading 1", level: 1 },
-  { icon: Heading2Icon, label: "Heading 2", level: 2 },
-  { icon: Heading3Icon, label: "Heading 3", level: 3 },
-] as const;
+/** The heading levels doc pages offer. */
+const PAGE_HEADINGS: readonly HeadingLevel[] = [1, 2, 3];
 
 const LISTS: {
   icon: LucideIcon;
@@ -261,6 +256,8 @@ interface SelectionToolbarProps {
   ref: RefObject<HTMLDivElement | null>;
   /** Focus left both the text and the toolbar. */
   onLeave: () => void;
+  /** The heading levels the text style menu offers: a doc page's unless given. */
+  headings?: readonly HeadingLevel[];
 }
 
 /** Formatting for selected text, floating above it like Linear's. */
@@ -268,6 +265,7 @@ export function SelectionToolbar({
   editor,
   ref,
   onLeave,
+  headings = PAGE_HEADINGS,
 }: SelectionToolbarProps) {
   // The address of the link being edited, while the link field is open.
   const [link, setLink] = useState<string>();
@@ -279,7 +277,7 @@ export function SelectionToolbar({
       code: current.isActive("code"),
       codeBlock: current.isActive("codeBlock"),
       heading:
-        [1, 2, 3].find((level) => current.isActive("heading", { level })) ?? 0,
+        headings.find((level) => current.isActive("heading", { level })) ?? 0,
       italic: current.isActive("italic"),
       link: current.isActive("link"),
       list: LISTS.find((list) => current.isActive(list.name))?.name,
@@ -358,6 +356,17 @@ export function SelectionToolbar({
     return () => document.removeEventListener("keydown", listener);
   }, []);
 
+  // Only the lists the text can hold, like no checklists in an article.
+  const lists = LISTS.filter((list) => editor.schema.nodes[list.name]);
+  const styles: { icon: LucideIcon; label: string; level: 0 | HeadingLevel }[] =
+    [
+      { icon: PilcrowIcon, label: "Text", level: 0 },
+      ...headings.map((level) => ({
+        icon: HEADING_ICONS[level],
+        label: `Heading ${level}`,
+        level,
+      })),
+    ];
   const currentList = LISTS.find((list) => list.name === active.list);
   const ListTrigger = currentList?.icon ?? ListIcon;
 
@@ -426,7 +435,7 @@ export function SelectionToolbar({
                 <ChevronDownIcon />
               </DropdownMenuTrigger>
               <DropdownMenuContent container={ref} finalFocus={false}>
-                {STYLES.map(({ icon: Icon, label, level }) => (
+                {styles.map(({ icon: Icon, label, level }) => (
                   <DropdownMenuItem
                     key={label}
                     onClick={() =>
@@ -511,7 +520,7 @@ export function SelectionToolbar({
                 <ChevronDownIcon />
               </DropdownMenuTrigger>
               <DropdownMenuContent container={ref} finalFocus={false}>
-                {LISTS.map(({ icon: Icon, label, name, toggle }) => (
+                {lists.map(({ icon: Icon, label, name, toggle }) => (
                   <DropdownMenuItem
                     key={name}
                     onClick={() => runFromMenu(toggle)}
