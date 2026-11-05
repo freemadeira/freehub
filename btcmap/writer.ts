@@ -16,7 +16,7 @@ export type Outcome = "written" | "conflict" | "over limit";
 const CHANGESET_TAGS: Record<string, string> = {
   bot: "yes",
   comment:
-    "Merchants checked in person: bitcoin acceptance, closed and relocated businesses",
+    "Merchants checked in person: bitcoin acceptance and closed businesses",
   created_by: "Freehub-btcmap",
   source: "survey",
 };
@@ -41,15 +41,15 @@ export function applyChanges(
   tags: Record<string, string>,
   changes: TagChange[]
 ): Record<string, string> {
-  const next = { ...tags };
+  const next = new Map(Object.entries(tags));
   for (const { key, to } of changes) {
     if (to === undefined) {
-      delete next[key];
+      next.delete(key);
     } else {
-      next[key] = to;
+      next.set(key, to);
     }
   }
-  return next;
+  return Object.fromEntries(next);
 }
 
 /** One change as an osmChange document, for the element as it was read. */

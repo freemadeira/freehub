@@ -6,7 +6,7 @@ import { applyChanges, osmChange } from "./writer";
 /** Ciao Pizzeria's node as OpenStreetMap had it on 2026-10-21, trimmed. */
 const NODE: OsmElement = {
   id: 10_899_529_872,
-  position: { lat: 32.648_808_9, lon: -16.905_947_3 },
+  position: { lat: 32.6488089, lon: -16.9059473 },
   tags: {
     amenity: "restaurant",
     "currency:XBT": "yes",
@@ -84,11 +84,7 @@ describe("osmChange", () => {
 
   it("refuses to edit a way whose nodes weren't read", () => {
     expect(() =>
-      osmChange(
-        { ...WAY, nodes: undefined },
-        { changes: [], kind: "edit" },
-        7
-      )
+      osmChange({ ...WAY, nodes: undefined }, { changes: [], kind: "edit" }, 7)
     ).toThrow("nodes");
   });
 });

@@ -3,7 +3,7 @@ import { getTagValue } from "applesauce-core/helpers/event";
 import type { Target } from "@/lib/connected-tables";
 import { fetchRecords, findTargets } from "@/lib/connected-tables";
 import type { CrmRecord } from "@/lib/crm";
-import { COMMENT_KIND, CRM_RECORD_KIND } from "@/lib/model";
+import { COMMENT_KIND, CRM_RECORD_KIND, DELETE_KIND } from "@/lib/model";
 import type { Project } from "@/lib/project";
 import type { TeamRelay } from "@/lib/team-relay";
 import { errorMessage, plural } from "@/lib/utils";
@@ -20,9 +20,8 @@ import {
 } from "./osm";
 import type { Action, Listing, Position, TagChange } from "./plan";
 import { mayDeleteOrMove, plan } from "./plan";
+import { acceptanceOnly } from "./scope";
 import type { Mapping } from "./source";
-import type { Change } from "./writer";
-import { MAX_CHANGES, OsmWriter } from "./writer";
 import {
   linksOsm,
   listingLabel,
@@ -32,6 +31,8 @@ import {
   osmLinkOf,
   SOURCE,
 } from "./source";
+import type { Change } from "./writer";
+import { MAX_CHANGES, OsmWriter } from "./writer";
 
 /** A table that switched the sync on, with its records. */
 interface Table {
@@ -140,10 +141,23 @@ async function visitTimes(
     authors: project.members,
     kinds: [COMMENT_KIND],
   });
+  // A visit deleted on the record (NIP-09, by its own author) checked nothing.
+  const deletions = await relay.fetch({
+    authors: project.members,
+    kinds: [DELETE_KIND],
+  });
+  const deleted = new Set(
+    deletions.flatMap((event) =>
+      event.tags.flatMap(([name, id]) =>
+        name === "e" && id ? [`${event.pubkey}:${id}`] : []
+      )
+    )
+  );
   const visits = new Map<string, number[]>();
   for (const event of comments) {
     const [kind, , id] = (getTagValue(event, "A") ?? "").split(":");
     if (
+      !deleted.has(`${event.pubkey}:${event.id}`) &&
       getTagValue(event, "activity") === "visit" &&
       kind === String(CRM_RECORD_KIND) &&
       id
@@ -188,6 +202,24 @@ function note(
   }
 }
 
+/** What the writer does for an action; nothing for one that keeps the element or is left to a mapper. */
+function changeOf(action: Action): Change | undefined {
+  switch (action.kind) {
+    case "edit": {
+      return { changes: action.changes, kind: "edit" };
+    }
+    case "move": {
+      return { changes: action.changes, kind: "move", to: action.to };
+    }
+    case "delete": {
+      return { kind: "delete" };
+    }
+    default: {
+      return undefined;
+    }
+  }
+}
+
 /** Compares one merchant with its OSM element and adds what would change to the report. */
 async function compare(
   run: Run,
@@ -218,8 +250,20 @@ async function compare(
     readAddress: config.readAddress,
     standalone,
   });
-  note(report, heading, result.action, merchant.listing);
-  const change = changeOf(result.action);
+  // Only bitcoin acceptance is written; an address, a website or a move is left for a mapper.
+  const scoped = acceptanceOnly(merchant, result.action);
+  note(report, heading, scoped.action, merchant.listing);
+  if (scoped.move && result.action.kind === "move") {
+    report.byHand.push(
+      `${heading} (relocated: move the pin to ${coordinates(result.action.to)})`
+    );
+  }
+  if (scoped.byHand.length > 0) {
+    report.byHand.push(
+      `${heading} (details OSM lacks)${changesBelow(scoped.byHand)}`
+    );
+  }
+  const change = changeOf(scoped.action);
   if (run.writer && change) {
     try {
       const outcome = await run.writer.apply(element, change);
@@ -249,24 +293,6 @@ function list(title: string, items: string[]): void {
     console.log(`\n${title} (${items.length}):`);
     for (const item of items) {
       console.log(`  ${item}`);
-    }
-  }
-}
-
-/** What the writer does for an action; nothing for one that keeps the element or is left to a mapper. */
-function changeOf(action: Action): Change | undefined {
-  switch (action.kind) {
-    case "edit": {
-      return { changes: action.changes, kind: "edit" };
-    }
-    case "move": {
-      return { changes: action.changes, kind: "move", to: action.to };
-    }
-    case "delete": {
-      return { kind: "delete" };
-    }
-    default: {
-      return undefined;
     }
   }
 }
@@ -319,16 +345,16 @@ async function nightlyTable(
   const report: Report = {
     badLink: [],
     byHand: [],
+    conflicts: [],
     deleted: [],
     edits: [],
-    conflicts: [],
     failed: 0,
     gone: [],
     moves: [],
     noLink: [],
     onMap: [],
-    shared: [],
     overLimit: [],
+    shared: [],
     unchanged: 0,
     unreadAddress: [],
     written: [],
