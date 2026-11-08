@@ -9,6 +9,7 @@ import {
   parseTab,
   useOpenBoard,
 } from "@/features/board/board-context";
+import { parseBoardsTab } from "@/features/boards/boards-commands";
 import { BOARDS_PATH } from "@/features/boards/boards-page";
 import { NewCardDialog } from "@/features/card/new-card-dialog";
 import { useProjectInView } from "@/features/projects/use-project-in-view";
@@ -119,10 +120,11 @@ function QuickCardDialog({
     );
   }
   // As from the board's own button: on its sprint tab, a card joins the
-  // running sprint. So does one made on the Boards page, to show up there.
+  // running sprint. So does one made on the Boards page's, to show up there.
   const sprinting = (scope: BoardScope) =>
-    location === BOARDS_PATH ||
-    (scope.board === inView && parseTab(search.get("tab")) === "sprint");
+    location === BOARDS_PATH
+      ? parseBoardsTab(search.get("tab")) === "sprint"
+      : scope.board === inView && parseTab(search.get("tab")) === "sprint";
 
   return (
     <NewCardDialog

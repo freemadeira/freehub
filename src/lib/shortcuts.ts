@@ -12,7 +12,12 @@ const SEQUENCE = { timeout: SEQUENCE_MS };
 const APPLE = /Mac|iPhone|iPad/u.test(navigator.userAgent);
 
 /** The cheat sheet's sections, in the order it lists them. */
-export const SHORTCUT_GROUPS = ["General", "Navigation", "Cards"] as const;
+export const SHORTCUT_GROUPS = [
+  "General",
+  "Navigation",
+  "Boards",
+  "Cards",
+] as const;
 
 /**
  * Every shortcut the app answers to, by what it does. The keys pressed, the
@@ -87,6 +92,18 @@ export const SHORTCUTS = defineAppHotkeys({
       name: "Drive",
     },
     options: SEQUENCE,
+  },
+  "boards.nextPerson": {
+    hotkey: "N",
+    meta: {
+      description: "On Boards, for a standup: each person's cards in turn",
+      group: "Boards",
+      name: "Next person",
+    },
+  },
+  "boards.previousPerson": {
+    hotkey: "Shift+N",
+    meta: { group: "Boards", name: "Previous person" },
   },
   "card.next": { hotkey: "J", meta: { group: "Cards", name: "Next card" } },
   "card.previous": {

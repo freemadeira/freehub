@@ -25,23 +25,33 @@ import type { BoardContent, Sprint } from "@/lib/model";
 import { activeSprint, isClosed, upcomingSprint } from "@/lib/model";
 import { plural } from "@/lib/utils";
 
-function upcomingTitle(content: BoardContent): string {
+/** What the next sprint is called: the upcoming one's title, or a new one's. */
+export function upcomingTitle(content: BoardContent): string {
   return upcomingSprint(content)?.title ?? `Sprint ${content.nextSprintNumber}`;
 }
 
-function sprintDates(sprint: Sprint): string | undefined {
-  if (!(sprint.start && sprint.end)) {
+/** Days to the sprint's last day: none on it, fewer than none once it ran over. */
+export function daysLeft(sprint: Sprint): number | undefined {
+  return sprint.end === undefined
+    ? undefined
+    : differenceInCalendarDays(parseISO(sprint.end), new Date());
+}
+
+/** "5 days left", "Last day", or "2 days over". */
+export function remainingLabel(days: number): string {
+  if (days > 0) {
+    return `${plural(days, "day")} left`;
+  }
+  return days < 0 ? `${plural(-days, "day")} over` : "Last day";
+}
+
+/** When the sprint runs and how long it has left, like "Nov 1 – Nov 15 · 5 days left". */
+export function sprintDates(sprint: Sprint): string | undefined {
+  const days = daysLeft(sprint);
+  if (!(sprint.start && sprint.end) || days === undefined) {
     return undefined;
   }
-  const end = parseISO(sprint.end);
-  const days = differenceInCalendarDays(end, new Date());
-  let remaining = "Last day";
-  if (days > 0) {
-    remaining = `${plural(days, "day")} left`;
-  } else if (days < 0) {
-    remaining = `${plural(-days, "day")} over`;
-  }
-  return `${format(parseISO(sprint.start), "MMM d")} – ${format(end, "MMM d")} · ${remaining}`;
+  return `${format(parseISO(sprint.start), "MMM d")} – ${format(parseISO(sprint.end), "MMM d")} · ${remainingLabel(days)}`;
 }
 
 function EndSprint({ sprint }: { sprint: Sprint }) {

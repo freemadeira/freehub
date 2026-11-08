@@ -23,6 +23,7 @@ import type {
   StatusMove,
 } from "@/lib/model";
 import {
+  activeSprint,
   boardTemplate,
   cardTemplate,
   commentTemplate,
@@ -348,58 +349,105 @@ export function updateSprint(
   );
 }
 
+/** The days a sprint runs, as `yyyy-MM-dd`. */
+export interface SprintDates {
+  start: string;
+  end: string;
+}
+
+/** A sprint started now runs from today for the usual length. */
+export function defaultSprintDates(): SprintDates {
+  return { end: day(SPRINT_DAYS), start: day() };
+}
+
+/** The sprint given, or a new one if there's none, running on the dates given. */
+function started(
+  sprint: Sprint | undefined,
+  content: BoardContent,
+  dates: SprintDates
+): SprintFields {
+  return {
+    ...(sprint ?? newSprint(content.nextSprintNumber)),
+    ...dates,
+    status: "active",
+  };
+}
+
 export function startSprint(
   board: Board,
   sprint: Sprint | undefined,
   content: BoardContent
 ): Promise<boolean> {
-  const dates = {
-    end: day(SPRINT_DAYS),
-    start: day(),
-    status: "active",
-  } as const;
-  if (!sprint) {
-    return publish(
-      sprintTemplate(board, {
-        ...newSprint(content.nextSprintNumber),
-        ...dates,
-      })
-    );
-  }
-  return updateSprint(board, sprint, dates);
+  return publish(
+    sprintTemplate(board, started(sprint, content, defaultSprintDates())),
+    sprint?.event
+  );
+}
+
+/** The sprint's cards still open, which move on when it ends. */
+export function unfinishedCards(sprint: Sprint, content: BoardContent): Card[] {
+  return content.cards.filter(
+    (card) => card.sprint === sprint.id && !isClosed(card.status)
+  );
 }
 
 /**
- * Open cards roll over to the next future sprint, those under way back to
- * where new cards start; closed cards stay with the ended one.
+ * Ends the sprint, moving its open cards to the next one, those under way
+ * back to where new cards start; closed cards stay with the ended one.
  */
-export function endSprint(
+function rollOver(
   board: Board,
   sprint: Sprint,
-  content: BoardContent
-): Promise<boolean[]> {
-  const unfinished = content.cards.filter(
-    (card) => card.sprint === sprint.id && !isClosed(card.status)
-  );
-  const changes: Promise<boolean>[] = [];
-  let next = upcomingSprint(content)?.id;
-  if (unfinished.length > 0 && !next) {
-    const created = newSprint(content.nextSprintNumber);
-    next = created.id;
-    changes.push(publish(sprintTemplate(board, created)));
-  }
-  for (const card of unfinished) {
-    changes.push(
+  content: BoardContent,
+  next: string | undefined
+): Promise<boolean>[] {
+  return [
+    ...unfinishedCards(sprint, content).map((card) =>
       saveCard(board, card, {
         sprint: next,
         ...(statusKind(card.status) === "started"
           ? { status: startingStatus(board.statuses) }
           : {}),
       })
-    );
+    ),
+    updateSprint(board, sprint, { status: "ended" }),
+  ];
+}
+
+/** Open cards roll over to the next future sprint, made for them if there's none. */
+export function endSprint(
+  board: Board,
+  sprint: Sprint,
+  content: BoardContent
+): Promise<boolean[]> {
+  const changes: Promise<boolean>[] = [];
+  let next = upcomingSprint(content)?.id;
+  if (unfinishedCards(sprint, content).length > 0 && !next) {
+    const created = newSprint(content.nextSprintNumber);
+    next = created.id;
+    changes.push(publish(sprintTemplate(board, created)));
   }
-  changes.push(updateSprint(board, sprint, { status: "ended" }));
+  changes.push(...rollOver(board, sprint, content, next));
   return Promise.all(changes);
+}
+
+/**
+ * Ends the active sprint, if there is one, and starts the next on the dates
+ * given, from today by default: the upcoming sprint, or a new one. Open cards
+ * roll over into it.
+ */
+export function startNextSprint(
+  board: Board,
+  content: BoardContent,
+  dates: SprintDates = defaultSprintDates()
+): Promise<boolean[]> {
+  const upcoming = upcomingSprint(content);
+  const next = started(upcoming, content, dates);
+  const current = activeSprint(content);
+  return Promise.all([
+    publish(sprintTemplate(board, next), upcoming?.event),
+    ...(current ? rollOver(board, current, content, next.id) : []),
+  ]);
 }
 
 export function deleteSprint(
