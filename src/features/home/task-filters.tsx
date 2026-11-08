@@ -84,7 +84,7 @@ export function boardOptions(
   }));
 }
 
-function statusOptions(cards: MyCard[]): FilterOption[] {
+export function statusOptions(cards: Pick<MyCard, "card">[]): FilterOption[] {
   const counts = counted(cards, (item) => item.card.status);
   return STATUSES.map(({ id, label }) => {
     const { icon: Icon, className } = STATUS_STYLES[id];
