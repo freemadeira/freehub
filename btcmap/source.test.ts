@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { Connection, Field } from "@/lib/crm";
 
-import { mappingOf, merchantOf, onMapOf, osmLinkOf, SOURCE } from "./source";
+import {
+  mappingOf,
+  merchantOf,
+  onMapOf,
+  osmLinkOf,
+  SOURCE,
+  withBranch,
+} from "./source";
 
 const fields: Field[] = [
   { config: "", id: "title", name: "Business", options: [], type: "title" },
@@ -121,5 +128,23 @@ describe("a table's mapping", () => {
   it("has no checkbox when no field holds it", () => {
     const unmapped = mappingOf({ fields }, { ...connection, fields: {} });
     expect(onMapOf({ values: { box: ["true"] } }, unmapped)).toBeUndefined();
+  });
+});
+
+describe("withBranch", () => {
+  it("names a chain's location as the brand and its branch, like OSM", () => {
+    expect(withBranch("A Confeitaria Coffee & Bakery", "No Mercado")).toBe(
+      "A Confeitaria Coffee & Bakery No Mercado"
+    );
+  });
+
+  it("keeps a title that already ends in its branch", () => {
+    expect(
+      withBranch("A Confeitaria Coffee & Bakery [no.mercado]", "No Mercado")
+    ).toBe("A Confeitaria Coffee & Bakery [no.mercado]");
+  });
+
+  it("is just the title without a branch", () => {
+    expect(withBranch("Ciao", "  ")).toBe("Ciao");
   });
 });
