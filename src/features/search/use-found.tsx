@@ -25,7 +25,7 @@ import { useCrmContents } from "@/hooks/use-crm-contents";
 import { useDriveContents } from "@/hooks/use-drive";
 import { useProfileNames } from "@/hooks/use-profile-names";
 import type { BlogContent } from "@/lib/blog";
-import { currentVersion } from "@/lib/blog";
+import { currentVersion, withoutPostMarks } from "@/lib/blog";
 import { hasBlossom } from "@/lib/blossom";
 import type { CatalogsContent } from "@/lib/catalogs";
 import { hostOf } from "@/lib/catalogs";
@@ -176,7 +176,9 @@ function postEntries(
         (language) => currentVersion(language) ?? []
       );
       const text = versions
-        .map((version) => plainText(`${version.summary} ${version.content}`))
+        .map((version) =>
+          plainText(`${version.summary} ${withoutPostMarks(version.content)}`)
+        )
         .join(" · ");
       return {
         at: post.updatedAt,

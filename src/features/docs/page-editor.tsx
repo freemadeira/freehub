@@ -21,7 +21,11 @@ import type {
   BlockType,
   HeadingLevel,
 } from "@/components/markdown-editor/blocks";
-import { BLOCK_TYPES, INSERTS } from "@/components/markdown-editor/blocks";
+import {
+  BLOCK_TYPES,
+  INSERTS,
+  PULL_QUOTE,
+} from "@/components/markdown-editor/blocks";
 import { MarkdownClipboard } from "@/components/markdown-editor/clipboard";
 import type { MarkdownDialect } from "@/components/markdown-editor/content";
 import {
@@ -130,6 +134,9 @@ function placeholder({
 }) {
   if (node.type.name === "heading") {
     return `Heading ${node.attrs.level}`;
+  }
+  if (node.type.name === PULL_QUOTE.id) {
+    return PULL_QUOTE.label;
   }
   const atTop = editor.state.doc.resolve(pos).parent.type.name === "doc";
   return node.type.name === "paragraph" && atTop ? PROMPT : "";

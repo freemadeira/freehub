@@ -55,9 +55,11 @@ const WebImage = Image.extend({
 const BLOCK_MARKER = /^(?=#{1,6}(?:[ \t]|$)|[-+](?:[ \t]|$)|[-=]+[ \t]*$)/gmu;
 const LIST_NUMBER = /^(?<number>\d{1,9})(?=[.)](?:[ \t]|$))/gmu;
 
-// A line of text that reads like a heading, list or rule keeps its marker
-// escaped, so it comes back as the same text instead of turning into one.
-function escapeBlockMarkers(markdown: string): string {
+/**
+ * A line of text that reads like a heading, list or rule keeps its marker
+ * escaped, so it comes back as the same text instead of turning into one.
+ */
+export function escapeBlockMarkers(markdown: string): string {
   return markdown
     .replace(BLOCK_MARKER, "\\")
     .replace(LIST_NUMBER, "$<number>\\");
@@ -222,6 +224,11 @@ interface DialectOptions {
   read?: (doc: JSONContent) => JSONContent;
   /** Blocks not ready to be written yet. */
   unwritten?: (node: JSONContent) => boolean;
+  /**
+   * Escapes, in text, what the dialect's own marks would read as theirs, like
+   * a highlight's "==", once Markdown's own marks are escaped.
+   */
+  escape?: (text: string) => string;
 }
 
 function plainDoc(source: string): JSONContent {
@@ -256,7 +263,7 @@ function withoutUnwritten(
 /** The Markdown of an editor with these extensions, read as descriptions have always been. */
 export function markdownDialect(
   extensions: Extensions,
-  { read = (doc) => doc, unwritten = () => false }: DialectOptions = {}
+  { read = (doc) => doc, unwritten = () => false, escape }: DialectOptions = {}
 ): MarkdownDialect {
   // A single newline breaks the line, as descriptions have always shown it.
   // Each dialect has its own parser, since extensions add tokenizers to it.
@@ -269,6 +276,15 @@ export function markdownDialect(
     // Typed for the `marked` function; only the API a `Marked` instance shares is used.
     marked: parser as unknown as typeof marked,
   });
+  if (escape) {
+    // Tiptap escapes Markdown's own marks in text, outside code, with this
+    // private method, and has no option for the marks extensions add.
+    const manager = markdown as unknown as {
+      escapeMarkdownSyntax: (text: string) => string;
+    };
+    const escapeOwn = manager.escapeMarkdownSyntax.bind(markdown);
+    manager.escapeMarkdownSyntax = (text) => escape(escapeOwn(text));
+  }
   const schema = getSchema(extensions);
   return {
     extensions,

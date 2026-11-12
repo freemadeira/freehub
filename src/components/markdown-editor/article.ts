@@ -1,16 +1,19 @@
 import type { Extensions, JSONContent } from "@tiptap/core";
 import { Extension, Node, textblockTypeInputRule } from "@tiptap/core";
+import { Highlight } from "@tiptap/extension-highlight";
 import { TableKit } from "@tiptap/extension-table";
 import { StarterKit } from "@tiptap/starter-kit";
 
 import type { HeadingLevel } from "@/components/markdown-editor/blocks";
 import {
   CommonMarkOrderedList,
+  escapeBlockMarkers,
   isFullAddress,
   MarkdownParagraph,
   markdownDialect,
 } from "@/components/markdown-editor/content";
 import {
+  HIGHLIGHT,
   imageMarkdown,
   isImageAddress,
   isPublicLink,
@@ -97,6 +100,99 @@ export const ArticleImage = Node.create({
     }),
 });
 
+// "> [!PULLQUOTE]" on a line of its own, then the quote's lines, each after a ">".
+const PULL_QUOTE =
+  /^ {0,3}> ?\[!pullquote\][ \t]*(?:\n|$)(?<lines>(?: {0,3}>[^\n]*(?:\n|$))*)/iu;
+const PULL_QUOTE_START = /^ {0,3}> ?\[!pullquote\][ \t]*$/imu;
+const QUOTE_MARK = /^ {0,3}> ?/u;
+const EDGE_LINES = /^\n+|\n+$/gu;
+
+/**
+ * A sentence of the article set apart and enlarged, for readers skimming
+ * past: a line of text, written as a quote marked the way GitHub marks its
+ * alerts, `> [!PULLQUOTE]`, so other Markdown readers still show a quote.
+ */
+export const PullQuote = Node.create({
+  content: "inline*",
+  defining: true,
+  group: "block",
+  markdownTokenizer: {
+    level: "block",
+    name: "pullQuote",
+    // Without it, Tiptap finds the start by reading ahead with a lexer of its
+    // own, which leaves the text of every paragraph empty.
+    start: (src) => src.search(PULL_QUOTE_START),
+    tokenize(src, _tokens, lexer) {
+      const match = PULL_QUOTE.exec(src);
+      if (!match) {
+        return;
+      }
+      // Spaces stay, as written, so the text reads back the same.
+      const text = (match.groups?.lines ?? "")
+        .split("\n")
+        .map((line) => line.replace(QUOTE_MARK, ""))
+        .join("\n")
+        .replaceAll(EDGE_LINES, "");
+      return {
+        raw: match[0],
+        text,
+        tokens: lexer.inlineTokens(text),
+        type: "pullQuote",
+      };
+    },
+  },
+  name: "pullQuote",
+  parseHTML: () => [
+    {
+      // The website's, its text in a paragraph; or the editor's own.
+      contentElement: (dom) =>
+        (dom as HTMLElement).querySelector<HTMLElement>(":scope > p") ??
+        (dom as HTMLElement),
+      priority: 60,
+      tag: "blockquote.pull-quote",
+    },
+  ],
+  parseMarkdown: (token, helpers) =>
+    helpers.createNode(
+      "pullQuote",
+      undefined,
+      helpers.parseInline(token.tokens ?? [])
+    ),
+  renderHTML: () => ["blockquote", { class: "pull-quote" }, 0],
+  renderMarkdown: (node, helpers) => {
+    const text = escapeBlockMarkers(helpers.renderChildren(node.content ?? []));
+    const lines = text ? text.split("\n") : [];
+    return [
+      "> [!PULLQUOTE]",
+      ...lines.map((line) => (line.trim() ? `> ${line}` : ">")),
+    ].join("\n");
+  },
+});
+
+/**
+ * Text marked as with a highlighter pen, written `==text==`, and only with
+ * text right inside the marks, unlike Tiptap's own reading.
+ */
+export const ArticleHighlight = Highlight.extend({
+  markdownTokenizer: {
+    level: "inline",
+    name: "highlight",
+    start: (src) => src.indexOf("=="),
+    tokenize(src, _tokens, lexer) {
+      const match = HIGHLIGHT.exec(src);
+      const text = match?.groups?.text;
+      return match && text
+        ? {
+            raw: match[0],
+            text,
+            tokens: lexer.inlineTokens(text),
+            type: "highlight",
+          }
+        : undefined;
+    },
+  },
+});
+
 /** "# " starts the largest heading an article has, as "## " does. */
 const TopHeading = Extension.create({
   addInputRules() {
@@ -118,7 +214,8 @@ const TopHeading = Extension.create({
  * What a blog post's text can hold: what the website shows, and nothing that
  * points into the app. Headings from the second level down, since the title
  * is the first; links to the web and mail only; no mentions, references or
- * to-do lists; and pictures on lines of their own.
+ * to-do lists; pictures on lines of their own; and pull quotes and
+ * highlighted text, to break up a long read.
  */
 export const ARTICLE: Extensions = [
   StarterKit.configure({
@@ -138,6 +235,8 @@ export const ARTICLE: Extensions = [
   CommonMarkOrderedList,
   TableKit.configure({ table: { resizable: false } }),
   ArticleImage,
+  PullQuote,
+  ArticleHighlight,
   TopHeading,
 ];
 
@@ -224,7 +323,9 @@ function fitNode(node: JSONContent): JSONContent {
 function fitArticle(node: JSONContent): JSONContent[] {
   const fitted = fitNode(node);
   if (
-    (fitted.type === "paragraph" || fitted.type === "heading") &&
+    (fitted.type === "paragraph" ||
+      fitted.type === "heading" ||
+      fitted.type === PullQuote.name) &&
     fitted.content?.some(isImage)
   ) {
     return splitAroundImages(fitted);
@@ -241,8 +342,18 @@ function fitArticle(node: JSONContent): JSONContent[] {
   return [{ ...fitted, content }];
 }
 
-/** A blog post's Markdown, as the website reads it. Pictures still uploading have no address to write yet. */
+// A "=" in text that could join a highlight's "==": one beside another, or
+// one at either end of a run of text, past its spaces, where a mark opens or
+// closes.
+const MARK_EQUALS = /(?<==)=|=(?==)|(?<=^\s*)=|=(?=\s*$)/gu;
+
+/**
+ * A blog post's Markdown, as the website reads it. Pictures still uploading
+ * have no address to write yet, and text keeps any "=" that could read as a
+ * highlight escaped, so it comes back as written.
+ */
 export const ARTICLE_MARKDOWN = markdownDialect(ARTICLE, {
+  escape: (text) => text.replaceAll(MARK_EQUALS, "\\="),
   read: (doc) => fitArticle(doc)[0] ?? doc,
   unwritten: (node) => isImage(node) && !node.attrs?.src,
 });
