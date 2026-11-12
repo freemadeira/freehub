@@ -40,11 +40,13 @@ import {
   DELETE_KIND,
   DOC_PAGE_KIND,
   DRIVE_FILE_KIND,
+  EDIT_KIND,
   isPubkey,
   LINK_KIND,
   parseBoard,
   PROJECT_KIND,
   READING_KIND,
+  withEdits,
 } from "@/lib/model";
 import type {
   NotificationScope,
@@ -186,18 +188,20 @@ class Notifier {
         kinds: [DELETE_KIND],
       },
       { kinds: [COMMENT_KIND] },
+      { kinds: [EDIT_KIND] },
       { kinds: [DELETE_KIND] },
     ];
   }
 
   /**
-   * The same, from `since` on. Only recent news is pushed, so comments and
-   * deletions older than that aren't needed, even on the first load.
+   * The same, from `since` on. Only recent news is pushed, so comments, edits
+   * and deletions older than that aren't needed, even on the first load.
    */
   private filtersSince(since: number | undefined): Filter[] {
     const recent = Math.max(since ?? 0, unixNow() - MAX_AGE);
     return this.filters().map((filter) =>
       filter.kinds?.includes(COMMENT_KIND) ||
+      filter.kinds?.includes(EDIT_KIND) ||
       (filter.kinds?.includes(DELETE_KIND) && !filter["#k"])
         ? { ...filter, since: recent }
         : { ...filter, ...(since === undefined ? {} : { since }) }
@@ -334,11 +338,36 @@ class Notifier {
     }
   }
 
-  private async tell(
+  /**
+   * The news as it stands now. A comment deleted meanwhile is none, and one
+   * edited says what it says now, which may no longer be news to them.
+   */
+  private current(
     notification: Notification,
     recipient: string
+  ): Notification | undefined {
+    if (!fromEvent(notification)) {
+      return notification;
+    }
+    const event = this.store.getEvent(notification.id);
+    if (!event) {
+      return undefined;
+    }
+    const edits = this.store.getByFilters({
+      "#e": [event.id],
+      kinds: [EDIT_KIND],
+    });
+    return deriveNotifications(withEdits([event], edits), recipient).find(
+      (news) => news.id === notification.id
+    );
+  }
+
+  private async tell(
+    scheduled: Notification,
+    recipient: string
   ): Promise<void> {
-    if (fromEvent(notification) && !this.store.hasEvent(notification.id)) {
+    const notification = this.current(scheduled, recipient);
+    if (!notification) {
       return;
     }
     const target = locateNotification(

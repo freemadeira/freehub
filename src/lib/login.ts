@@ -20,6 +20,7 @@ import {
   DOC_PAGE_KIND,
   DRIVE_FILE_KIND,
   DRIVE_FOLDER_KIND,
+  EDIT_KIND,
   POST_DRAFT_KIND,
   POST_KIND,
   PROJECT_KIND,
@@ -47,6 +48,7 @@ const PERMISSIONS = [
     POST_DRAFT_KIND,
     APP_DATA_KIND,
     COMMENT_KIND,
+    EDIT_KIND,
     REACTION_KIND,
     5,
     // Blossom's authorization for uploading and deleting files.

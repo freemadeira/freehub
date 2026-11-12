@@ -30,6 +30,11 @@ export const POST_DRAFT_KIND = 30_024;
 /** NIP-78 app data: each person's own inbox marks, follows and devices. */
 export const APP_DATA_KIND = 30_078;
 export const COMMENT_KIND = 1111;
+/**
+ * A comment's new text, as Amethyst edits notes (nips#1090): the comment
+ * stays, so its reactions and the news of it do too.
+ */
+export const EDIT_KIND = 1010;
 /** NIP-25: an emoji someone reacted to a card or a comment with. */
 export const REACTION_KIND = 7;
 export const DELETE_KIND = 5;
@@ -201,9 +206,15 @@ export interface BoardContent {
 export interface Comment {
   id: string;
   author: string;
+  /** As its writer last left it. */
   content: string;
   createdAt: number;
+  /** When its writer last changed it, once they have. */
+  editedAt?: number;
+  /** The comment as it was first written. */
   event: NostrEvent;
+  /** Its writer's edits to it, oldest first. */
+  edits: NostrEvent[];
 }
 
 const HEX_KEY = /^[0-9a-f]{64}$/u;
@@ -619,9 +630,92 @@ export function parseComment(event: NostrEvent): Comment {
     author: event.pubkey,
     content: event.content,
     createdAt: event.created_at,
+    edits: [],
     event,
     id: event.id,
   };
+}
+
+/** Edits by `writer:comment id`, each comment's oldest first. */
+type CommentEdits = ReadonlyMap<string, NostrEvent[]>;
+
+function editKey(pubkey: string, commentId: string): string {
+  return `${pubkey}:${commentId}`;
+}
+
+/**
+ * The edits among the events, by whose they are and what they change. One
+ * that would leave the comment blank is skipped: deleting is how one goes.
+ */
+function groupEdits(events: Iterable<NostrEvent>): CommentEdits {
+  const grouped = new Map<string, NostrEvent[]>();
+  for (const event of events) {
+    const commentId = getTagValue(event, "e");
+    if (event.kind !== EDIT_KIND || !commentId || !event.content.trim()) {
+      continue;
+    }
+    const key = editKey(event.pubkey, commentId);
+    grouped.set(key, [...(grouped.get(key) ?? []), event]);
+  }
+  for (const edits of grouped.values()) {
+    edits.sort(
+      (a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id)
+    );
+  }
+  return grouped;
+}
+
+/**
+ * Its writer's edits to the comment, oldest first: nobody else's count. Only
+ * what someone wrote can be edited, not an `activity` entry, which is the
+ * record of what happened.
+ */
+function editsOf(edits: CommentEdits, comment: NostrEvent): NostrEvent[] {
+  const editable =
+    comment.kind === COMMENT_KIND &&
+    getTagValue(comment, "activity") === undefined;
+  return editable ? (edits.get(editKey(comment.pubkey, comment.id)) ?? []) : [];
+}
+
+/** Each comment as its writer last left it, by the edits among `events`. */
+export function applyEdits(
+  comments: Comment[],
+  events: Iterable<NostrEvent>
+): Comment[] {
+  const edits = groupEdits(events);
+  if (edits.size === 0) {
+    return comments;
+  }
+  return comments.map((comment) => {
+    const own = editsOf(edits, comment.event);
+    const newest = own.at(-1);
+    return newest
+      ? {
+          ...comment,
+          content: newest.content,
+          editedAt: newest.created_at,
+          edits: own,
+        }
+      : comment;
+  });
+}
+
+/**
+ * The comment events with the text their writers last gave them, by the
+ * edits among `events`, for what reads events rather than comments.
+ */
+export function withEdits(
+  comments: NostrEvent[],
+  events: Iterable<NostrEvent>
+): NostrEvent[] {
+  const edits = groupEdits(events);
+  if (edits.size === 0) {
+    return comments;
+  }
+  return comments.map((comment) => {
+    const newest = editsOf(edits, comment).at(-1);
+    return newest ? { ...comment, content: newest.content } : comment;
+  });
 }
 
 // Every member may write any card or sprint: the newest version across authors wins.
@@ -920,13 +1014,37 @@ export function deleteBoardTemplate(board: Board): Template {
   };
 }
 
-export function deleteCommentTemplate(comment: Comment): Template {
+/**
+ * New text for your comment. Nobody is told: people it newly mentions see it
+ * where it is, and news of it already out reads the new text.
+ */
+export function editCommentTemplate(
+  comment: Comment,
+  content: string
+): Template {
+  return {
+    content,
+    kind: EDIT_KIND,
+    tags: [
+      ["e", comment.id],
+      ["k", String(COMMENT_KIND)],
+    ],
+  };
+}
+
+/** Deletes the comment, and its edits, which carry its text too. */
+export function deleteCommentTemplate(
+  comment: Pick<Comment, "id"> & { edits?: NostrEvent[] }
+): Template {
+  const edits = comment.edits ?? [];
   return {
     content: "",
     kind: DELETE_KIND,
     tags: [
       ["e", comment.id],
+      ...edits.map((edit) => ["e", edit.id]),
       ["k", String(COMMENT_KIND)],
+      ...(edits.length > 0 ? [["k", String(EDIT_KIND)]] : []),
     ],
   };
 }

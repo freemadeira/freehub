@@ -342,7 +342,8 @@ function commentEntries(
           key: `comment:${comment.id}`,
         },
         title: "",
-        ...prepare(comment.event, comment.content),
+        // An edited comment's text is its newest edit's.
+        ...prepare(comment.edits.at(-1) ?? comment.event, comment.content),
       },
     ];
   });

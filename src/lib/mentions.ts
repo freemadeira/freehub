@@ -18,6 +18,8 @@ const REFERENCE =
 const LEADING_REFERENCE =
   /^nostr:(?<bech32>npub1[02-9ac-hj-np-z]{58}|nprofile1[02-9ac-hj-np-z]+)/u;
 const SYNTAX = /[$()*+.?[\\\]^{|}]/gu;
+/** What can't follow an `@Name` for it to still be one. */
+const WORD_CHARACTER = /^[\p{L}\p{N}_]/u;
 
 /** Someone picked from the mention list while writing, by the name shown. */
 export interface Mention {
@@ -167,4 +169,33 @@ export function encodeMentions(text: string, picked: Mention[]): string {
     const pubkey = byName.get(name);
     return pubkey ? mentionReference(pubkey) : match;
   });
+}
+
+/**
+ * The text as it was typed, to edit it again: each mention back to the
+ * `@Name` it's offered by in `names`, along with who that is, so
+ * `encodeMentions` gives the content back. A mention of someone not in
+ * `names`, or with a word written right after it, stays a reference, so
+ * saving keeps it.
+ */
+export function decodeMentions(
+  content: string,
+  names: ReadonlyMap<string, string>
+): { text: string; picked: Mention[] } {
+  const picked = new Map<string, Mention>();
+  let text = "";
+  let last = 0;
+  for (const match of content.matchAll(REFERENCE)) {
+    const bech32 = match.groups?.bech32;
+    const pubkey = bech32 ? normalizeToPubkey(bech32) : null;
+    const name = pubkey ? names.get(pubkey) : undefined;
+    const end = match.index + match[0].length;
+    if (!(pubkey && name) || WORD_CHARACTER.test(content.slice(end))) {
+      continue;
+    }
+    text += `${content.slice(last, match.index)}@${name}`;
+    last = end;
+    picked.set(pubkey, { name, pubkey });
+  }
+  return { picked: [...picked.values()], text: text + content.slice(last) };
 }

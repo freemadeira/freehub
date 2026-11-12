@@ -3,6 +3,7 @@ import { getTagValue } from "applesauce-core/helpers/event";
 import type { Filter } from "applesauce-core/helpers/filter";
 import { unixNow } from "applesauce-core/helpers/time";
 import { useEffect, useState } from "react";
+import { of } from "rxjs";
 
 import { useObservableValue } from "@/hooks/use-observable-value";
 import { useSubscriptions } from "@/hooks/use-subscriptions";
@@ -19,8 +20,10 @@ import {
   DELETE_KIND,
   DOC_PAGE_KIND,
   DRIVE_FILE_KIND,
+  EDIT_KIND,
   LINK_KIND,
   READING_KIND,
+  withEdits,
 } from "@/lib/model";
 import { eventStore } from "@/lib/nostr";
 import type {
@@ -165,7 +168,10 @@ function useVersions(
   return found;
 }
 
-/** Ids of the comments notifications come from, so deleting one takes its notification. */
+/**
+ * Ids of the comments notifications come from, so deleting one takes its
+ * notification, and editing one changes it.
+ */
 function commentIds(notifications: Notification[]): string[] {
   return notifications.flatMap((notification) =>
     notification.type !== "page" && !notification.id.startsWith("due:")
@@ -208,22 +214,39 @@ export function useInbox(pubkey: string, scope: InboxScope): Inbox {
   const marks = useObservableValue(() => inboxStore(pubkey).marks$, [pubkey]);
   const unsubscribed = useSubscriptions(pubkey).off;
   const now = useClock();
-  // Reminders wait for their time; news about cards unsubscribed from stops.
-  const notifications = deriveNotifications(events ?? [], pubkey).filter(
+
+  // Found as first written, so a comment edited since stays looked after.
+  const comments = commentIds(deriveNotifications(events ?? [], pubkey)).join(
+    ","
+  );
+  useObservableValue(
+    () =>
+      comments
+        ? sync([{ "#e": comments.split(","), kinds: [DELETE_KIND, EDIT_KIND] }])
+        : undefined,
+    [comments]
+  );
+  const edits = useObservableValue(
+    () =>
+      comments
+        ? eventStore.timeline([
+            { "#e": comments.split(","), kinds: [EDIT_KIND] },
+          ])
+        : of([]),
+    [comments]
+  );
+  // Each comment says what it says now: one no longer mentioning the user is
+  // news only if they follow what it's on. Reminders wait for their time;
+  // news about cards unsubscribed from stops.
+  const notifications = deriveNotifications(
+    withEdits(events ?? [], edits ?? []),
+    pubkey
+  ).filter(
     (notification) =>
       hasArrived(notification, now) &&
       (notification.direct ||
         notification.type !== "card" ||
         !unsubscribed.has(cardSubject({ id: notification.cardId })))
-  );
-
-  const comments = commentIds(notifications).join(",");
-  useObservableValue(
-    () =>
-      comments
-        ? sync([{ "#e": comments.split(","), kinds: [DELETE_KIND] }])
-        : undefined,
-    [comments]
   );
 
   const versions = useVersions(notifications, scope.docs);

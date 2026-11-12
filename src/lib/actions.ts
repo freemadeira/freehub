@@ -29,6 +29,7 @@ import {
   commentTemplate,
   deleteBoardTemplate,
   deleteCommentTemplate,
+  editCommentTemplate,
   isClosed,
   latest,
   newId,
@@ -485,8 +486,21 @@ export async function addComment(
   return true;
 }
 
+/** Gives your comment new text; the newest edit goes after the one before it. */
+export function editComment(
+  comment: Comment,
+  content: string
+): Promise<boolean> {
+  return publish(
+    editCommentTemplate(comment, content),
+    comment.edits.at(-1) ?? comment.event
+  );
+}
+
 export function deleteComment(comment: Comment): Promise<boolean> {
-  return publish(deleteCommentTemplate(comment));
+  // An edit still at the signer has no id the relays know.
+  const edits = comment.edits.filter((edit) => edit.sig !== "");
+  return publish(deleteCommentTemplate({ ...comment, edits }));
 }
 
 /** Changes to one emoji on one card or comment, by `id:emoji`. */

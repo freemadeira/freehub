@@ -13,6 +13,7 @@ import {
   isDeleted,
   isPubkey,
   latestVersions,
+  parseComment,
 } from "@/lib/model";
 import type { Color } from "@/lib/palette";
 import { parseColor } from "@/lib/palette";
@@ -864,11 +865,7 @@ export function parseAssignment(event: NostrEvent): Assignment | undefined {
 
 export function parseActivity(event: NostrEvent): Activity {
   return {
-    author: event.pubkey,
-    content: event.content,
-    createdAt: event.created_at,
-    event,
-    id: event.id,
+    ...parseComment(event),
     type:
       ACTIVITY_TYPES.find(({ id }) => id === getTagValue(event, "activity"))
         ?.id ?? "note",
