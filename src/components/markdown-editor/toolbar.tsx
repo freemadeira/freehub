@@ -13,6 +13,7 @@ import {
   CheckIcon,
   ChevronDownIcon,
   CodeIcon,
+  HighlighterIcon,
   ItalicIcon,
   LinkIcon,
   ListIcon,
@@ -29,7 +30,7 @@ import { useEffect, useEffectEvent, useState } from "react";
 
 import { IconButton } from "@/components/icon-button";
 import type { HeadingLevel } from "@/components/markdown-editor/blocks";
-import { HEADING_ICONS } from "@/components/markdown-editor/blocks";
+import { HEADING_ICONS, PULL_QUOTE } from "@/components/markdown-editor/blocks";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -278,9 +279,11 @@ export function SelectionToolbar({
       codeBlock: current.isActive("codeBlock"),
       heading:
         headings.find((level) => current.isActive("heading", { level })) ?? 0,
+      highlight: current.isActive("highlight"),
       italic: current.isActive("italic"),
       link: current.isActive("link"),
       list: LISTS.find((list) => current.isActive(list.name))?.name,
+      pullQuote: PULL_QUOTE.isActive(current),
       strike: current.isActive("strike"),
     }),
   });
@@ -358,15 +361,37 @@ export function SelectionToolbar({
 
   // Only the lists the text can hold, like no checklists in an article.
   const lists = LISTS.filter((list) => editor.schema.nodes[list.name]);
-  const styles: { icon: LucideIcon; label: string; level: 0 | HeadingLevel }[] =
-    [
-      { icon: PilcrowIcon, label: "Text", level: 0 },
-      ...headings.map((level) => ({
-        icon: HEADING_ICONS[level],
-        label: `Heading ${level}`,
-        level,
-      })),
-    ];
+  // Only what the text can hold too: highlights and pull quotes are an article's.
+  const highlights = editor.schema.marks.highlight !== undefined;
+  const styles: {
+    icon: LucideIcon;
+    label: string;
+    checked: boolean;
+    pick: (chain: ChainedCommands) => ChainedCommands;
+  }[] = [
+    {
+      checked: active.heading === 0 && !active.pullQuote && !active.codeBlock,
+      icon: PilcrowIcon,
+      label: "Text",
+      pick: (chain) => chain.setParagraph(),
+    },
+    ...headings.map((level) => ({
+      checked: active.heading === level && !active.codeBlock,
+      icon: HEADING_ICONS[level],
+      label: `Heading ${level}`,
+      pick: (chain: ChainedCommands) => chain.setHeading({ level }),
+    })),
+    ...(editor.schema.nodes[PULL_QUOTE.id]
+      ? [
+          {
+            checked: active.pullQuote,
+            icon: PULL_QUOTE.icon,
+            label: PULL_QUOTE.label,
+            pick: (chain: ChainedCommands) => PULL_QUOTE.run(chain, editor),
+          },
+        ]
+      : []),
+  ];
   const currentList = LISTS.find((list) => list.name === active.list);
   const ListTrigger = currentList?.icon ?? ListIcon;
 
@@ -435,22 +460,14 @@ export function SelectionToolbar({
                 <ChevronDownIcon />
               </DropdownMenuTrigger>
               <DropdownMenuContent container={ref} finalFocus={false}>
-                {styles.map(({ icon: Icon, label, level }) => (
+                {styles.map(({ icon: Icon, label, checked, pick }) => (
                   <DropdownMenuItem
                     key={label}
-                    onClick={() =>
-                      runFromMenu((chain) =>
-                        level === 0
-                          ? chain.setParagraph()
-                          : chain.setHeading({ level })
-                      )
-                    }
+                    onClick={() => runFromMenu(pick)}
                   >
                     <Icon />
                     {label}
-                    {active.heading === level && !active.codeBlock && (
-                      <CheckIcon className="ml-auto" />
-                    )}
+                    {checked && <CheckIcon className="ml-auto" />}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
@@ -477,6 +494,15 @@ export function SelectionToolbar({
               label="Strikethrough"
               onClick={() => run((chain) => chain.toggleStrike())}
             />
+            {highlights && (
+              <Tool
+                active={active.highlight}
+                icon={HighlighterIcon}
+                keys="Mod-Shift-h"
+                label="Highlight"
+                onClick={() => run((chain) => chain.toggleHighlight())}
+              />
+            )}
             <Tool
               active={active.link}
               icon={LinkIcon}

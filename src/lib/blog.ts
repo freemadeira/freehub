@@ -321,6 +321,31 @@ export function imageMarkdown({
     : `![${text}](${target})`;
 }
 
+// "==" around text that starts and ends with a character other than a space,
+// as "**" and "~~" do, so "a == b" stays as written. An escaped "\=" in it is
+// text, even beside the marks.
+const HIGHLIGHTED = String.raw`==(?![\s=])(?<text>(?:\\.|[^\\=]|=(?!=))*?(?:\\.|[^\s\\=]))==(?!=)`;
+
+/** Highlighted text at the start of a post's Markdown: `==text==`. */
+export const HIGHLIGHT = new RegExp(`^${HIGHLIGHTED}`, "u");
+
+const HIGHLIGHTS = new RegExp(HIGHLIGHTED, "gu");
+const PULL_QUOTE_MARKER = /^ {0,3}> ?\[!pullquote\][ \t]*$/iu;
+
+/**
+ * A post's Markdown without the marks only posts have, pull quotes' and
+ * highlights', to read as text. Line by line, as no highlight spans a
+ * paragraph.
+ */
+export function withoutPostMarks(content: string): string {
+  return content
+    .split("\n")
+    .map((line) =>
+      PULL_QUOTE_MARKER.test(line) ? "" : line.replaceAll(HIGHLIGHTS, "$<text>")
+    )
+    .join("\n");
+}
+
 /** The pictures the text shows, in order, each once, with the alt text it first gives them. */
 export function imagesIn(content: string): TextImage[] {
   const found = new Map<string, TextImage>();

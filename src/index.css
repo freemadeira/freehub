@@ -352,7 +352,7 @@
       line-height: 1.6;
     }
 
-    & blockquote {
+    & blockquote:not(.pull-quote) {
       border-left: 2px solid var(--border);
       padding-left: 0.75rem;
       color: var(--muted-foreground);
@@ -469,6 +469,51 @@
       color: var(--muted-foreground);
       font-size: 0.875em;
       text-align: center;
+    }
+
+    /* A blog post's pull quotes: bold capitals under a corner bracket, as
+       the website shows them. The bracket is drawn after, since an empty
+       one's placeholder is drawn before. */
+    & .pull-quote {
+      position: relative;
+      margin-block: 1.75rem;
+      padding: 0.75rem 0 0 2.25rem;
+      font-weight: 700;
+      line-height: 1.5;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+
+      &::after {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1.5rem;
+        height: 1.5rem;
+        border-top: 3px solid var(--primary);
+        border-left: 3px solid var(--primary);
+        content: "";
+        pointer-events: none;
+      }
+    }
+
+    /* Highlighted text: a highlighter's band over the lower part of the
+       words, carried onto each line they wrap to. */
+    & mark {
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+      background: linear-gradient(
+        transparent 40%,
+        color-mix(in oklab, var(--primary) 70%, transparent) 40%
+      );
+      padding-inline: 0.1em;
+      color: inherit;
+
+      .dark & {
+        background: linear-gradient(
+          transparent 40%,
+          color-mix(in oklab, var(--primary) 32%, transparent) 40%
+        );
+      }
     }
 
     & hr {

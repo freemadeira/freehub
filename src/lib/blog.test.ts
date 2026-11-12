@@ -26,6 +26,7 @@ import {
   usedImages,
   wasPublished,
   withOldSlugs,
+  withoutPostMarks,
   withShared,
 } from "@/lib/blog";
 import type { Template } from "@/lib/model";
@@ -571,5 +572,15 @@ describe("resolving the blog", () => {
         images: post ? postImages(post) : [],
       })
     ).toEqual([{ ...other, alt: "Boat" }]);
+  });
+});
+
+describe("withoutPostMarks", () => {
+  it("drops pull quote markers and highlight marks, keeping the text", () => {
+    expect(
+      withoutPostMarks(
+        "> [!PULLQUOTE]\n> The sats ==stay inside== the loop.\n\n> [!NOTE]\n> a == b"
+      )
+    ).toBe("\n> The sats stay inside the loop.\n\n> [!NOTE]\n> a == b");
   });
 });

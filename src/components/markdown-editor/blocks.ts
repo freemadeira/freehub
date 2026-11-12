@@ -10,6 +10,7 @@ import {
   ListTodoIcon,
   MinusIcon,
   PilcrowIcon,
+  QuoteIcon,
   SquareCodeIcon,
   Table2Icon,
   TextQuoteIcon,
@@ -110,26 +111,35 @@ const TASK_LIST: BlockType = {
   run: toList("taskList", (chain) => chain.toggleTaskList()),
 };
 
-const QUOTE_AND_CODE: readonly BlockType[] = [
-  {
-    icon: TextQuoteIcon,
-    id: "blockquote",
-    isActive: (editor) => editor.isActive("blockquote"),
-    keywords: ["quote", "citation"],
-    label: "Quote",
-    markdown: ">",
-    run: (chain) => chain.clearNodes().setBlockquote(),
-  },
-  {
-    icon: SquareCodeIcon,
-    id: "codeBlock",
-    isActive: (editor) => editor.isActive("codeBlock"),
-    keywords: ["code", "snippet", "pre"],
-    label: "Code",
-    markdown: "```",
-    run: (chain) => chain.clearNodes().setCodeBlock(),
-  },
-];
+const QUOTE: BlockType = {
+  icon: TextQuoteIcon,
+  id: "blockquote",
+  isActive: (editor) => editor.isActive("blockquote"),
+  keywords: ["quote", "citation"],
+  label: "Quote",
+  markdown: ">",
+  run: (chain) => chain.clearNodes().setBlockquote(),
+};
+
+/** A line of an article set apart and enlarged. */
+export const PULL_QUOTE: BlockType = {
+  icon: QuoteIcon,
+  id: "pullQuote",
+  isActive: (editor) => editor.isActive("pullQuote"),
+  keywords: ["pullquote", "highlight", "statement", "callout", "key"],
+  label: "Pull quote",
+  run: (chain) => chain.clearNodes().setNode("pullQuote"),
+};
+
+const CODE: BlockType = {
+  icon: SquareCodeIcon,
+  id: "codeBlock",
+  isActive: (editor) => editor.isActive("codeBlock"),
+  keywords: ["code", "snippet", "pre"],
+  label: "Code",
+  markdown: "```",
+  run: (chain) => chain.clearNodes().setCodeBlock(),
+};
 
 /** What a doc page's blocks can turn into. */
 export const BLOCK_TYPES: readonly BlockType[] = [
@@ -139,17 +149,23 @@ export const BLOCK_TYPES: readonly BlockType[] = [
   heading(3),
   ...LIST_TYPES,
   TASK_LIST,
-  ...QUOTE_AND_CODE,
+  QUOTE,
+  CODE,
 ];
 
-/** What an article's blocks can turn into: its title is the only first-level heading, and it has no to-dos. */
+/**
+ * What an article's blocks can turn into: its title is the only first-level
+ * heading, it has no to-dos, and a line can be pulled out as a pull quote.
+ */
 export const ARTICLE_BLOCK_TYPES: readonly BlockType[] = [
   TEXT,
   heading(2),
   heading(3),
   heading(4),
   ...LIST_TYPES,
-  ...QUOTE_AND_CODE,
+  QUOTE,
+  PULL_QUOTE,
+  CODE,
 ];
 
 export const INSERTS: readonly BlockCommand[] = [
