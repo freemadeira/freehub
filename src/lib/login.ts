@@ -103,10 +103,29 @@ export async function loginWithExtension(): Promise<void> {
   }
 }
 
+const PUBKEY_RETRY = 5000;
+
+// Amber only starts listening on its new per-connection key after approving a
+// nostrconnect:// link, so a get_public_key sent right after the connect reply
+// can be lost. Ask again every few seconds until one gets through.
+function askForPubkey(signer: NostrConnectSigner): Promise<string> {
+  const { promise, resolve } = Promise.withResolvers<string>();
+  const ask = async () => {
+    try {
+      resolve(await signer.getPublicKey());
+    } catch {
+      // A lost request is retried by the timer; the overall timeout ends it.
+    }
+  };
+  const timer = setInterval(ask, PUBKEY_RETRY);
+  void ask();
+  return promise.finally(() => clearInterval(timer));
+}
+
 async function pubkeyOrClose(signer: NostrConnectSigner): Promise<string> {
   try {
     return await withTimeout(
-      signer.getPublicKey(),
+      askForPubkey(signer),
       CONNECT_TIMEOUT,
       "Your signer didn’t share your public key."
     );
