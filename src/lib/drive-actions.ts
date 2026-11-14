@@ -1,9 +1,7 @@
-import type { NostrEvent } from "applesauce-core/helpers/event";
-import { getSeenRelays } from "applesauce-core/helpers/relays";
 import { unixNow } from "applesauce-core/helpers/time";
 import { toast } from "sonner";
 
-import { deleteBlobs } from "@/lib/blossom";
+import { forgetBlobs } from "@/lib/blob-cleanup";
 import type {
   DriveContent,
   DriveFile,
@@ -13,7 +11,6 @@ import type {
   Place,
 } from "@/lib/drive";
 import {
-  blobsToDelete,
   canMoveInto,
   cleanName,
   DEFAULT_FOLDER,
@@ -43,13 +40,8 @@ import { accounts, eventStore } from "@/lib/nostr";
 import type { Color } from "@/lib/palette";
 import type { Project } from "@/lib/project";
 import { publish } from "@/lib/publish";
-import {
-  errorMessage,
-  plural,
-  readStorage,
-  sleep,
-  writeStorage,
-} from "@/lib/utils";
+import { blobHashes } from "@/lib/sealed-files";
+import { errorMessage, plural, sleep } from "@/lib/utils";
 
 /** Files and folders acted on together, like a selection. */
 export interface Items {
@@ -60,8 +52,6 @@ export interface Items {
 /** Folders one folder dropped from the computer can hold, and how deep. */
 const MAX_NEW_FOLDERS = 1000;
 const MAX_DEPTH = 50;
-/** Deleted blobs remembered, so they're not asked about again. */
-const MAX_GONE = 2000;
 /** Browsers take downloads started together better a little apart. */
 const DOWNLOAD_GAP = 400;
 /** Long enough for the browser to start saving, then the copy is let go. */
@@ -410,75 +400,6 @@ export async function trashItems(
       action: { label: "Undo", onClick: () => restoreItems(project, items) },
     });
   }
-}
-
-// ———————————————————————————————————————— Blobs
-
-function goneKey(pubkey: string): string {
-  return `drive-gone:${pubkey}`;
-}
-
-function readGone(pubkey: string): string[] {
-  try {
-    const saved: unknown = JSON.parse(readStorage(goneKey(pubkey)) ?? "[]");
-    return Array.isArray(saved)
-      ? saved.filter((hash): hash is string => typeof hash === "string")
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-/** Blobs being deleted now, so two cleanups never ask for the same one. */
-const deletingBlobs = new Set<string>();
-
-function blobHashes(file: DriveFile): string[] {
-  return file.thumb ? [file.blob.hash, file.thumb.hash] : [file.blob.hash];
-}
-
-/** Deletes these blobs of yours from the servers, unless they're gone already, and remembers which went. */
-async function forgetBlobs(pubkey: string, hashes: string[]): Promise<void> {
-  const gone = new Set(readGone(pubkey));
-  const left = [...new Set(hashes)].filter(
-    (hash) => !(gone.has(hash) || deletingBlobs.has(hash))
-  );
-  if (left.length === 0) {
-    return;
-  }
-  for (const hash of left) {
-    deletingBlobs.add(hash);
-  }
-  try {
-    const removed = await deleteBlobs(left);
-    writeStorage(
-      goneKey(pubkey),
-      JSON.stringify([...readGone(pubkey), ...removed].slice(-MAX_GONE))
-    );
-  } catch {
-    // The signer said no or the servers are away: next time.
-  } finally {
-    for (const hash of left) {
-      deletingBlobs.delete(hash);
-    }
-  }
-}
-
-/**
- * Deletes the blobs of files you uploaded that someone deleted for good, once
- * a relay has the deletion. Only the uploader's key can delete a blob, so each
- * uploader's app cleans up after their own.
- */
-export async function cleanUpBlobs(tombstones: NostrEvent[]): Promise<void> {
-  const pubkey = me();
-  if (!pubkey) {
-    return;
-  }
-  await forgetBlobs(
-    pubkey,
-    tombstones
-      .filter((event) => (getSeenRelays(event)?.size ?? 0) > 0)
-      .flatMap((event) => blobsToDelete(event, pubkey))
-  );
 }
 
 /** Deletes trashed files and folders for good, with everything inside the folders. */

@@ -66,10 +66,10 @@ import type { DriveEntries } from "@/features/drive/use-drive-entries";
 import { driveEntries } from "@/features/drive/use-drive-entries";
 import { useDriveContent, useDriveMarks } from "@/hooks/use-drive";
 import { useSettled } from "@/hooks/use-settled";
+import { cleanUpBlobs } from "@/lib/blob-cleanup";
 import type { DriveContent, DriveFolder, DriveTree, Sort } from "@/lib/drive";
 import { DEFAULT_SORT, pathTo, SORTS } from "@/lib/drive";
 import {
-  cleanUpBlobs,
   countItems,
   createFolder,
   downloadFiles,

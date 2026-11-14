@@ -8,14 +8,12 @@ import {
   deleteBlobs,
   uploadBlob,
 } from "@/lib/blossom";
-import type { SealedBlob } from "@/lib/drive";
 import {
   cleanName,
   fileKind,
   fileTemplate,
   freeName,
   MAX_DRIVE_FILE_BYTES,
-  MAX_THUMB_BYTES,
   TOO_BIG,
   TOP,
   typeOf,
@@ -25,8 +23,8 @@ import { newId } from "@/lib/model";
 import { accounts } from "@/lib/nostr";
 import type { Project } from "@/lib/project";
 import { publish } from "@/lib/publish";
-import { newKey, newNonce, seal, sha256 } from "@/lib/sealing";
-import { measure } from "@/lib/thumbnails";
+import type { SealedBlob } from "@/lib/sealed-files";
+import { sealFile } from "@/lib/sealed-upload";
 import { errorMessage, plural } from "@/lib/utils";
 
 /**
@@ -179,38 +177,16 @@ function stopIfCanceled(job: Job): void {
   }
 }
 
-/** The file's thumbnail sealed with the same key, if the browser could draw one. */
-async function sealThumbnail(
-  thumbnail: Blob | undefined,
-  key: string
-): Promise<{ data: ArrayBuffer; blob: SealedBlob } | undefined> {
-  if (!thumbnail || thumbnail.size > MAX_THUMB_BYTES) {
-    return undefined;
-  }
-  try {
-    const nonce = newNonce();
-    const data = await seal(await thumbnail.arrayBuffer(), key, nonce);
-    return { blob: { hash: await sha256(data), nonce }, data };
-  } catch {
-    // Previews are a nicety: the file itself still goes in.
-    return undefined;
-  }
-}
-
 /** Seals a file and its thumbnail, sends both, then files it in the Drive. Canceling stops it at the next step. */
 async function send(item: UploadItem, job: Job): Promise<void> {
   const creator = accounts.active?.pubkey;
   if (!creator) {
     throw new Error("You’re logged out.");
   }
-  // Thumbnails are drawn while the file is sealed.
-  const measuring = measure(job.file, fileKind(item));
-  const key = newKey();
-  const nonce = newNonce();
-  const data = await seal(await job.file.arrayBuffer(), key, nonce);
-  const hash = await sha256(data);
-  const measured = await measuring;
-  const thumb = await sealThumbnail(measured.thumbnail, key);
+  const { data, hash, key, measured, nonce, thumb } = await sealFile(
+    job.file,
+    fileKind(item)
+  );
   stopIfCanceled(job);
   const auth = await authorize(
     "upload",

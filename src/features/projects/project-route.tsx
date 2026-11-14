@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { Link, Redirect, useLocation } from "wouter";
 
@@ -16,6 +17,11 @@ import {
 } from "@/features/blog/blog-context";
 import { BlogPage } from "@/features/blog/blog-page";
 import { PostView } from "@/features/blog/post-view";
+import {
+  BRANDING_SEGMENT,
+  parseBrandParam,
+} from "@/features/branding/branding-context";
+import { BrandingView } from "@/features/branding/branding-view";
 import {
   CATALOGS_SEGMENT,
   parseCatalogParam,
@@ -42,6 +48,8 @@ import { useSources } from "@/hooks/use-sources";
 import { useVisit } from "@/hooks/use-visit";
 import { websiteOf } from "@/lib/blog-actions";
 import { hasBlossom } from "@/lib/blossom";
+import type { BrandsContent } from "@/lib/brands";
+import { EMPTY_BRANDS } from "@/lib/brands";
 import type { CatalogsContent } from "@/lib/catalogs";
 import { EMPTY_CATALOGS } from "@/lib/catalogs";
 import type { DocsContent } from "@/lib/docs";
@@ -75,6 +83,9 @@ function usePlaceAt(
     }
     case CATALOGS_SEGMENT: {
       return inside("catalog", param && parseCatalogParam(param));
+    }
+    case BRANDING_SEGMENT: {
+      return inside("brand", param && parseBrandParam(param));
     }
     case BLOG_SEGMENT: {
       return inside("post", param && parsePostParam(param));
@@ -125,6 +136,8 @@ interface ProjectViewProps {
   docs: DocsContent;
   /** The project's catalogs and links. */
   catalogs: CatalogsContent;
+  /** The project's brands and their parts. */
+  brands: BrandsContent;
   projects: Project[];
   boards: Board[];
   tableSlug?: string;
@@ -302,7 +315,7 @@ function BlogView({ project, website, postParam, pubkey }: BlogViewProps) {
 
 interface ProjectRouteProps extends Omit<
   ProjectViewProps,
-  "project" | "docs" | "catalogs"
+  "project" | "docs" | "catalogs" | "brands"
 > {
   slug: string;
   loaded: boolean;
@@ -312,6 +325,79 @@ interface ProjectRouteProps extends Omit<
   /** Every project's catalogs and links, by project address. */
   catalogs: Map<string, CatalogsContent>;
   catalogsLoaded: boolean;
+  /** Every project's brands, by project address. */
+  brands: Map<string, BrandsContent>;
+  brandsLoaded: boolean;
+}
+
+/** A project's catalogs, brands or docs, if the segment names one of them. */
+function contentView({
+  project,
+  segment,
+  param,
+  pubkey,
+  docs,
+  docsLoaded,
+  catalogs,
+  catalogsLoaded,
+  brands,
+  brandsLoaded,
+}: Pick<
+  ProjectRouteProps,
+  | "docs"
+  | "docsLoaded"
+  | "catalogs"
+  | "catalogsLoaded"
+  | "brands"
+  | "brandsLoaded"
+  | "pubkey"
+> & {
+  project: Project;
+  segment?: string;
+  /** What follows the segment in the link, like a catalog or page. */
+  param?: string;
+}): ReactNode {
+  switch (segment) {
+    case CATALOGS_SEGMENT: {
+      return (
+        <CatalogsView
+          catalogParam={param}
+          content={catalogs.get(project.address) ?? EMPTY_CATALOGS}
+          key={project.address}
+          loaded={catalogsLoaded}
+          project={project}
+          pubkey={pubkey}
+        />
+      );
+    }
+    case BRANDING_SEGMENT: {
+      return (
+        <BrandingView
+          brandParam={param}
+          content={brands.get(project.address) ?? EMPTY_BRANDS}
+          key={project.address}
+          loaded={brandsLoaded}
+          project={project}
+          pubkey={pubkey}
+        />
+      );
+    }
+    case DOCS_SEGMENT: {
+      return (
+        <DocsView
+          docs={docs.get(project.address) ?? EMPTY_DOCS}
+          key={project.address}
+          loaded={docsLoaded}
+          pageParam={param}
+          project={project}
+          pubkey={pubkey}
+        />
+      );
+    }
+    default: {
+      return null;
+    }
+  }
 }
 
 export function ProjectRoute({
@@ -322,6 +408,8 @@ export function ProjectRoute({
   docsLoaded,
   catalogs,
   catalogsLoaded,
+  brands,
+  brandsLoaded,
   ...props
 }: ProjectRouteProps) {
   const project = projects.find((item) => item.slug === slug.toLowerCase());
@@ -355,33 +443,27 @@ export function ProjectRoute({
       <Redirect replace to={`/p/${project.slug}`} />
     );
   }
-  if (project && segment === CATALOGS_SEGMENT) {
-    return (
-      <CatalogsView
-        catalogParam={props.recordId}
-        content={catalogs.get(project.address) ?? EMPTY_CATALOGS}
-        key={project.address}
-        loaded={catalogsLoaded}
-        project={project}
-        pubkey={props.pubkey}
-      />
-    );
-  }
-  if (project && segment === DOCS_SEGMENT) {
-    return (
-      <DocsView
-        docs={docs.get(project.address) ?? EMPTY_DOCS}
-        key={project.address}
-        loaded={docsLoaded}
-        pageParam={props.recordId}
-        project={project}
-        pubkey={props.pubkey}
-      />
-    );
+  const content =
+    project &&
+    contentView({
+      brands,
+      brandsLoaded,
+      catalogs,
+      catalogsLoaded,
+      docs,
+      docsLoaded,
+      param: props.recordId,
+      project,
+      pubkey: props.pubkey,
+      segment,
+    });
+  if (content) {
+    return content;
   }
   if (project) {
     return (
       <ProjectView
+        brands={brands.get(project.address) ?? EMPTY_BRANDS}
         catalogs={catalogs.get(project.address) ?? EMPTY_CATALOGS}
         docs={docs.get(project.address) ?? EMPTY_DOCS}
         key={project.address}

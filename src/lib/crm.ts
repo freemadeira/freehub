@@ -87,6 +87,7 @@ export const RESERVED_TABLE_SLUGS: readonly string[] = [
   "drive",
   "catalogs",
   "blog",
+  "branding",
 ];
 /** Every table has exactly one title field, always first. */
 export const TITLE_FIELD = "title";
