@@ -23,6 +23,7 @@ import { Mentions } from "@/features/home/mentions";
 import { MyTasks } from "@/features/home/my-tasks";
 import { NeedsYou } from "@/features/home/needs-you";
 import { Pinned } from "@/features/home/pinned";
+import type { BrandsContent } from "@/lib/brands";
 import type { CatalogsContent } from "@/lib/catalogs";
 import type { CrmTable } from "@/lib/crm";
 import type { DocsContent } from "@/lib/docs";
@@ -80,6 +81,7 @@ interface HomePageProps {
   tables: Map<string, CrmTable[]>;
   docs: Map<string, DocsContent>;
   catalogs: Map<string, CatalogsContent>;
+  brands: Map<string, BrandsContent>;
   loaded: boolean;
   pubkey: string;
   onNewProject: () => void;
@@ -91,6 +93,7 @@ export function HomePage({
   tables,
   docs,
   catalogs,
+  brands,
   loaded,
   pubkey,
   onNewProject,
@@ -119,6 +122,7 @@ export function HomePage({
     pinned: (
       <Pinned
         boards={boards}
+        brands={brands}
         catalogs={catalogs}
         docs={docs}
         loaded={loaded}

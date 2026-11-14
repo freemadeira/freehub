@@ -11,6 +11,7 @@ import {
   SquareArrowOutUpRightIcon,
   SquareKanbanIcon,
   SquarePenIcon,
+  SwatchBookIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
@@ -55,6 +56,7 @@ import { getConfig } from "@/config";
 import { blogPath } from "@/features/blog/blog-context";
 import { boardPath, useOpenBoard } from "@/features/board/board-context";
 import { BOARDS_PATH } from "@/features/boards/boards-page";
+import { brandPath } from "@/features/branding/branding-context";
 import { countNew } from "@/features/catalogs/catalog-context";
 import { catalogPath } from "@/features/catalogs/catalogs-context";
 import { TableIcon } from "@/features/crm/table-icon";
@@ -67,6 +69,8 @@ import { SEARCH_PATH } from "@/features/search/search-path";
 import { useAppCommands } from "@/features/shortcuts/app-commands";
 import { useCatalogMarks } from "@/hooks/use-catalogs";
 import { websiteOf } from "@/lib/blog-actions";
+import type { BrandsContent } from "@/lib/brands";
+import { EMPTY_BRANDS } from "@/lib/brands";
 import type { CatalogsDoc } from "@/lib/catalog-marks";
 import type { CatalogsContent } from "@/lib/catalogs";
 import { EMPTY_CATALOGS } from "@/lib/catalogs";
@@ -110,7 +114,8 @@ function sidebarPins(
   boards: Board[],
   tables: Map<string, CrmTable[]>,
   docs: Map<string, DocsContent>,
-  catalogs: Map<string, CatalogsContent>
+  catalogs: Map<string, CatalogsContent>,
+  brands: Map<string, BrandsContent>
 ): Map<string, Pin> {
   const pins: Pin[] = [
     ...projects.map((project): Pin => ({
@@ -131,6 +136,13 @@ function sidebarPins(
         type: "catalog",
       }))
     ),
+    ...[...brands].flatMap(([project, content]) =>
+      content.brands.map((brand): Pin => ({
+        id: brand.id,
+        project,
+        type: "brand",
+      }))
+    ),
   ];
   return new Map(pins.map((pin) => [pinKey(pin), pin]));
 }
@@ -143,6 +155,8 @@ interface ProjectItemProps {
   catalogs: CatalogsContent;
   /** What the person has seen of catalogs, for how many links are new to them. */
   marks: CatalogsDoc;
+  /** This project's brands. */
+  brands: BrandsContent;
   /** This project's Drive folders, or nothing when the team keeps no files. */
   drive?: DriveTree;
   /** This project's boards. */
@@ -162,6 +176,7 @@ function ProjectItem({
   docs,
   catalogs,
   marks,
+  brands,
   drive,
   boards,
   allBoards,
@@ -263,6 +278,25 @@ function ProjectItem({
               </SidebarMenuSubItem>
             );
           })}
+          {brands.brands.map((brand) => {
+            const href = brandPath(project, brand);
+            return (
+              <SidebarMenuSubItem key={brand.id}>
+                <SidebarMenuSubButton
+                  data-pin={pinKey({
+                    id: brand.id,
+                    project: project.address,
+                    type: "brand",
+                  })}
+                  isActive={location === href}
+                  render={<NavLink href={href} />}
+                >
+                  <SwatchBookIcon />
+                  <span>{brand.title}</span>
+                </SidebarMenuSubButton>
+              </SidebarMenuSubItem>
+            );
+          })}
           <SidebarDocs
             canEdit={canEdit(project, pubkey)}
             docs={docs}
@@ -301,6 +335,8 @@ interface AppSidebarProps {
   docs: Map<string, DocsContent>;
   /** Every project's catalogs and links, by project address. */
   catalogs: Map<string, CatalogsContent>;
+  /** Every project's brands, by project address. */
+  brands: Map<string, BrandsContent>;
   /** Every project's Drive folders, by project address; none when the team keeps no files. */
   drive?: Map<string, DriveTree>;
   pubkey: string;
@@ -315,6 +351,7 @@ export function AppSidebar({
   tables,
   docs,
   catalogs,
+  brands,
   drive,
   pubkey,
   unread,
@@ -332,7 +369,7 @@ export function AppSidebar({
   }, [storageKey, opened]);
 
   const looseBoards = outsideProjects(boards, projects);
-  const pins = sidebarPins(projects, boards, tables, docs, catalogs);
+  const pins = sidebarPins(projects, boards, tables, docs, catalogs, brands);
   const marks = useCatalogMarks(pubkey);
   const [menuFor, setMenuFor] = useState<{ pin: Pin; href: string }>();
 
@@ -476,6 +513,7 @@ export function AppSidebar({
                   <ProjectItem
                     allBoards={boards}
                     boards={projectBoards}
+                    brands={brands.get(project.address) ?? EMPTY_BRANDS}
                     catalogs={catalogs.get(project.address) ?? EMPTY_CATALOGS}
                     docs={docs.get(project.address) ?? EMPTY_DOCS}
                     drive={

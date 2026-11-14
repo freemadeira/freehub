@@ -8,6 +8,7 @@ import {
   MapIcon,
   NewspaperIcon,
   SquareKanbanIcon,
+  SwatchBookIcon,
 } from "lucide-react";
 
 import { usePlaces } from "@/components/app-link";
@@ -16,6 +17,7 @@ import { getConfig } from "@/config";
 import { blogPath } from "@/features/blog/blog-context";
 import { boardPath } from "@/features/board/board-context";
 import { BOARDS_PATH } from "@/features/boards/boards-page";
+import { brandPath } from "@/features/branding/branding-context";
 import { catalogPath } from "@/features/catalogs/catalogs-context";
 import { TableIcon } from "@/features/crm/table-icon";
 import { docsPath } from "@/features/docs/docs-context";
@@ -46,7 +48,7 @@ function boardItem(board: Board, boards: Board[], where?: string): SearchItem {
 
 /** The app's own pages, then every project and the places in it, as the sidebar lists them. */
 export function usePlaceItems(): SearchItem[] {
-  const { boards, catalogs, drive, projects, tables } = usePlaces();
+  const { boards, brands, catalogs, drive, projects, tables } = usePlaces();
   const pages: SearchItem[] = [
     {
       href: "/",
@@ -116,6 +118,17 @@ export function usePlaceItems(): SearchItem[] {
         keywords: "links catalog bookmarks",
         project: address,
         title: catalog.title,
+      });
+    }
+    for (const brand of brands.get(address)?.brands ?? []) {
+      items.push({
+        context: where,
+        href: brandPath(project, brand),
+        icon: <SwatchBookIcon className={ICON} />,
+        key: `brand:${address}/${brand.id}`,
+        keywords: "branding brand logo colors typography guidelines",
+        project: address,
+        title: brand.title,
       });
     }
     items.push({
