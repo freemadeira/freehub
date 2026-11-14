@@ -29,6 +29,7 @@ export const PLACE_KINDS = [
   "folder",
   "catalog",
   "post",
+  "brand",
 ] as const;
 export type PlaceKind = (typeof PLACE_KINDS)[number];
 

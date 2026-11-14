@@ -31,10 +31,10 @@ export interface SectionSetting {
   hidden: boolean;
 }
 
-/** Something pinned: a project, board or table by its address, or a doc page or catalog in a project. */
+/** Something pinned: a project, board or table by its address, or a doc page, catalog or brand in a project. */
 export type Pin =
   | { type: "project" | "board" | "table"; address: string }
-  | { type: "page" | "catalog"; project: string; id: string };
+  | { type: "page" | "catalog" | "brand"; project: string; id: string };
 
 export type TaskView = "list" | "calendar";
 
@@ -118,7 +118,7 @@ function strings(value: unknown): string[] {
 
 function parsePin(value: unknown): Pin | undefined {
   const { type, address, project, id } = record(value);
-  if (type === "page" || type === "catalog") {
+  if (type === "page" || type === "catalog" || type === "brand") {
     return typeof project === "string" && typeof id === "string"
       ? { id, project, type }
       : undefined;

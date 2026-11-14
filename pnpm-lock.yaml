@@ -274,6 +274,9 @@ importers:
       emojibase-data:
         specifier: ^17.0.0
         version: 17.0.0(emojibase@17.0.0)
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       frimousse:
         specifier: ^0.4.0
         version: 0.4.0(react@19.3.0)(typescript@7.0.2)

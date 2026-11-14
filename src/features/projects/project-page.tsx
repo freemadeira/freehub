@@ -19,6 +19,8 @@ import {
   MemberAvatars,
 } from "@/features/boards/board-card";
 import { BoardDialog } from "@/features/boards/board-dialog";
+import { BrandGrid } from "@/features/branding/brand-card";
+import { NewBrandDialog } from "@/features/branding/brand-dialog";
 import { CatalogGrid } from "@/features/catalogs/catalog-card";
 import { CatalogDialog } from "@/features/catalogs/catalog-dialog";
 import { NewTableDialog } from "@/features/crm/new-table-dialog";
@@ -31,6 +33,7 @@ import { PinButton } from "@/features/home/pin-controls";
 import { ProjectDialog } from "@/features/projects/project-dialog";
 import { useDriveContent, useDriveMarks } from "@/hooks/use-drive";
 import { hasBlossom } from "@/lib/blossom";
+import type { BrandsContent } from "@/lib/brands";
 import type { CatalogsContent } from "@/lib/catalogs";
 import type { CrmRecord, CrmTable, ProjectContent } from "@/lib/crm";
 import { firstValue, stageField } from "@/lib/crm";
@@ -210,11 +213,54 @@ function DriveSection({
   );
 }
 
+/** The project's brands, and a way to start one. */
+function BrandingSection({
+  project,
+  brands,
+  editable,
+}: {
+  project: Project;
+  brands: BrandsContent;
+  editable: boolean;
+}) {
+  const [creating, setCreating] = useState(false);
+  return (
+    <Section
+      action={
+        editable && (
+          <Button onClick={() => setCreating(true)} variant="outline">
+            <PlusIcon />
+            New brand
+          </Button>
+        )
+      }
+      title="Branding"
+    >
+      {brands.brands.length > 0 ? (
+        <BrandGrid content={brands} project={project} />
+      ) : (
+        <p className="text-muted-foreground text-sm">
+          No brands in this project yet.
+        </p>
+      )}
+      {editable && (
+        <NewBrandDialog
+          onOpenChange={setCreating}
+          open={creating}
+          project={project}
+        />
+      )}
+    </Section>
+  );
+}
+
 interface ProjectPageProps {
   project: Project;
   docs: DocsContent;
   /** The project's catalogs and links. */
   catalogs: CatalogsContent;
+  /** The project's brands and their parts. */
+  brands: BrandsContent;
   projects: Project[];
   boards: Board[];
   content?: ProjectContent;
@@ -226,6 +272,7 @@ export function ProjectPage({
   project,
   docs,
   catalogs,
+  brands,
   projects,
   boards,
   content,
@@ -395,6 +442,11 @@ export function ProjectPage({
             </p>
           )}
         </Section>
+        <BrandingSection
+          brands={brands}
+          editable={editable}
+          project={project}
+        />
         {hasBlossom() && (
           <DriveSection editable={editable} project={project} pubkey={pubkey} />
         )}

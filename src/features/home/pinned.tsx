@@ -6,6 +6,7 @@ import {
   PlusIcon,
   SearchIcon,
   SquareKanbanIcon,
+  SwatchBookIcon,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import type { ReactNode } from "react";
@@ -19,11 +20,13 @@ import { ProjectAvatar } from "@/components/project-avatar";
 import { FIELD } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { boardPath } from "@/features/board/board-context";
+import { brandPath } from "@/features/branding/branding-context";
 import { catalogPath } from "@/features/catalogs/catalogs-context";
 import { TableIcon } from "@/features/crm/table-icon";
 import { pagePath } from "@/features/docs/docs-context";
 import { PageIcon } from "@/features/docs/page-icon";
 import { useHome } from "@/features/home/home-context";
+import type { BrandsContent } from "@/lib/brands";
 import type { CatalogsContent } from "@/lib/catalogs";
 import type { CrmTable } from "@/lib/crm";
 import type { DocsContent } from "@/lib/docs";
@@ -42,7 +45,7 @@ const ICON = "text-muted-foreground size-4 shrink-0";
 interface PinTarget {
   pin: Pin;
   key: string;
-  kind: "Projects" | "Boards" | "Tables" | "Pages" | "Catalogs";
+  kind: "Projects" | "Boards" | "Tables" | "Pages" | "Catalogs" | "Brands";
   title: string;
   /** The project it's in, if it isn't one. */
   place?: string;
@@ -59,6 +62,8 @@ interface Places {
   docs: Map<string, DocsContent>;
   /** Every project's catalogs, by project address. */
   catalogs: Map<string, CatalogsContent>;
+  /** Every project's brands, by project address. */
+  brands: Map<string, BrandsContent>;
 }
 
 function target(fields: Omit<PinTarget, "key">): PinTarget {
@@ -72,6 +77,7 @@ function pinTargets({
   tables,
   docs,
   catalogs,
+  brands,
 }: Places): PinTarget[] {
   return [
     ...projects.map((project) =>
@@ -126,6 +132,18 @@ function pinTargets({
           pin: { id: catalog.id, project: project.address, type: "catalog" },
           place: project.title,
           title: catalog.title,
+        })
+      )
+    ),
+    ...projects.flatMap((project) =>
+      (brands.get(project.address)?.brands ?? []).map((brand) =>
+        target({
+          href: brandPath(project, brand),
+          icon: <SwatchBookIcon className={ICON} />,
+          kind: "Brands",
+          pin: { id: brand.id, project: project.address, type: "brand" },
+          place: project.title,
+          title: brand.title,
         })
       )
     ),
@@ -193,7 +211,7 @@ function PinPicker({
 }) {
   const [query, setQuery] = useState("");
   const groups: PickGroup[] = (
-    ["Projects", "Boards", "Tables", "Pages", "Catalogs"] as const
+    ["Projects", "Boards", "Tables", "Pages", "Catalogs", "Brands"] as const
   ).flatMap((kind) => {
     const items = targets.filter((item) => item.kind === kind);
     return items.length > 0 ? [{ items, value: kind }] : [];

@@ -1,6 +1,6 @@
 import { PreviewCard } from "@base-ui/react/preview-card";
 import { cn } from "cn";
-import { BookmarkIcon, SquareKanbanIcon } from "lucide-react";
+import { BookmarkIcon, SquareKanbanIcon, SwatchBookIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { createContext, use } from "react";
 import { Link } from "wouter";
@@ -12,6 +12,10 @@ import {
   findBoard,
   parseSlug,
 } from "@/features/board/board-context";
+import {
+  BRANDING_SEGMENT,
+  parseBrandParam,
+} from "@/features/branding/branding-context";
 import { STATUS_STYLES } from "@/features/card/card-fields";
 import {
   CATALOGS_SEGMENT,
@@ -29,6 +33,7 @@ import { FileIcon } from "@/features/drive/file-icon";
 import { useBoardContent } from "@/hooks/use-board-content";
 import { useDriveContent } from "@/hooks/use-drive";
 import { useProjectContent } from "@/hooks/use-project-content";
+import type { BrandsContent } from "@/lib/brands";
 import type { CatalogsContent, Link as SavedLink } from "@/lib/catalogs";
 import { hostOf } from "@/lib/catalogs";
 import type { CrmTable, ProjectContent } from "@/lib/crm";
@@ -53,12 +58,15 @@ export interface Places {
   drive?: Map<string, DriveTree>;
   /** Every project's catalogs and their links, by project address. */
   catalogs: Map<string, CatalogsContent>;
+  /** Every project's brands and their parts, by project address. */
+  brands: Map<string, BrandsContent>;
 }
 
 export const PlacesContext = createContext<Places | null>(null);
 
 const NO_PLACES: Places = {
   boards: [],
+  brands: new Map(),
   catalogs: new Map(),
   docs: new Map(),
   projects: [],
@@ -81,7 +89,8 @@ export type AppTarget =
   | { type: "record"; project: string; table: string; record: string }
   | { type: "catalog"; project: string; catalog: string }
   | { type: "link"; project: string; catalog: string; link: string }
-  | { type: "file"; project: string; file: string };
+  | { type: "file"; project: string; file: string }
+  | { type: "brand"; project: string; brand: string };
 
 function ownUrl(href: string): URL | undefined {
   const { origin } = globalThis.location;
@@ -132,7 +141,7 @@ function catalogTarget(
 /**
  * What a full address names, read as the app's routes read it, if it's one of
  * the app's own: a board, card, project, doc page, table, record, catalog,
- * catalog link or Drive file.
+ * catalog link, Drive file or brand.
  */
 export function appTarget(href: string): AppTarget | undefined {
   const url = ownUrl(href);
@@ -160,6 +169,10 @@ export function appTarget(href: string): AppTarget | undefined {
   if (table === DRIVE_SEGMENT) {
     const file = url.searchParams.get(FILE_PARAM);
     return file ? { file, project, type: "file" } : undefined;
+  }
+  if (table === BRANDING_SEGMENT) {
+    const brand = record ? parseBrandParam(record) : undefined;
+    return brand ? { brand, project, type: "brand" } : undefined;
   }
   // The blog isn't a table; its links show as written.
   if (table === BLOG_SEGMENT) {
@@ -416,6 +429,24 @@ function PageLink({ target, ...props }: TargetProps<"page">) {
   );
 }
 
+function BrandLink({ target, ...props }: TargetProps<"brand">) {
+  const places = usePlaces();
+  const project = findProject(places, target.project);
+  const brand = project
+    ? places.brands.get(project.address)?.byId.get(target.brand)
+    : undefined;
+  return project && brand ? (
+    <Badge
+      {...props}
+      icon={<SwatchBookIcon />}
+      preview={{ context: `Branding · ${project.title}` }}
+      title={brand.title}
+    />
+  ) : (
+    <PlainLink {...props} />
+  );
+}
+
 function RecordBadge({
   content,
   project,
@@ -621,6 +652,9 @@ export function AppLink({
     }
     case "file": {
       return <FileLink {...props} target={target} />;
+    }
+    case "brand": {
+      return <BrandLink {...props} target={target} />;
     }
     default: {
       return <PlainLink {...props} />;
