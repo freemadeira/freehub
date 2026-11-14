@@ -1,33 +1,29 @@
-import {
-  DownloadIcon,
-  ExternalLinkIcon,
-  PencilIcon,
-  PlusIcon,
-} from "lucide-react";
+import { DownloadIcon, ExternalLinkIcon, PencilIcon } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   AddTile,
   BrandSection,
   DropTarget,
-  useFilePicker,
 } from "@/features/branding/brand-parts";
 import type { Sortable } from "@/features/branding/sortable-parts";
 import { SortableParts } from "@/features/branding/sortable-parts";
+import { addFont } from "@/lib/brand-actions";
 import { downloadFontFiles } from "@/lib/brand-kit";
-import type { BrandUpload } from "@/lib/brand-upload";
 import { uploadToBrand } from "@/lib/brand-upload";
 import type { Brand, BrandFile, BrandFont, BrandParts } from "@/lib/brands";
 import {
   cssFamily,
+  familyOfFile,
   filesIn,
   fontWeights,
   libraryFontPage,
   MAX_FONTS,
+  placeFit,
   WEIGHT_NAMES,
 } from "@/lib/brands";
 import type { Project } from "@/lib/project";
-import { plural } from "@/lib/utils";
 
 const ALPHABET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789";
@@ -39,7 +35,6 @@ function Specimen({
   brand,
   font,
   files,
-  uploads,
   editable,
   sortable,
   onEdit,
@@ -48,7 +43,6 @@ function Specimen({
   brand: Brand;
   font: BrandFont;
   files: BrandFile[];
-  uploads: BrandUpload[];
   editable: boolean;
   sortable: Sortable;
   onEdit: () => void;
@@ -56,29 +50,19 @@ function Specimen({
   const family = cssFamily(font);
   const weights = fontWeights(font, files);
   const own = filesIn(files, { font: font.id, kind: "font" });
-  const pending = uploads.filter(
-    (upload) => upload.place.kind === "font" && upload.place.font === font.id
-  ).length;
-  const place = { font: font.id, kind: "font" } as const;
-  const add = (picked: File[]) => uploadToBrand(project, brand, place, picked);
-  const picker = useFilePicker(add, { accept: ".woff2,.woff,.otf,.ttf" });
   const uploaded = font.source === "file";
+  const add = (picked: File[]) =>
+    uploadToBrand(project, brand, { font: font.id, kind: "font" }, picked);
 
   return (
     <DropTarget onFiles={editable && uploaded ? add : undefined}>
-      <article className="bg-card shadow-surface flex flex-col gap-6 overflow-hidden rounded-2xl p-5 sm:p-7">
+      <article className="bg-card shadow-surface group/specimen flex flex-col gap-6 overflow-hidden rounded-2xl p-5 sm:p-7">
         <header className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 flex-col gap-1">
             <h3 className="truncate text-lg font-medium">{font.family}</h3>
-            <p className="text-muted-foreground text-sm">
-              {[
-                font.role,
-                uploaded ? plural(own.length, "file") : "Font library",
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-              {pending > 0 && ` · uploading ${pending}`}
-            </p>
+            {font.role && (
+              <p className="text-muted-foreground text-sm">{font.role}</p>
+            )}
           </div>
           <div className="flex items-center gap-1">
             {uploaded ? (
@@ -103,18 +87,8 @@ function Specimen({
                 Get it
               </a>
             )}
-            {editable && uploaded && (
-              <Button
-                aria-label="Add font files"
-                onClick={() => picker.open()}
-                size="icon-sm"
-                variant="ghost"
-              >
-                <PlusIcon />
-              </Button>
-            )}
             {editable && (
-              <>
+              <span className="flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover/specimen:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
                 <Button
                   aria-label={`Edit ${font.family}`}
                   onClick={onEdit}
@@ -124,7 +98,7 @@ function Specimen({
                   <PencilIcon />
                 </Button>
                 {sortable.handle}
-              </>
+              </span>
             )}
           </div>
         </header>
@@ -161,10 +135,35 @@ function Specimen({
             ))}
           </ul>
         )}
-        {picker.input}
       </article>
     </DropTarget>
   );
+}
+
+/** Font files dropped on the chapter: a new typeface of them, named as the first one says. */
+async function addFamily(
+  project: Project,
+  brand: Brand,
+  dropped: File[]
+): Promise<void> {
+  const { fits, misfit } = placeFit("font");
+  const fonts = dropped.filter((file) =>
+    fits({ name: file.name, type: file.type })
+  );
+  const [first] = fonts;
+  if (!first) {
+    toast.error(misfit);
+    return;
+  }
+  const made = addFont(project, brand, {
+    family: familyOfFile(first.name),
+    role: "",
+    source: "file",
+    weights: [],
+  });
+  if (made && (await made.saved)) {
+    await uploadToBrand(project, brand, { font: made.id, kind: "font" }, fonts);
+  }
 }
 
 /** The brand's typefaces, each set in itself. */
@@ -172,64 +171,56 @@ export function TypeSection({
   project,
   brand,
   parts,
-  uploads,
   editable,
   onEdit,
 }: {
   project: Project;
   brand: Brand;
   parts: BrandParts;
-  uploads: BrandUpload[];
   editable: boolean;
   /** Opens a typeface to change, or a new one without. */
   onEdit: (font?: BrandFont) => void;
 }) {
   const { fonts, files } = parts;
   return (
-    <BrandSection
-      action={
-        editable &&
-        fonts.length > 0 &&
-        fonts.length < MAX_FONTS && (
-          <Button onClick={() => onEdit()} size="sm" variant="outline">
-            <PlusIcon />
-            Add typeface
-          </Button>
-        )
-      }
-      id="typography"
-    >
-      <SortableParts
-        className="flex flex-col gap-3"
-        editable={editable}
-        group="fonts"
-        handleClassName="text-muted-foreground hover:text-foreground size-8"
-        label={(font) => font.family}
-        parts={fonts}
-        project={project}
-        render={(font, sortable) => (
-          <Specimen
-            brand={brand}
-            editable={editable}
-            files={files}
-            font={font}
-            key={font.id}
-            onEdit={() => onEdit(font)}
-            project={project}
-            sortable={sortable}
-            uploads={uploads}
-          />
-        )}
+    <BrandSection id="typography">
+      <DropTarget
+        onFiles={
+          editable && fonts.length < MAX_FONTS
+            ? (dropped) => addFamily(project, brand, dropped)
+            : undefined
+        }
       >
-        {editable && fonts.length === 0 && (
-          <AddTile
-            className="min-h-40"
-            hint="From the font library, or the brand’s own files."
-            label="Add typeface"
-            onClick={() => onEdit()}
-          />
-        )}
-      </SortableParts>
+        <SortableParts
+          className="flex flex-col gap-3"
+          editable={editable}
+          group="fonts"
+          handleClassName="text-muted-foreground hover:text-foreground size-8"
+          label={(font) => font.family}
+          parts={fonts}
+          project={project}
+          render={(font, sortable) => (
+            <Specimen
+              brand={brand}
+              editable={editable}
+              files={files}
+              font={font}
+              key={font.id}
+              onEdit={() => onEdit(font)}
+              project={project}
+              sortable={sortable}
+            />
+          )}
+        >
+          {editable && fonts.length < MAX_FONTS && (
+            <AddTile
+              className="min-h-28"
+              label="Add typeface"
+              onClick={() => onEdit()}
+            />
+          )}
+        </SortableParts>
+      </DropTarget>
     </BrandSection>
   );
 }

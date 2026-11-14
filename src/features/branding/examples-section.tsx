@@ -3,12 +3,19 @@ import { CheckIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   AddTile,
   BrandPicture,
   BrandSection,
   DropTarget,
   FileMenu,
   PendingTile,
+  PictureViewer,
   useFilePicker,
 } from "@/features/branding/brand-parts";
 import type { Sortable } from "@/features/branding/sortable-parts";
@@ -22,44 +29,25 @@ import type { Project } from "@/lib/project";
 
 const VERDICT_NAMES: Record<Verdict, string> = { do: "Do", dont: "Don’t" };
 
-function VerdictBadge({
-  verdict,
-  onToggle,
-}: {
-  verdict: Verdict;
-  /** Switches it, for whoever can. */
-  onToggle?: () => void;
-}) {
-  const className = cn(
-    "shadow-surface absolute top-3 left-3 flex h-7 items-center gap-1 rounded-full pr-3 pl-2 text-xs font-semibold text-white",
-    verdict === "do" ? "bg-emerald-600" : "bg-red-600"
-  );
-  const content = (
-    <>
+function verdictOf(file: BrandFile): Verdict {
+  return file.place.kind === "example" ? file.place.verdict : "do";
+}
+
+function VerdictBadge({ verdict }: { verdict: Verdict }) {
+  return (
+    <span
+      className={cn(
+        "shadow-surface pointer-events-none absolute top-3 left-3 flex h-7 items-center gap-1 rounded-full pr-3 pl-2 text-xs font-semibold text-white",
+        verdict === "do" ? "bg-emerald-600" : "bg-red-600"
+      )}
+    >
       {verdict === "do" ? (
         <CheckIcon aria-hidden className="size-3.5" strokeWidth={3} />
       ) : (
         <XIcon aria-hidden className="size-3.5" strokeWidth={3} />
       )}
       {VERDICT_NAMES[verdict]}
-    </>
-  );
-  if (!onToggle) {
-    return <span className={className}>{content}</span>;
-  }
-  const other = verdict === "do" ? "dont" : "do";
-  return (
-    <button
-      className={cn(
-        className,
-        "focus-visible:ring-ring/50 transition-[scale] duration-150 ease-out outline-none focus-visible:ring-3 active:scale-[0.96]"
-      )}
-      onClick={onToggle}
-      title={`Make it a ${VERDICT_NAMES[other].toLowerCase()}`}
-      type="button"
-    >
-      {content}
-    </button>
+    </span>
   );
 }
 
@@ -114,36 +102,45 @@ function Example({
   file,
   editable,
   sortable,
+  onOpen,
 }: {
   project: Project;
   file: BrandFile;
   editable: boolean;
   sortable: Sortable;
+  onOpen: () => void;
 }) {
-  const verdict = file.place.kind === "example" ? file.place.verdict : "do";
+  const verdict = verdictOf(file);
+  const other: Verdict = verdict === "do" ? "dont" : "do";
   return (
     <figure className="bg-card shadow-surface group/item flex h-full flex-col overflow-hidden rounded-2xl">
       <div className="bg-muted relative aspect-[4/3]">
-        <BrandPicture className="size-full p-4" file={file} />
-        <VerdictBadge
-          onToggle={
-            editable
-              ? () =>
-                  updatePart(project, file, {
-                    place: {
-                      kind: "example",
-                      verdict: verdict === "do" ? "dont" : "do",
-                    },
-                  })
-              : undefined
-          }
-          verdict={verdict}
-        />
+        <button
+          aria-label={`Look at ${file.caption || file.name}`}
+          className="focus-visible:ring-ring/50 size-full cursor-zoom-in p-4 outline-none focus-visible:ring-3 focus-visible:ring-inset"
+          onClick={onOpen}
+          type="button"
+        >
+          <BrandPicture className="size-full" file={file} />
+        </button>
+        <VerdictBadge verdict={verdict} />
         <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover/item:opacity-100 focus-within:opacity-100 has-data-popup-open:opacity-100 pointer-coarse:opacity-100">
           {sortable.handle}
           <FileMenu
             className="bg-background/85 shadow-surface size-7 rounded-full backdrop-blur-sm"
             editable={editable}
+            edits={
+              <DropdownMenuItem
+                onClick={() =>
+                  updatePart(project, file, {
+                    place: { kind: "example", verdict: other },
+                  })
+                }
+              >
+                {other === "do" ? <CheckIcon /> : <XIcon />}
+                Make it a {VERDICT_NAMES[other].toLowerCase()}
+              </DropdownMenuItem>
+            }
             file={file}
             project={project}
           />
@@ -170,6 +167,7 @@ export function ExamplesSection({
 }) {
   const files = filesOf(parts.files, "example");
   const pending = uploads.filter((upload) => upload.place.kind === "example");
+  const [open, setOpen] = useState<number>();
   const add = (verdict: Verdict) => (picked: File[]) =>
     uploadToBrand(project, brand, { kind: "example", verdict }, picked);
   const dos = useFilePicker(add("do"), { accept: "image/*" });
@@ -177,57 +175,59 @@ export function ExamplesSection({
 
   return (
     <BrandSection id="examples">
-      <SortableParts
-        className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+      <DropTarget onFiles={editable ? add("do") : undefined}>
+        <SortableParts
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+          editable={editable}
+          group="examples"
+          handleClassName="bg-background/85 shadow-surface size-7 backdrop-blur-sm"
+          label={(file) => file.caption || file.name}
+          parts={files}
+          project={project}
+          render={(file, sortable) => (
+            <Example
+              editable={editable}
+              file={file}
+              key={file.id}
+              onOpen={() => setOpen(files.indexOf(file))}
+              project={project}
+              sortable={sortable}
+            />
+          )}
+        >
+          {pending.map((upload) => (
+            <PendingTile
+              className="aspect-[4/3]"
+              key={upload.id}
+              upload={upload}
+            />
+          ))}
+          {editable && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<AddTile className="min-h-40" label="Add an example" />}
+              />
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => dos.open()}>
+                  <CheckIcon />
+                  A do
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => donts.open()}>
+                  <XIcon />
+                  A don’t
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </SortableParts>
+      </DropTarget>
+      <PictureViewer
+        at={open}
         editable={editable}
-        group="examples"
-        handleClassName="bg-background/85 shadow-surface size-7 backdrop-blur-sm"
-        label={(file) => file.caption || file.name}
-        parts={files}
+        files={files}
+        onAt={setOpen}
         project={project}
-        render={(file, sortable) => (
-          <Example
-            editable={editable}
-            file={file}
-            key={file.id}
-            project={project}
-            sortable={sortable}
-          />
-        )}
-      >
-        {pending.map((upload) => (
-          <PendingTile
-            className="aspect-[4/3]"
-            key={upload.id}
-            upload={upload}
-          />
-        ))}
-        {editable && (
-          <div
-            className={cn(
-              "grid min-h-40 gap-3",
-              files.length + pending.length === 0
-                ? "grid-cols-2 sm:col-span-2"
-                : "grid-rows-2"
-            )}
-          >
-            <DropTarget className="flex" onFiles={add("do")}>
-              <AddTile
-                className="flex-1"
-                label="Add a do"
-                onClick={() => dos.open()}
-              />
-            </DropTarget>
-            <DropTarget className="flex" onFiles={add("dont")}>
-              <AddTile
-                className="flex-1"
-                label="Add a don’t"
-                onClick={() => donts.open()}
-              />
-            </DropTarget>
-          </div>
-        )}
-      </SortableParts>
+      />
       {dos.input}
       {donts.input}
     </BrandSection>

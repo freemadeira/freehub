@@ -37,15 +37,6 @@ function linkLabel(url: string): string {
   }
 }
 
-function draftOf(brand: Brand) {
-  return {
-    description: brand.description,
-    socials: brand.socials,
-    title: brand.title,
-    website: brand.website,
-  };
-}
-
 /** The brand's own site, then its profiles elsewhere, as pills. */
 function Links({ brand }: { brand: Brand }) {
   const links = [
@@ -97,7 +88,6 @@ function LinksEditor({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const saved = await updateBrand(project, brand, {
-      ...draftOf(brand),
       socials: socials.split(/\s+/u).filter(Boolean),
       website,
     });
@@ -122,7 +112,7 @@ function LinksEditor({
           hasLinks ? (
             <Button aria-label="Edit links" size="icon-sm" variant="ghost" />
           ) : (
-            <Button className="self-start" size="sm" variant="ghost" />
+            <Button className="-ml-3 self-start" size="sm" variant="ghost" />
           )
         }
       >
@@ -252,12 +242,13 @@ export function BrandHero({
   const headingStyle = heading ? { fontFamily: cssFamily(heading) } : undefined;
   const bodyStyle = body ? { fontFamily: cssFamily(body) } : undefined;
   const hasLinks = brand.website !== "" || brand.socials.length > 0;
-  const save = (changes: { title?: string; description?: string }) =>
-    updateBrand(project, brand, { ...draftOf(brand), ...changes });
 
   return (
     <header className="bg-card shadow-surface overflow-hidden rounded-3xl">
-      <BrandCover className="h-28 sm:h-36" parts={parts} />
+      <BrandCover
+        className={parts.colors.length > 0 ? "h-28 sm:h-36" : "h-16 sm:h-20"}
+        parts={parts}
+      />
       <div className="flex flex-col gap-4 px-5 pb-6 sm:px-8 sm:pb-8">
         <BrandMark
           brand={brand}
@@ -270,18 +261,20 @@ export function BrandHero({
               className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl"
               label="Name"
               max={MAX_BRAND_NAME}
-              onSave={(title) => title && save({ title })}
+              onSave={(title) =>
+                title && updateBrand(project, brand, { title })
+              }
               placeholder="Untitled"
               style={headingStyle}
               value={brand.title}
             />
           ) : (
-            <h1
+            <h2
               className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl"
               style={headingStyle}
             >
               {brand.title}
-            </h1>
+            </h2>
           )}
           {editable ? (
             <InlineText
@@ -289,7 +282,9 @@ export function BrandHero({
               label="What it stands for"
               max={MAX_BRAND_DESCRIPTION}
               multiline
-              onSave={(description) => save({ description })}
+              onSave={(description) =>
+                updateBrand(project, brand, { description })
+              }
               placeholder="What it stands for, in a line or two"
               style={bodyStyle}
               value={brand.description}
@@ -318,17 +313,6 @@ export function BrandHero({
           </div>
         )}
       </div>
-      {parts.colors.length > 0 && (
-        <div aria-hidden className="flex h-1.5">
-          {parts.colors.map((color) => (
-            <span
-              className="flex-1"
-              key={color.id}
-              style={{ background: color.hex }}
-            />
-          ))}
-        </div>
-      )}
     </header>
   );
 }

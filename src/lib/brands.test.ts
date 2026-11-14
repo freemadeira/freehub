@@ -14,6 +14,7 @@ import {
   contrast,
   contrastGrade,
   faceOfFile,
+  familyOfFile,
   formatCmyk,
   formatHsl,
   logoFor,
@@ -24,6 +25,7 @@ import {
   resolveBrands,
   textFonts,
   tokenNames,
+  VARIABLE,
 } from "@/lib/brands";
 import type { Template } from "@/lib/model";
 import type { Project } from "@/lib/project";
@@ -261,12 +263,19 @@ describe("colors", () => {
 });
 
 describe("type", () => {
+  it("tells a font file's family by its name", () => {
+    expect(familyOfFile("BrandSans-BoldItalic.otf")).toBe("Brand Sans");
+    expect(familyOfFile("Inter_SemiBold.woff2")).toBe("Inter");
+    expect(familyOfFile("Bold.ttf")).toBe("Typeface");
+  });
+
   it("tells a font file's face by its name", () => {
     expect(faceOfFile("Inter-SemiBoldItalic.woff2")).toEqual({
       style: "italic",
       weight: 600,
     });
     expect(faceOfFile("Brand-700.otf").weight).toBe(700);
+    expect(faceOfFile("Inter[wght].woff2").weight).toBe(VARIABLE);
   });
 
   it("picks heading and body typefaces by role, else by order", () => {

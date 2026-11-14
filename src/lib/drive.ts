@@ -19,8 +19,8 @@ import { COLORS } from "@/lib/palette";
 import type { Project } from "@/lib/project";
 import type { SealedFileFields } from "@/lib/sealed-files";
 import {
-  measure,
   parseSealedFile,
+  positive,
   sealedFileTags,
   tombstoneFileTags,
 } from "@/lib/sealed-files";
@@ -253,7 +253,7 @@ function parseFile(
     ...sealed,
     author: event.pubkey,
     createdAt,
-    duration: measure(Number(getTagValue(event, "duration"))),
+    duration: positive(Number(getTagValue(event, "duration"))),
     event,
     folder: getTagValue(event, "folder") || undefined,
     id,

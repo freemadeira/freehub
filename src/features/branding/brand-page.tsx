@@ -1,6 +1,7 @@
 import type { NostrEvent } from "applesauce-core/helpers/event";
 import {
   EllipsisIcon,
+  PlusIcon,
   PackageIcon,
   SwatchBookIcon,
   Trash2Icon,
@@ -14,6 +15,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { FluidTooltip } from "@/components/ui/fluid-tooltip";
@@ -34,7 +36,6 @@ import { LogosSection } from "@/features/branding/logos-section";
 import { MockupsSection } from "@/features/branding/mockups-section";
 import { TypeSection } from "@/features/branding/type-section";
 import { PinButton } from "@/features/home/pin-controls";
-import { cleanUpBlobs } from "@/lib/blob-cleanup";
 import { hasBlossom } from "@/lib/blossom";
 import { useBrandFonts } from "@/lib/brand-files";
 import { downloadKit } from "@/lib/brand-kit";
@@ -60,11 +61,29 @@ function useDraggingFiles(enabled: boolean): void {
         delete root.dataset.draggingFiles;
       }
     };
+    const end = () => {
+      depth = 0;
+      set(false);
+    };
+    const carries = (event: DragEvent) =>
+      event.dataTransfer?.types.includes("Files") ?? false;
     const enter = (event: DragEvent) => {
-      if (event.dataTransfer?.types.includes("Files")) {
+      if (carries(event)) {
         depth += 1;
         set(true);
       }
+    };
+    // Files let go between drop targets would open in the tab instead.
+    const over = (event: DragEvent) => {
+      if (carries(event)) {
+        event.preventDefault();
+      }
+    };
+    const drop = (event: DragEvent) => {
+      if (carries(event)) {
+        event.preventDefault();
+      }
+      end();
     };
     const leave = () => {
       depth = Math.max(0, depth - 1);
@@ -72,18 +91,16 @@ function useDraggingFiles(enabled: boolean): void {
         set(false);
       }
     };
-    const end = () => {
-      depth = 0;
-      set(false);
-    };
     window.addEventListener("dragenter", enter);
+    window.addEventListener("dragover", over);
     window.addEventListener("dragleave", leave);
-    window.addEventListener("drop", end);
+    window.addEventListener("drop", drop);
     window.addEventListener("dragend", end);
     return () => {
       window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragover", over);
       window.removeEventListener("dragleave", leave);
-      window.removeEventListener("drop", end);
+      window.removeEventListener("drop", drop);
       window.removeEventListener("dragend", end);
       set(false);
     };
@@ -194,20 +211,20 @@ export function BrandPage({
   brand,
   parts,
   versions,
-  deleted,
   alone,
   pubkey,
+  onNew,
 }: {
   project: Project;
   brand: Brand;
   parts: BrandParts;
   /** Each member's newest version of the brand, to merge guidelines edited at once. */
   versions: NostrEvent[];
-  /** Brand files deleted for good, whose blobs may be yours to clean up. */
-  deleted: NostrEvent[];
   /** The project's only brand, with no list of them to go back to. */
   alone: boolean;
   pubkey: string;
+  /** Starts another brand in the project. */
+  onNew: () => void;
 }) {
   const editable = canEdit(project, pubkey);
   const uploads = useBrandUploads(brand.id);
@@ -217,17 +234,14 @@ export function BrandPage({
   useBrandFonts(parts.fonts, parts.files);
   useDraggingFiles(editable && hasBlossom());
 
-  useEffect(() => {
-    if (deleted.length > 0) {
-      cleanUpBlobs(deleted);
-    }
-  }, [deleted]);
-
   const editFont = (picked?: BrandFont) => {
     setFont(picked);
     setFontOpen(true);
   };
   const chapters = shownChapters(brand, parts, editable);
+  const empty =
+    parts.colors.length + parts.fonts.length + parts.files.length === 0 &&
+    !brand.guide.trim();
   return (
     <>
       <TopBar
@@ -255,12 +269,14 @@ export function BrandPage({
           <PinButton
             pin={{ id: brand.id, project: project.address, type: "brand" }}
           />
-          <IconButton
-            label="Download brand kit"
-            onClick={() => downloadKit(brand, parts)}
-          >
-            <PackageIcon />
-          </IconButton>
+          {!empty && (
+            <IconButton
+              label="Download brand kit"
+              onClick={() => downloadKit(brand, parts)}
+            >
+              <PackageIcon />
+            </IconButton>
+          )}
         </FluidTooltip.Group>
         {editable && (
           <DropdownMenu>
@@ -272,6 +288,11 @@ export function BrandPage({
               }
             />
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onNew}>
+                <PlusIcon />
+                New brand
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => setDeleting(true)}
                 variant="destructive"
@@ -314,6 +335,7 @@ export function BrandPage({
         <>
           <FontDialog
             brand={brand}
+            files={parts.files}
             font={font}
             onOpenChange={setFontOpen}
             open={fontOpen}

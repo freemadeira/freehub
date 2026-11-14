@@ -1,6 +1,11 @@
 import { cn } from "cn";
-import { CheckIcon, HardDriveIcon, MinusIcon, PlusIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import {
+  CheckIcon,
+  HardDriveIcon,
+  MinusIcon,
+  PlusIcon,
+  UploadIcon,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -13,7 +18,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import {
   AddTile,
   BrandPicture,
@@ -21,12 +33,12 @@ import {
   DropTarget,
   FileMenu,
   PendingTile,
+  PictureViewer,
   useFilePicker,
 } from "@/features/branding/brand-parts";
 import type { Sortable } from "@/features/branding/sortable-parts";
 import { SortableParts } from "@/features/branding/sortable-parts";
 import { useDriveContent } from "@/hooks/use-drive";
-import { fileSource } from "@/lib/brand-files";
 import type { BrandUpload } from "@/lib/brand-upload";
 import { uploadToBrand } from "@/lib/brand-upload";
 import type { Brand, BrandFile, BrandParts, HexColor } from "@/lib/brands";
@@ -34,8 +46,8 @@ import { filesOf, isShown, PAPER } from "@/lib/brands";
 import type { DriveFile } from "@/lib/drive";
 import { fileKind } from "@/lib/drive";
 import {
-  fileSource as driveFileSource,
   fetchFile,
+  fileSource,
   thumbSource,
   useOpened,
 } from "@/lib/drive-files";
@@ -57,7 +69,7 @@ function DriveThumb({
   picked: boolean;
   onToggle: () => void;
 }) {
-  const { url } = useOpened(thumbSource(file) ?? driveFileSource(file));
+  const { url } = useOpened(thumbSource(file) ?? fileSource(file));
   return (
     <button
       aria-pressed={picked}
@@ -124,70 +136,74 @@ function DrivePictures({
   );
 }
 
-/** Pictures in the project's Drive, picked to copy into the brand. */
-function DrivePicker({
+/**
+ * What the Drive picker holds while it's open. It follows the Drive only
+ * then, so a brand page doesn't keep the Drive in step for nothing.
+ */
+function DrivePickerBody({
   project,
-  open,
-  onOpenChange,
   onPick,
+  onDone,
 }: {
   project: Project;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onPick: (files: DriveFile[]) => void;
+  /** Resolves once the pictures are opened and on their way into the brand. */
+  onPick: (files: DriveFile[]) => Promise<void>;
+  onDone: () => void;
 }) {
   const { content, loaded } = useDriveContent(project);
   const [picked, setPicked] = useState<string[]>([]);
+  const [opening, setOpening] = useState(false);
   const pictures = content.files.filter(
     (file) => fileKind(file) === "image" && isShown(file)
   );
   return (
-    <Dialog
-      onOpenChange={(next) => {
-        setPicked([]);
-        onOpenChange(next);
-      }}
-      open={open}
-    >
-      <DialogContent className="sm:max-w-2xl" showCloseButton={false}>
-        <DialogHeader>
-          <DialogTitle>Add from Drive</DialogTitle>
-        </DialogHeader>
-        <DrivePictures
-          loaded={loaded}
-          onToggle={(id) =>
-            setPicked((before) =>
-              before.includes(id)
-                ? before.filter((item) => item !== id)
-                : [...before, id]
-            )
-          }
-          picked={picked}
-          pictures={pictures}
-        />
-        <DialogFooter>
-          <DialogClose render={<Button type="button" variant="ghost" />}>
-            Cancel
-          </DialogClose>
-          <Button
-            disabled={picked.length === 0}
-            onClick={() => {
-              onPick(pictures.filter((file) => picked.includes(file.id)));
-              setPicked([]);
-              onOpenChange(false);
-            }}
-          >
-            {picked.length > 0
-              ? `Add ${plural(picked.length, "picture")}`
-              : "Add"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <>
+      <DialogHeader>
+        <DialogTitle>Add from Drive</DialogTitle>
+      </DialogHeader>
+      <DrivePictures
+        loaded={loaded}
+        onToggle={(id) =>
+          setPicked((before) =>
+            before.includes(id)
+              ? before.filter((item) => item !== id)
+              : [...before, id]
+          )
+        }
+        picked={picked}
+        pictures={pictures}
+      />
+      <DialogFooter>
+        <DialogClose
+          disabled={opening}
+          render={<Button type="button" variant="ghost" />}
+        >
+          Cancel
+        </DialogClose>
+        <Button
+          disabled={picked.length === 0 || opening}
+          onClick={async () => {
+            setOpening(true);
+            await onPick(pictures.filter((file) => picked.includes(file.id)));
+            setOpening(false);
+            onDone();
+          }}
+        >
+          {opening && <Spinner />}
+          {picked.length > 0
+            ? `Add ${plural(picked.length, "picture")}`
+            : "Add"}
+        </Button>
+      </DialogFooter>
+    </>
   );
 }
 
-/** Copies Drive pictures into the brand: opened, then sealed again as the brand's own. */
+/**
+ * Copies Drive pictures into the brand: each opened, then sealed again as
+ * the brand's own, so deleting it from the Drive leaves the brand be.
+ * Resolves once they're opened; the uploads carry on from there.
+ */
 async function copyFromDrive(
   project: Project,
   brand: Brand,
@@ -197,7 +213,7 @@ async function copyFromDrive(
   const copies: File[] = [];
   for (const file of files) {
     try {
-      // oxlint-disable-next-line no-await-in-loop -- one at a time, to keep memory down
+      // oxlint-disable-next-line no-await-in-loop -- one download at a time, so a big pick doesn't flood the servers
       const blob = await fetchFile(file);
       copies.push(new File([blob], file.name, { type: blob.type }));
     } catch (error) {
@@ -207,7 +223,7 @@ async function copyFromDrive(
     }
   }
   if (copies.length > 0) {
-    await uploadToBrand(project, brand, { kind }, copies);
+    uploadToBrand(project, brand, { kind }, copies);
   }
 }
 
@@ -220,12 +236,15 @@ function useGalleryAdd(project: Project, brand: Brand, kind: GalleryKind) {
   const dialogs = (
     <>
       {picker.input}
-      <DrivePicker
-        onOpenChange={setFromDrive}
-        onPick={(picked) => copyFromDrive(project, brand, kind, picked)}
-        open={fromDrive}
-        project={project}
-      />
+      <Dialog onOpenChange={setFromDrive} open={fromDrive}>
+        <DialogContent className="sm:max-w-2xl" showCloseButton={false}>
+          <DrivePickerBody
+            onDone={() => setFromDrive(false)}
+            onPick={(picked) => copyFromDrive(project, brand, kind, picked)}
+            project={project}
+          />
+        </DialogContent>
+      </Dialog>
     </>
   );
   return {
@@ -236,55 +255,34 @@ function useGalleryAdd(project: Project, brand: Brand, kind: GalleryKind) {
   };
 }
 
-/** Upload from the computer, or copy from the Drive. */
-function AddButtons({
+/** The tile that adds to a gallery: from the computer, or from the Drive. */
+function AddPictures({
+  label,
+  className,
   onUpload,
   onDrive,
 }: {
+  label: string;
+  className?: string;
   onUpload: () => void;
   onDrive: () => void;
 }) {
   return (
-    <>
-      <Button onClick={onDrive} size="sm" variant="ghost">
-        <HardDriveIcon />
-        From Drive
-      </Button>
-      <Button onClick={onUpload} size="sm" variant="outline">
-        <PlusIcon />
-        Upload
-      </Button>
-    </>
-  );
-}
-
-/** The two ways to start a gallery, side by side. */
-function EmptyGallery({
-  what,
-  hint,
-  onUpload,
-  onDrive,
-}: {
-  what: string;
-  hint: string;
-  onUpload: () => void;
-  onDrive: () => void;
-}) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <AddTile
-        className="min-h-40"
-        hint={hint}
-        label={`Upload ${what}`}
-        onClick={onUpload}
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={<AddTile className={className} label={label} />}
       />
-      <AddTile
-        className="min-h-40"
-        hint="Copy pictures the project keeps in its Drive."
-        label="Add from Drive"
-        onClick={onDrive}
-      />
-    </div>
+      <DropdownMenuContent align="start">
+        <DropdownMenuItem onClick={onUpload}>
+          <UploadIcon />
+          From your computer
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onDrive}>
+          <HardDriveIcon />
+          From Drive
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -292,39 +290,39 @@ function Illustration({
   project,
   file,
   editable,
+  sortable,
+  onOpen,
 }: {
   project: Project;
   file: BrandFile;
   editable: boolean;
+  sortable: Sortable;
+  onOpen: () => void;
 }) {
   return (
-    <figure
-      className={cn(
-        "bg-muted group/item relative overflow-hidden rounded-2xl",
-        editable && "cursor-grab active:cursor-grabbing"
-      )}
-    >
-      <BrandPicture
-        className="block h-auto w-full"
-        file={file}
-        style={{
-          aspectRatio:
-            file.width && file.height
-              ? `${file.width} / ${file.height}`
-              : "4 / 3",
-        }}
-      />
-      <FileMenu
-        className="bg-background/85 shadow-surface absolute top-2 right-2 size-7 rounded-full opacity-0 backdrop-blur-sm transition-opacity duration-150 group-hover/item:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100 pointer-coarse:opacity-100"
-        editable={editable}
-        file={file}
-        project={project}
-      />
+    <figure className="bg-muted group/item relative aspect-[4/3] overflow-hidden rounded-2xl">
+      <button
+        aria-label={`Look at ${file.name}`}
+        className="focus-visible:ring-ring/50 size-full cursor-zoom-in rounded-2xl p-3 outline-none focus-visible:ring-3 focus-visible:ring-inset"
+        onClick={onOpen}
+        type="button"
+      >
+        <BrandPicture className="size-full" file={file} />
+      </button>
+      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover/item:opacity-100 focus-within:opacity-100 has-data-popup-open:opacity-100 pointer-coarse:opacity-100">
+        {sortable.handle}
+        <FileMenu
+          className="bg-background/85 shadow-surface size-7 rounded-full backdrop-blur-sm"
+          editable={editable}
+          file={file}
+          project={project}
+        />
+      </div>
     </figure>
   );
 }
 
-/** The brand's illustrations, as a wall of pictures in their own shapes. */
+/** The brand's illustrations, each looked at up close on a click. */
 export function IllustrationsSection({
   project,
   brand,
@@ -343,56 +341,53 @@ export function IllustrationsSection({
     (upload) => upload.place.kind === "illustration"
   );
   const adding = useGalleryAdd(project, brand, "illustration");
-  const empty = files.length + pending.length === 0;
+  const [open, setOpen] = useState<number>();
   return (
-    <BrandSection
-      action={
-        editable &&
-        !empty && (
-          <AddButtons
-            onDrive={adding.handleDrive}
-            onUpload={adding.handlePick}
-          />
-        )
-      }
-      id="illustrations"
-    >
+    <BrandSection id="illustrations">
       <DropTarget onFiles={editable ? adding.add : undefined}>
-        {empty ? (
-          <EmptyGallery
-            hint="Drop pictures here, or pick them."
-            onDrive={adding.handleDrive}
-            onUpload={adding.handlePick}
-            what="illustrations"
-          />
-        ) : (
-          <SortableParts
-            className="columns-2 gap-3 lg:columns-3"
-            editable={editable}
-            group="illustrations"
-            itemClassName="mb-3 break-inside-avoid"
-            label={(file) => file.name}
-            parts={files}
-            project={project}
-            render={(file) => (
-              <Illustration
-                editable={editable}
-                file={file}
-                key={file.id}
-                project={project}
-              />
-            )}
-          >
-            {pending.map((upload) => (
-              <PendingTile
-                className="mb-3 aspect-[4/3] break-inside-avoid"
-                key={upload.id}
-                upload={upload}
-              />
-            ))}
-          </SortableParts>
-        )}
+        <SortableParts
+          className="grid grid-cols-2 gap-3 lg:grid-cols-3"
+          editable={editable}
+          group="illustrations"
+          handleClassName="bg-background/85 shadow-surface size-7 backdrop-blur-sm"
+          label={(file) => file.name}
+          parts={files}
+          project={project}
+          render={(file, sortable) => (
+            <Illustration
+              editable={editable}
+              file={file}
+              key={file.id}
+              onOpen={() => setOpen(files.indexOf(file))}
+              project={project}
+              sortable={sortable}
+            />
+          )}
+        >
+          {pending.map((upload) => (
+            <PendingTile
+              className="aspect-[4/3]"
+              key={upload.id}
+              upload={upload}
+            />
+          ))}
+          {editable && (
+            <AddPictures
+              className="aspect-[4/3]"
+              label="Add illustrations"
+              onDrive={adding.handleDrive}
+              onUpload={adding.handlePick}
+            />
+          )}
+        </SortableParts>
       </DropTarget>
+      <PictureViewer
+        at={open}
+        editable={editable}
+        files={files}
+        onAt={setOpen}
+        project={project}
+      />
       {editable && adding.dialogs}
     </BrandSection>
   );
@@ -433,7 +428,7 @@ function PatternTile({
         />
       )}
       <figcaption className="sr-only">{file.name}</figcaption>
-      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover/item:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
+      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover/item:opacity-100 focus-within:opacity-100 has-data-popup-open:opacity-100 pointer-coarse:opacity-100">
         {sortable.handle}
         <FileMenu
           className="bg-background/85 shadow-surface size-7 rounded-full backdrop-blur-sm"
@@ -529,70 +524,59 @@ export function PatternsSection({
   const background = backgrounds[backgroundAt] ?? PAPER;
   const scale = SCALES[scaleAt] ?? 160;
   const adding = useGalleryAdd(project, brand, "pattern");
-  const empty = files.length + pending.length === 0;
-
-  let body: ReactNode = (
-    <SortableParts
-      className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
-      editable={editable}
-      group="patterns"
-      handleClassName="bg-background/85 shadow-surface size-7 backdrop-blur-sm"
-      label={(file) => file.name}
-      parts={files}
-      project={project}
-      render={(file, sortable) => (
-        <PatternTile
-          background={background}
-          editable={editable}
-          file={file}
-          key={file.id}
-          project={project}
-          scale={scale}
-          sortable={sortable}
-        />
-      )}
-    >
-      {pending.map((upload) => (
-        <PendingTile className="aspect-[4/3]" key={upload.id} upload={upload} />
-      ))}
-    </SortableParts>
-  );
-  if (empty) {
-    body = (
-      <EmptyGallery
-        hint="Seamless tiles repeat here as they would in use."
-        onDrive={adding.handleDrive}
-        onUpload={adding.handlePick}
-        what="patterns"
-      />
-    );
-  }
 
   return (
     <BrandSection
       action={
-        <>
-          {files.length > 0 && (
-            <PatternControls
-              background={backgroundAt}
-              backgrounds={backgrounds}
-              onBackground={setBackgroundAt}
-              onScale={setScaleAt}
-              scaleAt={scaleAt}
-            />
-          )}
-          {editable && !empty && (
-            <AddButtons
-              onDrive={adding.handleDrive}
-              onUpload={adding.handlePick}
-            />
-          )}
-        </>
+        files.length > 0 && (
+          <PatternControls
+            background={backgroundAt}
+            backgrounds={backgrounds}
+            onBackground={setBackgroundAt}
+            onScale={setScaleAt}
+            scaleAt={scaleAt}
+          />
+        )
       }
       id="patterns"
     >
       <DropTarget onFiles={editable ? adding.add : undefined}>
-        {body}
+        <SortableParts
+          className="grid grid-cols-2 gap-3 lg:grid-cols-3"
+          editable={editable}
+          group="patterns"
+          handleClassName="bg-background/85 shadow-surface size-7 backdrop-blur-sm"
+          label={(file) => file.name}
+          parts={files}
+          project={project}
+          render={(file, sortable) => (
+            <PatternTile
+              background={background}
+              editable={editable}
+              file={file}
+              key={file.id}
+              project={project}
+              scale={scale}
+              sortable={sortable}
+            />
+          )}
+        >
+          {pending.map((upload) => (
+            <PendingTile
+              className="aspect-[4/3]"
+              key={upload.id}
+              upload={upload}
+            />
+          ))}
+          {editable && (
+            <AddPictures
+              className="aspect-[4/3]"
+              label="Add patterns"
+              onDrive={adding.handleDrive}
+              onUpload={adding.handlePick}
+            />
+          )}
+        </SortableParts>
       </DropTarget>
       {editable && adding.dialogs}
     </BrandSection>

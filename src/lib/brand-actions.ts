@@ -9,6 +9,7 @@ import type {
   BrandPart,
   BrandsContent,
   ColorFields,
+  FileFields,
   FontFields,
   HexColor,
   PartFields,
@@ -38,6 +39,9 @@ import { accounts, eventStore } from "@/lib/nostr";
 import type { Project } from "@/lib/project";
 import { publish } from "@/lib/publish";
 import { blobHashes } from "@/lib/sealed-files";
+
+/** How long a removal offers to be undone. */
+const UNDO_MS = 8000;
 
 function me(): string | undefined {
   return accounts.active?.pubkey;
@@ -140,7 +144,11 @@ export function createBrand(
   return { id, saved };
 }
 
-/** The brand as it is now, with the changes made. */
+/**
+ * The brand as it is now, with the changes made. Its guidelines are those
+ * of `prev`, or of the newest version, which `prev` then names, so a
+ * teammate's editor merges from the right place and keeps their edits.
+ */
 function saveBrand(
   project: Project,
   brand: Brand,
@@ -153,17 +161,23 @@ function saveBrand(
     return Promise.resolve(false);
   }
   return publish(
-    brandTemplate(project, { ...brandFields(latest), ...changes }, prev),
+    brandTemplate(
+      project,
+      { ...brandFields(latest), ...changes },
+      prev ?? latest.event
+    ),
     latest.event
   );
 }
 
+/** Changes the brand's details given, over its newest version, leaving the rest as they are. */
 export function updateBrand(
   project: Project,
   brand: Brand,
-  draft: BrandDraft
+  changes: Partial<BrandDraft>
 ): Promise<boolean> {
-  const fields = cleanDraft(draft);
+  const latest = currentBrands(project).byId.get(brand.id);
+  const fields = latest && cleanDraft({ ...brandFields(latest), ...changes });
   return fields ? saveBrand(project, brand, fields) : Promise.resolve(false);
 }
 
@@ -222,15 +236,26 @@ function stored(part: BrandPart): PartFields {
   return fields;
 }
 
+type Changes<T> = Partial<Omit<T, "part" | "id" | "brand">>;
+
+/** What can change about a part, whichever kind it is. */
+export type PartChanges = Changes<ColorFields> &
+  Changes<FontFields> &
+  Changes<FileFields>;
+
+function partsOf(project: Project, brand: string): BrandPart[] {
+  const { colors, fonts, files } =
+    currentBrands(project).parts.get(brand) ?? NO_PARTS;
+  return [...colors, ...fonts, ...files];
+}
+
 /** The part as it is now, with the changes made. */
-export function updatePart<T extends BrandPart>(
+export function updatePart(
   project: Project,
-  part: T,
-  changes: Partial<PartFields>
+  part: BrandPart,
+  changes: PartChanges
 ): Promise<boolean> {
-  const content = currentBrands(project);
-  const parts = content.parts.get(part.brand) ?? NO_PARTS;
-  const latest = [...parts.colors, ...parts.fonts, ...parts.files].find(
+  const latest = partsOf(project, part.brand).find(
     (item) => item.id === part.id
   );
   if (!latest) {
@@ -242,23 +267,58 @@ export function updatePart<T extends BrandPart>(
   );
 }
 
-/** Puts the part between two others of its kind, either of which may be missing at an end. */
-export function movePart(
+/**
+ * Puts the part where it now sits among `ordered`, ranked between its new
+ * neighbors, so only it changes. Neighbors ranked alike leave no room
+ * between them: then the whole run is ranked again, in order.
+ */
+export function placePart(
   project: Project,
-  part: BrandPart,
-  before?: BrandPart,
-  after?: BrandPart
-): Promise<boolean> {
-  return updatePart(project, part, {
-    rank: rankBetween(before?.rank, after?.rank),
-  });
+  ordered: BrandPart[],
+  part: BrandPart
+): void {
+  const at = ordered.indexOf(part);
+  const before = ordered[at - 1];
+  const after = ordered[at + 1];
+  if (!(before && after && before.rank >= after.rank)) {
+    updatePart(project, part, {
+      rank: rankBetween(before?.rank, after?.rank),
+    });
+    return;
+  }
+  for (const [index, item] of ordered.entries()) {
+    if (item.rank !== index + 1) {
+      updatePart(project, item, { rank: index + 1 });
+    }
+  }
 }
 
-/** Deletes the part for everyone; your own files leave the servers too. */
+/** What a removal says it removed. */
+const REMOVED: Record<BrandPart["part"], string> = {
+  color: "Color removed",
+  file: "File removed",
+  font: "Typeface removed",
+};
+
+/** Puts removed parts back as they were, each winning over its tombstone. */
+function restore(project: Project, parts: BrandPart[]): void {
+  const pubkey = me();
+  for (const part of parts) {
+    const tombstone = pubkey
+      ? eventStore.getReplaceable(BRAND_PART_KIND, pubkey, part.id)
+      : undefined;
+    publish(partTemplate(project, stored(part)), tombstone ?? part.event);
+  }
+}
+
+/**
+ * Deletes the part for everyone, a typeface with its files, with a moment
+ * to undo it. Your own files leave the servers once that moment has passed;
+ * teammates' apps wait a good while longer before cleaning up after theirs.
+ */
 export async function removePart(
   project: Project,
-  part: BrandPart,
-  { undoable = true } = {}
+  part: BrandPart
 ): Promise<boolean> {
   const files =
     part.part === "font"
@@ -273,19 +333,31 @@ export async function removePart(
       publish(partTombstoneTemplate(project, item), item.event)
     )
   );
-  forgetOwnBlobs(gone.filter((_, index) => saved[index]));
-  // Colors and library typefaces come back as they were; files are gone for good.
-  if (saved[0] && undoable && part.part !== "file" && files.length === 0) {
-    toast.success(
-      part.part === "color" ? "Color removed" : "Typeface removed",
-      {
-        action: {
-          label: "Undo",
-          onClick: () => publish(partTemplate(project, stored(part))),
-        },
-      }
-    );
+  const removed = gone.filter((_, index) => saved[index]);
+  if (removed.length === 0) {
+    return false;
   }
+  // Your files leave the servers once the toast goes without an undo.
+  let undone = false;
+  let settled = false;
+  const settle = () => {
+    if (!(settled || undone)) {
+      forgetOwnBlobs(removed);
+    }
+    settled = true;
+  };
+  toast.success(REMOVED[part.part], {
+    action: {
+      label: "Undo",
+      onClick: () => {
+        undone = true;
+        restore(project, removed);
+      },
+    },
+    duration: UNDO_MS,
+    onAutoClose: settle,
+    onDismiss: settle,
+  });
   return saved.every(Boolean);
 }
 

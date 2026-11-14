@@ -1,10 +1,15 @@
 import { useEffect } from "react";
 
 import type { BrandFile, BrandFont } from "@/lib/brands";
-import { cssFamily, faceOfFile, filesIn, libraryFontUrl } from "@/lib/brands";
-import { mimeOf } from "@/lib/drive";
+import {
+  cssWeight,
+  fileFace,
+  filesIn,
+  libraryFontUrl,
+  uploadedFamily,
+} from "@/lib/brands";
 import type { Sealed } from "@/lib/drive-files";
-import { fetchSealed } from "@/lib/drive-files";
+import { fetchSealed, fileSource } from "@/lib/drive-files";
 
 /**
  * A brand's files as the browser opens them, and its typefaces drawn on the
@@ -12,10 +17,6 @@ import { fetchSealed } from "@/lib/drive-files";
  * opened and added as font faces. Each loads once a visit; text set in them
  * redraws on its own once they arrive.
  */
-
-export function fileSource(file: BrandFile): Sealed {
-  return { blob: file.blob, key: file.key, type: mimeOf(file) };
-}
 
 /** What a tile shows of the file: its thumbnail, else the file itself. */
 export function pictureSource(file: BrandFile): Sealed {
@@ -31,8 +32,14 @@ export function fetchBrandFile(file: BrandFile): Promise<Blob> {
 
 /** Stylesheets on the page, by address, and whether the library had them. */
 const sheets = new Map<string, Promise<boolean>>();
-/** Uploaded font files added as faces, or on their way, by blob. */
+/** Uploaded font files added as faces, or on their way, by blob and face. */
 const faces = new Set<string>();
+
+/** A file as a face: set again in another weight or style, it's added again. */
+function faceKey(file: BrandFile): string {
+  const face = fileFace(file);
+  return `${file.blob.hash}:${face.weight}:${face.style}`;
+}
 
 /** Adds a stylesheet to the page; resolves with whether it loaded. */
 function addSheet(url: string): Promise<boolean> {
@@ -70,24 +77,23 @@ export function loadLibraryFont(
 
 /** Fetches the files and adds each as a face of the typeface's own family. */
 async function addFaces(font: BrandFont, files: BrandFile[]): Promise<void> {
-  // The family as cssFamily names it, without its quotes and fallbacks.
-  const family = cssFamily(font).split('"')[1] ?? font.family;
+  const family = uploadedFamily(font);
   await Promise.all(
     files.map(async (file) => {
-      faces.add(file.blob.hash);
+      const key = faceKey(file);
+      faces.add(key);
       try {
         const blob = await fetchBrandFile(file);
         const data = await blob.arrayBuffer();
-        const { style, weight } = faceOfFile(file.name);
-        const face = new FontFace(family, data, {
+        const face = fileFace(file);
+        const loaded = await new FontFace(family, data, {
           display: "swap",
-          style,
-          weight: String(weight),
-        });
-        document.fonts.add(await face.load());
+          style: face.style,
+          weight: cssWeight(face),
+        }).load();
+        document.fonts.add(loaded);
       } catch {
-        // Tried again on the next visit; the others still show.
-        faces.delete(file.blob.hash);
+        // Left out until the page is loaded again; the others still show.
       }
     })
   );
@@ -111,7 +117,7 @@ export function useBrandFonts(fonts: BrandFont[], files: BrandFile[]): void {
   useEffect(() => {
     for (const font of fonts) {
       const fresh = filesIn(files, { font: font.id, kind: "font" }).filter(
-        (file) => !faces.has(file.blob.hash)
+        (file) => !faces.has(faceKey(file))
       );
       if (font.source === "file" && fresh.length > 0) {
         addFaces(font, fresh);

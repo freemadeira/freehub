@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { BadgeCheckIcon, ZapIcon } from "lucide-react";
+import { ZapIcon } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 
 import { BrandCover, BrandMark } from "@/features/branding/brand-card";
@@ -108,13 +108,6 @@ function NostrProfile({ kit }: { kit: Kit }) {
             style={kit.heading}
           >
             {brand.title}
-            {host && (
-              <BadgeCheckIcon
-                aria-hidden
-                className="size-3.5 shrink-0"
-                style={{ color: kit.primary === PAPER ? INK : kit.primary }}
-              />
-            )}
           </span>
           <span className="text-muted-foreground truncate text-xs">
             {host || kit.handle}

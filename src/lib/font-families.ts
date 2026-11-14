@@ -91,15 +91,6 @@ export async function loadFamilies(): Promise<ListedFamily[]> {
   }
 }
 
-/** The family the name is, however it's written. */
-export function findFamily(
-  families: ListedFamily[],
-  typed: string
-): ListedFamily | undefined {
-  const key = fold(typed);
-  return key ? families.find((family) => family.key === key) : undefined;
-}
-
 /** Edits from one to the other, counted up to one past the most allowed. */
 function distance(a: string, b: string, most: number): number {
   if (Math.abs(a.length - b.length) > most) {

@@ -1,7 +1,7 @@
 import { cn } from "cn";
-import { SearchIcon, Trash2Icon, UploadIcon } from "lucide-react";
-import type { FormEvent } from "react";
-import { useEffect, useId, useState } from "react";
+import { SearchIcon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
+import type { FormEvent, KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -14,20 +14,37 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFilePicker } from "@/features/branding/brand-parts";
 import { addFont, removePart, updatePart } from "@/lib/brand-actions";
 import { loadLibraryFont } from "@/lib/brand-files";
 import { uploadToBrand } from "@/lib/brand-upload";
-import type { Brand, BrandFont, FontSource } from "@/lib/brands";
+import type {
+  Brand,
+  BrandFile,
+  BrandFont,
+  Face,
+  FontSource,
+} from "@/lib/brands";
 import {
   cssFamily,
   faceOfFile,
+  fileFace,
+  filesIn,
   FONT_ROLES,
+  FONT_WEIGHTS,
   MAX_FONT_FAMILY,
   MAX_FONT_FILES,
   roleParts,
+  VARIABLE,
   WEIGHT_NAMES,
 } from "@/lib/brands";
 import type { ListedFamily } from "@/lib/font-families";
@@ -38,6 +55,16 @@ import { plural } from "@/lib/utils";
 /** A library family as the page draws it, with a sans-serif while it loads. */
 function libraryFamily(family: string): string {
   return cssFamily({ family, id: "", source: "library" });
+}
+
+/** Files a typeface takes. */
+export const FONT_ACCEPT = ".woff2,.woff,.otf,.ttf";
+
+/** Every weight a file can be, the variable one first. */
+const FACE_WEIGHTS = [VARIABLE, ...FONT_WEIGHTS];
+
+function weightName(weight: number): string {
+  return weight === VARIABLE ? "Variable" : `${weight} ${WEIGHT_NAMES[weight]}`;
 }
 
 /** Weights a new library family starts with, as far as it has them. */
@@ -200,6 +227,18 @@ function LibraryPicker({
   const { families, failed } = useFamilies();
   const [query, setQuery] = useState("");
   const found = families ? searchFamilies(families, query) : [];
+  const list = useRef<HTMLUListElement>(null);
+  /** Moves focus through the results with the arrow keys, from the search field too. */
+  const move = (event: KeyboardEvent<HTMLElement>) => {
+    const buttons = [...(list.current?.querySelectorAll("button") ?? [])];
+    const at = buttons.indexOf(event.target as HTMLButtonElement);
+    const by = { ArrowDown: 1, ArrowUp: -1 }[event.key];
+    if (by === undefined) {
+      return;
+    }
+    event.preventDefault();
+    buttons[Math.max(0, Math.min(buttons.length - 1, at + by))]?.focus();
+  };
   return (
     <div className="flex flex-col gap-2">
       <Label className="sr-only" htmlFor={`${id}-search`}>
@@ -216,6 +255,18 @@ function LibraryPicker({
           className="pl-9"
           id={`${id}-search`}
           onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter picks the best match rather than adding what was picked before.
+            const [best] = found;
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              if (best) {
+                onPick(best);
+              }
+            } else {
+              move(event);
+            }
+          }}
           placeholder="Search, like Inter, serif or mono"
           value={query}
         />
@@ -226,13 +277,14 @@ function LibraryPicker({
           families={families}
           found={found.length}
         />
-        <ul aria-label="Typefaces" className="flex flex-col">
+        <ul aria-label="Typefaces" className="flex flex-col" ref={list}>
           {found.map((family) => (
             <li key={family.family}>
               <button
                 aria-pressed={picked?.family === family.family}
                 className="hover:bg-foreground/5 aria-pressed:bg-card aria-pressed:shadow-surface focus-visible:ring-ring/50 flex h-9 w-full items-center justify-between gap-3 rounded-lg px-3 text-left text-sm transition-colors duration-100 outline-none focus-visible:ring-3"
                 onClick={() => onPick(family)}
+                onKeyDown={move}
                 type="button"
               >
                 <span className="truncate">{family.family}</span>
@@ -267,7 +319,7 @@ function NewFontForm({ project, brand, onDone }: NewFontProps) {
   const picker = useFilePicker(
     (chosen) =>
       setFiles((before) => [...before, ...chosen].slice(0, MAX_FONT_FILES)),
-    { accept: ".woff2,.woff,.otf,.ttf" }
+    { accept: FONT_ACCEPT }
   );
 
   useEffect(() => {
@@ -366,14 +418,29 @@ function NewFontForm({ project, brand, onDone }: NewFontProps) {
                   const face = faceOfFile(file.name);
                   return (
                     <li
-                      className="flex h-8 items-center justify-between gap-3 rounded-lg px-3"
+                      className="flex h-8 items-center gap-3 rounded-lg pr-1 pl-3"
                       key={`${file.name}-${index}`}
                     >
-                      <span className="truncate">{file.name}</span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {file.name}
+                      </span>
                       <span className="text-muted-foreground shrink-0 text-xs">
-                        {WEIGHT_NAMES[face.weight]}
+                        {weightName(face.weight)}
                         {face.style === "italic" ? " Italic" : ""}
                       </span>
+                      <Button
+                        aria-label={`Leave out ${file.name}`}
+                        onClick={() =>
+                          setFiles((before) =>
+                            before.filter((_, at) => at !== index)
+                          )
+                        }
+                        size="icon-xs"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <XIcon />
+                      </Button>
                     </li>
                   );
                 })}
@@ -410,18 +477,137 @@ function NewFontForm({ project, brand, onDone }: NewFontProps) {
 }
 
 /** What a typeface is for, and which of the library's weights it's used in. */
+/** One uploaded file of a typeface: the weight and style it draws, or taken off. */
+function FontFileRow({ project, file }: { project: Project; file: BrandFile }) {
+  const face = fileFace(file);
+  const save = (change: Partial<Face>) =>
+    updatePart(project, file, { face: { ...face, ...change } });
+  return (
+    <li className="flex items-center gap-2 py-1">
+      <span className="min-w-0 flex-1 truncate text-sm" title={file.name}>
+        {file.name}
+      </span>
+      <Select
+        items={FACE_WEIGHTS.map((weight) => ({
+          label: weightName(weight),
+          value: String(weight),
+        }))}
+        onValueChange={(next: string | null) =>
+          next !== null && save({ weight: Number(next) })
+        }
+        value={String(face.weight)}
+      >
+        <SelectTrigger
+          aria-label={`Weight of ${file.name}`}
+          className="h-8 w-36"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {FACE_WEIGHTS.map((weight) => (
+            <SelectItem key={weight} value={String(weight)}>
+              {weightName(weight)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        aria-label={`Italic: ${file.name}`}
+        aria-pressed={face.style === "italic"}
+        className="aria-pressed:bg-foreground aria-pressed:text-background italic"
+        onClick={() =>
+          save({ style: face.style === "italic" ? "normal" : "italic" })
+        }
+        size="icon-sm"
+        title="Italic"
+        type="button"
+        variant="ghost"
+      >
+        I
+      </Button>
+      <Button
+        aria-label={`Remove ${file.name}`}
+        onClick={() => removePart(project, file)}
+        size="icon-sm"
+        type="button"
+        variant="ghost"
+      >
+        <Trash2Icon />
+      </Button>
+    </li>
+  );
+}
+
+/** An uploaded typeface's files, each with its face, and a way to add more. */
+function FontFilesField({
+  project,
+  brand,
+  font,
+  files,
+}: {
+  project: Project;
+  brand: Brand;
+  font: BrandFont;
+  files: BrandFile[];
+}) {
+  const own = filesIn(files, { font: font.id, kind: "font" });
+  const picker = useFilePicker(
+    (picked) =>
+      uploadToBrand(project, brand, { font: font.id, kind: "font" }, picked),
+    { accept: FONT_ACCEPT }
+  );
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-sm font-medium">Files</span>
+      {own.length > 0 && (
+        <ul className="bg-muted/50 flex max-h-56 flex-col overflow-y-auto rounded-xl px-3 py-1.5">
+          {own.map((file) => (
+            <FontFileRow file={file} key={file.id} project={project} />
+          ))}
+        </ul>
+      )}
+      {own.length < MAX_FONT_FILES && (
+        <Button
+          className="self-start"
+          onClick={() => picker.open()}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          <UploadIcon />
+          Add files
+        </Button>
+      )}
+      {picker.input}
+    </div>
+  );
+}
+
 function EditFontForm({
   project,
+  brand,
   font,
-  available,
+  files,
   onDone,
 }: {
   project: Project;
+  brand: Brand;
   font: BrandFont;
-  /** The weights the library has of it, for library typefaces. */
-  available?: number[];
+  /** The brand's files, for an uploaded typeface's own. */
+  files: BrandFile[];
   onDone: () => void;
 }) {
+  const { families } = useFamilies();
+  const listed =
+    font.source === "library"
+      ? families?.find((item) => item.family === font.family)
+      : undefined;
+  // What the library has of it, with any weights kept that it no longer lists.
+  const available = listed
+    ? [...new Set([...listed.weights, ...font.weights])].toSorted(
+        (x, y) => x - y
+      )
+    : undefined;
   const [role, setRole] = useState(font.role);
   const [weights, setWeights] = useState(font.weights);
   return (
@@ -435,11 +621,7 @@ function EditFontForm({
       }}
     >
       <DialogHeader>
-        <DialogTitle
-          style={{
-            fontFamily: cssFamily(font),
-          }}
-        >
+        <DialogTitle style={{ fontFamily: cssFamily(font) }}>
           {font.family}
         </DialogTitle>
       </DialogHeader>
@@ -449,6 +631,14 @@ function EditFontForm({
           family={font.family}
           onChange={setWeights}
           weights={weights}
+        />
+      )}
+      {font.source === "file" && (
+        <FontFilesField
+          brand={brand}
+          files={files}
+          font={font}
+          project={project}
         />
       )}
       <RoleField onChange={setRole} role={role} />
@@ -479,26 +669,18 @@ export function FontDialog({
   project,
   brand,
   font,
+  files,
   open,
   onOpenChange,
 }: {
   project: Project;
   brand: Brand;
   font?: BrandFont;
+  /** The brand's files, for an uploaded typeface's own. */
+  files: BrandFile[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { families } = useFamilies();
-  const listed =
-    font?.source === "library"
-      ? families?.find((item) => item.family === font.family)
-      : undefined;
-  const available = font
-    ? [...new Set([...(listed?.weights ?? []), ...font.weights])].toSorted(
-        (x, y) => x - y
-      )
-    : undefined;
-
   const done = () => onOpenChange(false);
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -508,7 +690,8 @@ export function FontDialog({
       >
         {font ? (
           <EditFontForm
-            available={available}
+            brand={brand}
+            files={files}
             font={font}
             key={font.id}
             onDone={done}

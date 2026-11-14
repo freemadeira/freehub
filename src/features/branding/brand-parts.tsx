@@ -1,5 +1,7 @@
 import { cn } from "cn";
 import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
   CodeIcon,
   DownloadIcon,
   EllipsisIcon,
@@ -13,8 +15,10 @@ import type {
   DragEvent,
   ReactNode,
 } from "react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,12 +28,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { removePart } from "@/lib/brand-actions";
-import { fileSource, pictureSource } from "@/lib/brand-files";
+import { pictureSource } from "@/lib/brand-files";
 import { copySvg, downloadBrandFile, isSvg } from "@/lib/brand-kit";
 import type { BrandUpload } from "@/lib/brand-upload";
 import type { BrandFile } from "@/lib/brands";
 import { formatOf } from "@/lib/brands";
-import { useOpened } from "@/lib/drive-files";
+import { fileSource, useOpened } from "@/lib/drive-files";
 import type { Project } from "@/lib/project";
 
 /** The chapters of a brand's page, in order, with the ids their sections take. */
@@ -63,7 +67,7 @@ export function BrandSection({
   return (
     <section
       aria-labelledby={`${id}-title`}
-      className="flex scroll-mt-20 flex-col gap-4"
+      className="flex scroll-mt-28 flex-col gap-4 lg:scroll-mt-20"
       id={id}
     >
       <div className="flex min-h-9 flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -184,13 +188,9 @@ export function useFilePicker(
  */
 export function AddTile({
   label,
-  hint,
   className,
   ...props
-}: ComponentProps<"button"> & {
-  label: string;
-  hint?: string;
-}) {
+}: ComponentProps<"button"> & { label: string }) {
   return (
     <button
       className={cn(
@@ -202,27 +202,83 @@ export function AddTile({
     >
       <PlusIcon aria-hidden className="size-4" />
       <span className="text-foreground font-medium">{label}</span>
-      {hint && <span className="max-w-56 text-xs text-pretty">{hint}</span>}
     </button>
   );
 }
 
-/** A brand file's picture, opened from the servers; the original for crisp vectors and small images. */
+/** Originals bigger than this show as their thumbnail, unless they're vectors. */
+const MAX_ORIGINAL = 5 * 1024 * 1024;
+
+/** Pictures looked at up close show themselves up to this size. */
+const VIEWER_ORIGINAL = 40 * 1024 * 1024;
+
+/** SVGs opened before, by object URL, as data URLs. */
+const svgUrls = new Map<string, string>();
+
+/**
+ * An opened SVG as a data URL. Shown from an object URL, it would open in
+ * the app's own origin from "Open image in new tab", scripts and all; a data
+ * URL opens in an origin of its own.
+ */
+function useSvgDataUrl(url: string | undefined): string | undefined {
+  // Kept in state, not read from the cache while rendering: the compiler
+  // takes renders to be pure, and would keep showing what it read first.
+  const [read, setRead] = useState<{ from: string; data: string }>();
+  useEffect(() => {
+    if (!url) {
+      return;
+    }
+    let live = true;
+    const open = async () => {
+      try {
+        let data = svgUrls.get(url);
+        if (!data) {
+          const response = await fetch(url);
+          data = `data:image/svg+xml,${encodeURIComponent(await response.text())}`;
+          svgUrls.set(url, data);
+        }
+        if (live) {
+          setRead({ data, from: url });
+        }
+      } catch {
+        // Not shown; the placeholder stays.
+      }
+    };
+    open();
+    return () => {
+      live = false;
+    };
+  }, [url]);
+  return url && read?.from === url ? read.data : undefined;
+}
+
+/**
+ * A brand file's picture, opened from the servers: the file itself for
+ * vectors and small images when it's shown large, its thumbnail otherwise.
+ */
 export function BrandPicture({
   file,
   original = false,
+  maxOriginal = MAX_ORIGINAL,
   className,
   style,
 }: {
   file: BrandFile;
   /** The file itself rather than its thumbnail, like a logo shown large. */
   original?: boolean;
+  /** How big an original may be to show itself, in bytes. */
+  maxOriginal?: number;
   className?: string;
   style?: CSSProperties;
 }) {
-  const { url, error } = useOpened(
-    original ? fileSource(file) : pictureSource(file)
+  const svg = isSvg(file);
+  const whole = original && (svg || file.size <= maxOriginal);
+  const source = whole ? fileSource(file) : pictureSource(file);
+  const { url, error } = useOpened(source);
+  const svgUrl = useSvgDataUrl(
+    source.type === "image/svg+xml" ? url : undefined
   );
+  const shown = source.type === "image/svg+xml" ? svgUrl : url;
   if (error) {
     return (
       <span
@@ -236,7 +292,7 @@ export function BrandPicture({
       </span>
     );
   }
-  if (!url) {
+  if (!shown) {
     return (
       <span
         aria-busy
@@ -250,7 +306,7 @@ export function BrandPicture({
       className={cn("object-contain", className)}
       draggable={false}
       height={file.height}
-      src={url}
+      src={shown}
       style={style}
       width={file.width}
     />
@@ -299,6 +355,7 @@ export function FileMenu({
   editable,
   className,
   children,
+  edits,
 }: {
   project: Project;
   file: BrandFile;
@@ -309,6 +366,8 @@ export function FileMenu({
   className?: string;
   /** What the button shows; three dots without. */
   children?: ReactNode;
+  /** More changes to offer whoever can edit, before taking it off. */
+  edits?: ReactNode;
 }) {
   return (
     <DropdownMenu>
@@ -337,6 +396,7 @@ export function FileMenu({
         {editable && (
           <>
             <DropdownMenuSeparator />
+            {edits}
             <DropdownMenuItem
               onClick={() => removePart(project, file)}
               variant="destructive"
@@ -348,5 +408,100 @@ export function FileMenu({
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * Pictures looked at up close, one at a time: the file itself, what it
+ * shows, and the arrow keys to go through the others.
+ */
+export function PictureViewer({
+  project,
+  files,
+  at,
+  onAt,
+  editable,
+}: {
+  project: Project;
+  files: BrandFile[];
+  /** Which one is open, if any. */
+  at?: number;
+  onAt: (at?: number) => void;
+  editable: boolean;
+}) {
+  const file = at === undefined ? undefined : files[at];
+  const step = (by: number) => {
+    if (at !== undefined && files.length > 1) {
+      onAt((at + by + files.length) % files.length);
+    }
+  };
+  return (
+    <Dialog
+      onOpenChange={(open) => {
+        if (!open) {
+          onAt();
+        }
+      }}
+      open={file !== undefined}
+    >
+      <DialogContent
+        className="gap-3 sm:max-w-4xl"
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") {
+            step(-1);
+          } else if (event.key === "ArrowRight") {
+            step(1);
+          }
+        }}
+      >
+        {file && (
+          <>
+            <DialogTitle className="truncate pr-10">
+              {file.caption || file.name}
+            </DialogTitle>
+            <div className="bg-muted flex min-h-64 items-center justify-center rounded-xl p-4">
+              <BrandPicture
+                className="max-h-[65dvh] w-auto max-w-full"
+                file={file}
+                key={file.id}
+                maxOriginal={VIEWER_ORIGINAL}
+                original
+              />
+            </div>
+            <div className="flex items-center justify-end gap-1">
+              {files.length > 1 && (
+                <>
+                  <Button
+                    aria-label="Previous"
+                    onClick={() => step(-1)}
+                    size="icon-sm"
+                    variant="ghost"
+                  >
+                    <ChevronLeftIcon />
+                  </Button>
+                  <span className="text-muted-foreground px-1 text-xs tabular-nums">
+                    {(at ?? 0) + 1} / {files.length}
+                  </span>
+                  <Button
+                    aria-label="Next"
+                    onClick={() => step(1)}
+                    size="icon-sm"
+                    variant="ghost"
+                  >
+                    <ChevronRightIcon />
+                  </Button>
+                </>
+              )}
+              <FileMenu
+                className="hover:bg-muted size-8 rounded-full"
+                editable={editable}
+                file={file}
+                project={project}
+              />
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

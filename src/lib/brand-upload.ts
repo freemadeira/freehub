@@ -7,16 +7,23 @@ import { currentBrands } from "@/lib/brand-actions";
 import type { Brand, BrandPlace, FileFields } from "@/lib/brands";
 import {
   clean,
+  faceOfFile,
   filesIn,
   MAX_CAPTION,
-  MAX_FILE_NAME,
   MAX_FONT_FILES,
   MAX_SLOT_FILES,
   NO_PARTS,
   partTemplate,
   placeFit,
+  sameBrandPlace,
 } from "@/lib/brands";
-import { fileKind, MAX_DRIVE_FILE_BYTES, mimeOf, TOO_BIG } from "@/lib/drive";
+import {
+  cleanName,
+  fileKind,
+  MAX_DRIVE_FILE_BYTES,
+  mimeOf,
+  TOO_BIG,
+} from "@/lib/drive";
 import { newId, rankBetween } from "@/lib/model";
 import { accounts } from "@/lib/nostr";
 import type { Project } from "@/lib/project";
@@ -37,6 +44,8 @@ export interface BrandUpload {
   brand: string;
   place: BrandPlace;
   name: string;
+  /** Where it'll sit among the place's files. */
+  rank: number;
   /** How much has gone, 0 to 1. */
   progress: number;
   /** A local picture of an image, to show before it's uploaded. */
@@ -117,6 +126,19 @@ function done(): void {
   waiting.shift()?.();
 }
 
+/** Whether the brand, and the typeface for a font file, are still there to take the file. */
+function stillThere(project: Project, item: BrandUpload): boolean {
+  const content = currentBrands(project);
+  const { place } = item;
+  return (
+    content.byId.has(item.brand) &&
+    (place.kind !== "font" ||
+      (content.parts.get(item.brand)?.fonts ?? []).some(
+        (font) => font.id === place.font
+      ))
+  );
+}
+
 /** Takes blobs nothing points at off the servers again. */
 async function discard(hashes: string[]): Promise<void> {
   try {
@@ -131,7 +153,7 @@ async function send(
   project: Project,
   item: BrandUpload,
   file: File,
-  fields: { rank: number; caption: string }
+  fields: { caption: string }
 ): Promise<void> {
   const creator = accounts.active?.pubkey;
   if (!creator) {
@@ -170,19 +192,24 @@ async function send(
         thumbBlob = undefined;
       }
     }
+    // The brand, or the typeface it goes with, may have gone meanwhile.
+    if (!stillThere(project, item)) {
+      throw new Error("What it was going into was deleted.");
+    }
     const part: FileFields = {
       blob: { hash, nonce },
       brand: item.brand,
       caption: fields.caption,
       createdAt: unixNow(),
       creator,
+      face: item.place.kind === "font" ? faceOfFile(item.name) : undefined,
       height: measured.height,
       id: newId(),
       key,
       name: item.name,
       part: "file",
       place: item.place,
-      rank: fields.rank,
+      rank: item.rank,
       size: file.size,
       thumb: thumbBlob,
       type,
@@ -211,8 +238,7 @@ function room(
     filesIn(files, place).length +
     uploads.filter(
       (upload) =>
-        upload.brand === brand.id &&
-        JSON.stringify(upload.place) === JSON.stringify(place)
+        upload.brand === brand.id && sameBrandPlace(upload.place, place)
     ).length;
   if (place.kind === "logo") {
     return {
@@ -260,32 +286,41 @@ export async function uploadToBrand(
     return false;
   }
   const { files } = currentBrands(project).parts.get(brand.id) ?? NO_PARTS;
-  let rank = filesIn(files, place).at(-1)?.rank;
+  // After the files there, and after those still on their way.
+  let rank = Math.max(
+    filesIn(files, place).at(-1)?.rank ?? 0,
+    ...uploads
+      .filter(
+        (upload) =>
+          upload.brand === brand.id && sameBrandPlace(upload.place, place)
+      )
+      .map((upload) => upload.rank)
+  );
   const queued = taken.map((file) => {
     rank = rankBetween(rank);
     const type = mimeOf(file);
     const item: BrandUpload = {
       brand: brand.id,
       id: crypto.randomUUID(),
-      name: clean(file.name, MAX_FILE_NAME) || "Untitled",
+      name: cleanName(file.name) || "Untitled",
       place,
       preview:
         type.startsWith("image/") && file.size <= MAX_PREVIEW_BYTES
           ? URL.createObjectURL(file)
           : undefined,
       progress: 0,
+      rank,
     };
-    return { file, item, rank };
+    return { file, item };
   });
   uploads = [...uploads, ...queued.map(({ item }) => item)];
   emit();
   const results = await Promise.all(
-    queued.map(async ({ file, item, rank: at }) => {
+    queued.map(async ({ file, item }) => {
       await turn();
       try {
         await send(project, item, file, {
           caption: clean(caption, MAX_CAPTION),
-          rank: at,
         });
         return true;
       } catch (error) {

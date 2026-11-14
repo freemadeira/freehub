@@ -193,7 +193,9 @@ function hold(hash: string): () => void {
   };
 }
 
-export function fileSource(file: DriveFile): Sealed {
+export function fileSource(
+  file: Pick<DriveFile, "blob" | "key" | "name" | "type">
+): Sealed {
   return { blob: file.blob, key: file.key, type: mimeOf(file) };
 }
 

@@ -2,13 +2,14 @@ import { cn } from "cn";
 import {
   CheckIcon,
   ChevronDownIcon,
+  PencilIcon,
   PipetteIcon,
   Trash2Icon,
 } from "lucide-react";
 import type { FormEvent, ReactElement } from "react";
 import { useId, useState } from "react";
 
-import { copyText } from "@/components/copy";
+import { copyAndTell, copyText } from "@/components/copy";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -30,6 +31,7 @@ import { addColor, removePart, updatePart } from "@/lib/brand-actions";
 import type { Brand, BrandColor, BrandParts, HexColor } from "@/lib/brands";
 import {
   brandTokens,
+  clean,
   contrast,
   contrastGrade,
   formatCmyk,
@@ -101,6 +103,9 @@ function ContrastChip({ color, text }: { color: HexColor; text: HexColor }) {
         style={{ background: color, color: text }}
       >
         Aa
+      </span>
+      <span className="sr-only">
+        {text === PAPER ? "White text" : "Black text"}
       </span>
       <span className="text-muted-foreground tabular-nums">
         {ratio.toFixed(1)}
@@ -287,45 +292,49 @@ function Swatch({
       >
         <button
           aria-label={`Copy ${name}’s hex`}
-          className="focus-visible:ring-ring/50 absolute inset-0 outline-none focus-visible:ring-3 focus-visible:ring-inset"
+          className="focus-visible:ring-ring/50 absolute inset-0 cursor-copy outline-none focus-visible:ring-3 focus-visible:ring-inset"
           onClick={async () => {
             if (await copyText(color.hex.toUpperCase())) {
               setCopied(true);
               setTimeout(() => setCopied(false), 1200);
             }
           }}
+          title="Copy hex"
           type="button"
         />
-        <span className="pointer-events-none relative font-mono text-xs opacity-75">
-          {copied ? "Copied" : color.hex.toUpperCase()}
+        <span
+          aria-live="polite"
+          className="pointer-events-none relative text-xs font-medium"
+        >
+          {copied ? "Copied" : ""}
         </span>
-        {sortable.handle && (
-          <span className="absolute top-2.5 right-2.5 opacity-0 transition-opacity duration-150 group-hover/swatch:opacity-80 focus-within:opacity-100 pointer-coarse:opacity-80">
+        {editable && (
+          <span className="absolute top-2.5 right-2.5 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/swatch:opacity-90 focus-within:opacity-100 has-data-popup-open:opacity-100 pointer-coarse:opacity-90">
+            <ColorPopover
+              color={color}
+              onRemove={() => removePart(project, color)}
+              onSave={(next, hex) =>
+                updatePart(project, color, {
+                  hex,
+                  name: clean(next, MAX_COLOR_NAME),
+                })
+              }
+              trigger={
+                <button
+                  aria-label={`Edit ${name}`}
+                  className="focus-visible:ring-ring/50 flex size-7 items-center justify-center rounded-full outline-none hover:bg-current/10 focus-visible:ring-3"
+                  type="button"
+                >
+                  <PencilIcon aria-hidden className="size-4" />
+                </button>
+              }
+            />
             {sortable.handle}
           </span>
         )}
       </div>
       <div className="@container flex flex-1 flex-col gap-3 p-4">
-        {editable ? (
-          <ColorPopover
-            color={color}
-            onRemove={() => removePart(project, color)}
-            onSave={(next, hex) =>
-              updatePart(project, color, { hex, name: next })
-            }
-            trigger={
-              <button
-                className="hover:bg-foreground/5 focus-visible:ring-ring/50 -mx-1.5 -my-1 truncate rounded-md px-1.5 py-1 text-left font-medium transition-colors duration-150 ease-out outline-none focus-visible:ring-3"
-                title="Edit color"
-                type="button"
-              >
-                {name}
-              </button>
-            }
-          />
-        ) : (
-          <h3 className="truncate font-medium">{name}</h3>
-        )}
+        <h3 className="truncate font-medium">{name}</h3>
         <div className="flex flex-col">
           <ColorValue label="Hex" value={color.hex.toUpperCase()} />
           <ColorValue label="RGB" value={formatRgb(color.hex)} />
@@ -372,7 +381,10 @@ export function ColorsSection({
                 <DropdownMenuItem
                   key={format}
                   onClick={() =>
-                    copyText(brandTokens(brand, colors, fonts, format))
+                    copyAndTell(
+                      brandTokens(brand, colors, fonts, format),
+                      `${label} copied`
+                    )
                   }
                 >
                   {label}
@@ -405,20 +417,7 @@ export function ColorsSection({
         {adding && (
           <ColorPopover
             onSave={(name, hex) => addColor(project, brand, { hex, name })}
-            trigger={
-              <AddTile
-                className={cn(
-                  "min-h-40",
-                  colors.length === 0 && "sm:col-span-2"
-                )}
-                hint={
-                  colors.length === 0
-                    ? "Name each and give its hex; every value and its contrast follow."
-                    : undefined
-                }
-                label="Add color"
-              />
-            }
+            trigger={<AddTile className="min-h-40" label="Add color" />}
           />
         )}
       </SortableParts>

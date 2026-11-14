@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { ChapterId } from "@/features/branding/brand-parts";
 import { chapterLabel } from "@/features/branding/brand-parts";
@@ -73,6 +73,24 @@ function go(id: ChapterId): void {
  */
 export function ChapterRail({ chapters }: { chapters: ChapterId[] }) {
   const current = useCurrentChapter(chapters);
+  const chips = useRef<HTMLElement>(null);
+  // The chip of the chapter being read stays in sight as the page scrolls.
+  useEffect(() => {
+    const bar = chips.current;
+    const chip = current
+      ? bar?.querySelector<HTMLElement>(`[data-chapter="${current}"]`)
+      : undefined;
+    if (!(bar && chip)) {
+      return;
+    }
+    const left = chip.offsetLeft - bar.offsetLeft;
+    if (
+      left < bar.scrollLeft ||
+      left + chip.offsetWidth > bar.scrollLeft + bar.clientWidth
+    ) {
+      bar.scrollTo({ left: left - 16 });
+    }
+  }, [current]);
   if (chapters.length < 2) {
     return null;
   }
@@ -110,12 +128,14 @@ export function ChapterRail({ chapters }: { chapters: ChapterId[] }) {
       <nav
         aria-label="Chapters"
         className="bg-background/85 sticky top-14 z-20 -mx-4 [scrollbar-width:none] overflow-x-auto px-4 py-2 backdrop-blur-md sm:-mx-6 sm:px-6 lg:hidden"
+        ref={chips}
       >
         <ul className="flex w-max gap-1.5">
           {chapters.map((id) => (
             <li key={id}>
               <a
                 aria-current={id === current ? "location" : undefined}
+                data-chapter={id}
                 className="bg-foreground/5 text-muted-foreground aria-[current]:bg-foreground aria-[current]:text-background focus-visible:ring-ring/50 flex h-7 items-center rounded-full px-3 text-sm whitespace-nowrap transition-colors duration-150 ease-out outline-none focus-visible:ring-3"
                 href={`#${id}`}
                 onClick={(event) => {

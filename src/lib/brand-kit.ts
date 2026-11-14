@@ -25,6 +25,7 @@ import {
   formatCmyk,
   formatHsl,
   formatRgb,
+  fontWeights,
   libraryFontPage,
   LOGO_KINDS,
   LOGO_MODES,
@@ -167,7 +168,7 @@ function otherPaths(
 }
 
 /** The brand as data, for whoever builds with it. */
-function brandJson(brand: Brand, { colors, fonts }: BrandParts): string {
+function brandJson(brand: Brand, { colors, files, fonts }: BrandParts): string {
   const data = {
     colors: colors.map((color) => ({
       cmyk: formatCmyk(color.hex),
@@ -184,7 +185,7 @@ function brandJson(brand: Brand, { colors, fonts }: BrandParts): string {
       role: font.role,
       source:
         font.source === "library" ? libraryFontPage(font.family) : "files",
-      weights: font.weights,
+      weights: fontWeights(font, files),
     })),
     website: brand.website,
   };
@@ -320,7 +321,11 @@ export function downloadFontFiles(
 export async function copySvg(file: BrandFile): Promise<boolean> {
   try {
     const blob = await fetchBrandFile(file);
-    return await copyText(await blob.text());
+    const copied = await copyText(await blob.text());
+    if (copied) {
+      toast.success("SVG code copied");
+    }
+    return copied;
   } catch (error) {
     toast.error(errorMessage(error));
     return false;

@@ -6,7 +6,7 @@ import { GripVerticalIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { SENSORS } from "@/features/board/use-card-drag";
-import { movePart } from "@/lib/brand-actions";
+import { placePart } from "@/lib/brand-actions";
 import type { BrandPart } from "@/lib/brands";
 import type { Project } from "@/lib/project";
 
@@ -72,8 +72,7 @@ function SortableItem<T extends BrandPart>({
 }
 
 /**
- * Parts of a brand in a layout their editors can drag into order; each move
- * ranks the part between its new neighbors, so only it changes.
+ * Parts of a brand in a layout their editors can drag into order.
  */
 export function SortableParts<T extends BrandPart>({
   project,
@@ -109,10 +108,9 @@ export function SortableParts<T extends BrandPart>({
         }
         const ordered = move(parts, event);
         const id = event.operation.source?.id;
-        const index = ordered.findIndex((part) => part.id === id);
-        const part = ordered[index];
-        if (part && parts.indexOf(part) !== index) {
-          movePart(project, part, ordered[index - 1], ordered[index + 1]);
+        const part = ordered.find((item) => item.id === id);
+        if (part && parts.indexOf(part) !== ordered.indexOf(part)) {
+          placePart(project, ordered, part);
         }
       }}
       sensors={SENSORS}

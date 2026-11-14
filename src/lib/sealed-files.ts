@@ -42,7 +42,7 @@ export interface SealedFileFields {
 }
 
 /** A positive, finite number, or nothing. */
-export function measure(value: number | undefined): number | undefined {
+export function positive(value: number | undefined): number | undefined {
   return value !== undefined && Number.isFinite(value) && value > 0
     ? value
     : undefined;
@@ -80,12 +80,12 @@ export function parseSealedFile(
   return {
     blob,
     creator: [getTagValue(event, "creator")].find(isPubkey) ?? event.pubkey,
-    height: measure(Number(dimensions?.height)),
+    height: positive(Number(dimensions?.height)),
     key,
     size,
     thumb: parseSealed(thumbTag?.[1], thumbTag?.[2]),
     type: (getTagValue(event, "m") ?? "").slice(0, MAX_TYPE),
-    width: measure(Number(dimensions?.width)),
+    width: positive(Number(dimensions?.width)),
   };
 }
 
@@ -131,11 +131,16 @@ export function tombstoneFileTags(
   ];
 }
 
-/** The blobs a deleted file's tombstone names, if `pubkey` uploaded them. */
-export function blobsToDelete(tombstone: NostrEvent, pubkey: string): string[] {
-  return getTagValue(tombstone, "creator") === pubkey
-    ? tombstone.tags.flatMap(([name, hash]) =>
-        name === "x" && hash && HEX_32.test(hash) ? [hash] : []
+/**
+ * The blobs a deleted file's event names, if `pubkey` uploaded them: a
+ * tombstone's, or those of a file left in something deleted.
+ */
+export function blobsToDelete(event: NostrEvent, pubkey: string): string[] {
+  return getTagValue(event, "creator") === pubkey
+    ? event.tags.flatMap(([name, hash]) =>
+        (name === "x" || name === "thumbnail") && hash && HEX_32.test(hash)
+          ? [hash]
+          : []
       )
     : [];
 }

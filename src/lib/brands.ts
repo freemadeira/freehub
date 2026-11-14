@@ -3,6 +3,7 @@ import { getTagValue } from "applesauce-core/helpers/event";
 
 import { cleanLink } from "@/lib/catalogs";
 import { isSigned } from "@/lib/docs";
+import { cleanName } from "@/lib/drive";
 import type { Template } from "@/lib/model";
 import {
   addressOf,
@@ -41,7 +42,6 @@ export const MAX_COLOR_NAME = 40;
 export const MAX_FONTS = 8;
 export const MAX_FONT_FAMILY = 80;
 export const MAX_FONT_ROLE = 40;
-export const MAX_FILE_NAME = 255;
 export const MAX_CAPTION = 280;
 /** Formats one logo slot keeps, like the same logo as SVG, PNG and PDF. */
 export const MAX_SLOT_FILES = 6;
@@ -74,7 +74,7 @@ export type BrandPlace =
   | { kind: "font"; font: string }
   | { kind: "example"; verdict: Verdict };
 
-export type PlaceKind = BrandPlace["kind"];
+export type BrandPlaceKind = BrandPlace["kind"];
 
 const SHORT_HEX = /^#?(?<r>[0-9a-f])(?<g>[0-9a-f])(?<b>[0-9a-f])$/u;
 const LONG_HEX = /^#?(?<hex>[0-9a-f]{6})$/u;
@@ -132,6 +132,16 @@ export interface FontFields extends PartBase {
   role: string;
 }
 
+/** A font file's weight and style. */
+export interface Face {
+  /** One weight, or VARIABLE for a file that draws them all. */
+  weight: number;
+  style: "normal" | "italic";
+}
+
+/** The weight of a variable font file, which covers every weight. */
+export const VARIABLE = 0;
+
 export type FileFields = PartBase &
   SealedFileFields & {
     part: "file";
@@ -140,6 +150,8 @@ export type FileFields = PartBase &
     name: string;
     /** What an example shows, in a line. */
     caption: string;
+    /** A typeface file's weight and style, as set; told by its name without. */
+    face?: Face;
   };
 
 export type PartFields = ColorFields | FontFields | FileFields;
@@ -174,7 +186,10 @@ export interface BrandsContent {
   parts: Map<string, BrandParts>;
   /** Each member's newest version of every brand, to merge guidelines edited at once. */
   versions: Map<string, NostrEvent[]>;
-  /** The newest versions of brand files deleted for good, which still name their blobs. */
+  /**
+   * The newest versions of brand files deleted for good, which still name
+   * their blobs, and of files left in a brand or typeface deleted.
+   */
   deleted: NostrEvent[];
 }
 
@@ -292,6 +307,14 @@ function parseWeights(event: NostrEvent): number[] {
   return [...weights].toSorted((a, b) => a - b);
 }
 
+function parseFace(tag: string[] | undefined): Face | undefined {
+  const weight = /^\d+$/u.test(tag?.[1] ?? "") ? Number(tag?.[1]) : Number.NaN;
+  const style = tag?.[2] === "italic" ? "italic" : "normal";
+  return tag && (weight === VARIABLE || FONT_WEIGHTS.includes(weight))
+    ? { style, weight }
+    : undefined;
+}
+
 function parsePart(event: NostrEvent, id: string): PartFields | undefined {
   const brand = getTagValue(event, "brand");
   if (!brand) {
@@ -338,8 +361,8 @@ function parsePart(event: NostrEvent, id: string): PartFields | undefined {
             ...base,
             ...sealed,
             caption: clean(event.content, MAX_CAPTION),
-            name:
-              clean(getTagValue(event, "name"), MAX_FILE_NAME) || "Untitled",
+            face: parseFace(event.tags.find(([name]) => name === "face")),
+            name: cleanName(getTagValue(event, "name") ?? "") || "Untitled",
             part: "file",
             place,
           }
@@ -363,7 +386,7 @@ function inOrder<T extends PartBase>(parts: T[]): T[] {
   );
 }
 
-/** The project's own events of one kind, by members, newest version of each. */
+/** The project's own events of one kind, by members, every version. */
 function ownEvents(
   project: Project,
   events: NostrEvent[],
@@ -406,6 +429,15 @@ export function resolveBrands(
     BRAND_PART_KIND,
     authors
   );
+  // Brands and typefaces known to be deleted: files still in them go too.
+  const goneBrands = new Set(
+    [...latestVersions(own, BRAND_KIND, authors)]
+      .filter(([, event]) => isDeleted(event))
+      .map(([id]) => id)
+  );
+  const goneFonts = new Set(
+    [...parts].filter(([, event]) => isDeleted(event)).map(([id]) => id)
+  );
   for (const [id, event] of parts) {
     if (isDeleted(event)) {
       if (event.tags.some(([name]) => name === "x")) {
@@ -414,6 +446,14 @@ export function resolveBrands(
       continue;
     }
     const fields = parsePart(event, id);
+    if (
+      fields?.part === "file" &&
+      (goneBrands.has(fields.brand) ||
+        (fields.place.kind === "font" && goneFonts.has(fields.place.font)))
+    ) {
+      deleted.push(event);
+      continue;
+    }
     if (fields && byId.has(fields.brand)) {
       const part = {
         ...fields,
@@ -498,6 +538,9 @@ function partTags(part: PartFields): string[][] {
       return [
         placeTag(part.place),
         ["name", part.name],
+        ...(part.face
+          ? [["face", String(part.face.weight), part.face.style]]
+          : []),
         ...sealedFileTags(part),
         ["alt", `Brand file: ${part.name}`],
       ];
@@ -517,7 +560,8 @@ export function partTemplate(
     ["rank", String(part.rank)],
     ["created", String(part.createdAt)],
   ];
-  if (part.creator) {
+  // A file's tags name its uploader already.
+  if (part.creator && part.part !== "file") {
     tags.push(["creator", part.creator]);
   }
   tags.push(...partTags(part));
@@ -592,7 +636,7 @@ export function isShown(file: { type: string }): boolean {
 }
 
 /** What a place takes, and what's said of a file it doesn't. */
-export function placeFit(kind: PlaceKind): {
+export function placeFit(kind: BrandPlaceKind): {
   fits: (file: { name: string; type: string }) => boolean;
   misfit: string;
 } {
@@ -619,7 +663,7 @@ export function placeFit(kind: PlaceKind): {
   }
 }
 
-export function samePlace(a: BrandPlace, b: BrandPlace): boolean {
+export function sameBrandPlace(a: BrandPlace, b: BrandPlace): boolean {
   if (a.kind === "logo" && b.kind === "logo") {
     return a.logo === b.logo && a.mode === b.mode;
   }
@@ -631,11 +675,11 @@ export function samePlace(a: BrandPlace, b: BrandPlace): boolean {
 
 /** The files of a place, in order. */
 export function filesIn(files: BrandFile[], place: BrandPlace): BrandFile[] {
-  return files.filter((file) => samePlace(file.place, place));
+  return files.filter((file) => sameBrandPlace(file.place, place));
 }
 
 /** The files of a kind of place, in order. */
-export function filesOf(files: BrandFile[], kind: PlaceKind): BrandFile[] {
+export function filesOf(files: BrandFile[], kind: BrandPlaceKind): BrandFile[] {
   return files.filter((file) => file.place.kind === kind);
 }
 
@@ -849,20 +893,47 @@ const WEIGHT_WORDS: [RegExp, number][] = [
   [/medium/u, 500],
 ];
 
-/** A font file's weight and style, told by its name, like `Inter-SemiBoldItalic.woff2`. */
-export function faceOfFile(name: string): {
-  weight: number;
-  style: "normal" | "italic";
-} {
+/**
+ * A font file's weight and style, told by its name, like
+ * `Inter-SemiBoldItalic.woff2`, or `Inter[wght].woff2` for a variable one.
+ */
+export function faceOfFile(name: string): Face {
   const words = name.toLowerCase().replace(/\.[^.]+$/u, "");
+  const style = /italic|oblique/u.test(words) ? "italic" : "normal";
+  if (/variable|wght|\[|(?:^|[-_ ])vf(?:$|[-_ ])/u.test(words)) {
+    return { style, weight: VARIABLE };
+  }
   const weight =
     WEIGHT_WORDS.find(([pattern]) => pattern.test(words))?.[1] ?? 400;
   const numbered = /(?:^|\D)(?<weight>[1-9]00)(?:\D|$)/u.exec(words)?.groups
     ?.weight;
-  return {
-    style: /italic|oblique/u.test(words) ? "italic" : "normal",
-    weight: numbered ? Number(numbered) : weight,
-  };
+  return { style, weight: numbered ? Number(numbered) : weight };
+}
+
+/** Words in a font file's name that tell its face, not its family. */
+const FACE_WORDS =
+  /\b(?:hairline|thin|extra ?light|ultra ?light|light|regular|book|normal|medium|semi ?bold|demi ?bold|bold|extra ?bold|ultra ?bold|black|heavy|italic|oblique|variable|vf|wght|[1-9]00)\b/giu;
+
+/** The family a font file's name tells, like "Brand Sans" from `BrandSans-BoldItalic.otf`. */
+export function familyOfFile(name: string): string {
+  const base = name.replace(/\.[^.]+$/u, "");
+  const [family = base] = base.split(/[-_]/u);
+  const words = family
+    .replaceAll(/(?<lower>[a-z])(?<upper>[A-Z])/gu, "$<lower> $<upper>")
+    .replaceAll(FACE_WORDS, " ");
+  return clean(words, MAX_FONT_FAMILY) || "Typeface";
+}
+
+/** A typeface file's weight and style: as set, else as its name tells. */
+export function fileFace(file: Pick<FileFields, "face" | "name">): Face {
+  return file.face ?? faceOfFile(file.name);
+}
+
+/** A face's weight as CSS takes it: one, or the whole range for a variable file. */
+export function cssWeight(face: Face): string {
+  return face.weight === VARIABLE
+    ? `${FONT_WEIGHTS[0]} ${FONT_WEIGHTS.at(-1)}`
+    : String(face.weight);
 }
 
 /** The weights a typeface comes in: picked from the library, or told by its files. */
@@ -870,11 +941,11 @@ export function fontWeights(font: FontFields, files: BrandFile[]): number[] {
   if (font.source === "library") {
     return font.weights.length > 0 ? font.weights : [400];
   }
-  const weights = new Set(
-    filesIn(files, { font: font.id, kind: "font" }).map(
-      (file) => faceOfFile(file.name).weight
-    )
-  );
+  const faces = filesIn(files, { font: font.id, kind: "font" }).map(fileFace);
+  if (faces.some((face) => face.weight === VARIABLE)) {
+    return FONT_WEIGHTS;
+  }
+  const weights = new Set(faces.map((face) => face.weight));
   return [...weights].toSorted((a, b) => a - b);
 }
 
@@ -912,11 +983,19 @@ export function textFonts<T extends Pick<FontFields, "role">>(
  * The family the page draws a typeface in. Uploaded ones go by a name of
  * their own, so they never mix with a font of the same name on the device.
  */
+/**
+ * The family an uploaded typeface's faces are added under: a name of its
+ * own, so it never mixes with a font of the same name on the device, and
+ * one any browser takes as a family name.
+ */
+export function uploadedFamily(font: Pick<FontFields, "id">): string {
+  return `bf-${font.id}`;
+}
+
 export function cssFamily(
   font: Pick<FontFields, "family" | "id" | "source">
 ): string {
-  const family =
-    font.source === "library" ? font.family : `${font.family} ${font.id}`;
+  const family = font.source === "library" ? font.family : uploadedFamily(font);
   return `"${family.replaceAll('"', "")}", ui-sans-serif, system-ui, sans-serif`;
 }
 
