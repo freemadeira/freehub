@@ -203,9 +203,8 @@ export function thumbSource(file: DriveFile): Sealed | undefined {
     : undefined;
 }
 
-/** The file opened, as a blob of its type: to save it, or read its text. */
-export async function fetchFile(file: DriveFile): Promise<Blob> {
-  const sealed = fileSource(file);
+/** Something sealed, fetched and opened as a blob of its type. */
+export async function fetchSealed(sealed: Sealed): Promise<Blob> {
   const loading = load(sealed);
   const release = hold(sealed.blob.hash);
   try {
@@ -213,6 +212,11 @@ export async function fetchFile(file: DriveFile): Promise<Blob> {
   } finally {
     release();
   }
+}
+
+/** The file opened, as a blob of its type: to save it, or read its text. */
+export function fetchFile(file: DriveFile): Promise<Blob> {
+  return fetchSealed(fileSource(file));
 }
 
 /** Starts fetching something about to be shown, like the next picture over. */

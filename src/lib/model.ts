@@ -23,6 +23,10 @@ export const LINK_KIND = 30_321;
 export const READING_KIND = 30_322;
 /** Two cards marked as related, or one as blocking the other. */
 export const RELATION_KIND = 30_323;
+/** A project's brand: its name, links and guidelines. */
+export const BRAND_KIND = 30_324;
+/** One part of a brand: a color, a typeface, or a file like a logo. */
+export const BRAND_PART_KIND = 30_325;
 /** NIP-23: one language of a blog post, as published on its website. */
 export const POST_KIND = 30_023;
 /** NIP-23: one language of a blog post as it's being written, never published. */

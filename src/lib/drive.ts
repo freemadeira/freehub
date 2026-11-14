@@ -17,6 +17,15 @@ import {
 import type { Color } from "@/lib/palette";
 import { COLORS } from "@/lib/palette";
 import type { Project } from "@/lib/project";
+import type { SealedFileFields } from "@/lib/sealed-files";
+import {
+  measure,
+  parseSealedFile,
+  sealedFileTags,
+  tombstoneFileTags,
+} from "@/lib/sealed-files";
+
+export type { SealedBlob } from "@/lib/sealed-files";
 
 /**
  * A project's Drive. Folders and files are addressable events any member can
@@ -45,14 +54,8 @@ export const DEFAULT_FOLDER = "New folder";
 const MAX_TYPE = 100;
 const MAX_ICON = 16;
 
-/** The only cipher files are kept in, as in NIP-17's file messages. */
-const ALGORITHM = "aes-gcm";
-const HEX_32 = /^[0-9a-f]{64}$/u;
-const HEX_12 = /^[0-9a-f]{24}$/u;
-
 const UNSAFE = /[\p{Cc}/\\]+/gu;
 const SPACES = /\s+/gu;
-const DIMENSIONS = /^(?<width>\d+)x(?<height>\d+)$/u;
 
 /** A name fit for the Drive: one line, no slashes, not too long. Empty when nothing's left. */
 export function cleanName(name: string): string {
@@ -97,13 +100,6 @@ function cleanIcon(icon: string | undefined): string | undefined {
   return icon?.trim().slice(0, MAX_ICON) || undefined;
 }
 
-/** A positive, finite number, or nothing. */
-function measure(value: number | undefined): number | undefined {
-  return value !== undefined && Number.isFinite(value) && value > 0
-    ? value
-    : undefined;
-}
-
 // ———————————————————————————————————————— Folders and files
 
 /** When something went in the trash, in seconds, and who put it there. */
@@ -135,33 +131,13 @@ export type DriveFolder = DriveFolderFields & {
   event: NostrEvent;
 };
 
-/** Something encrypted on the Blossom servers: its hash there, and the nonce it was sealed with. */
-export interface SealedBlob {
-  hash: string;
-  nonce: string;
-}
-
-export interface DriveFileFields {
+export interface DriveFileFields extends SealedFileFields {
   id: string;
   name: string;
   /** The folder it sits in, or none at the top of the Drive. */
   folder?: string;
-  /** In bytes, before it was encrypted. */
-  size: number;
-  /** MIME type, or empty when the browser didn't know it. */
-  type: string;
-  /** Pixels, for images and videos the browser could read. */
-  width?: number;
-  height?: number;
   /** Seconds, for videos and audio the browser could read. */
   duration?: number;
-  /** The AES-GCM key of the file and its thumbnail, as hex. */
-  key: string;
-  blob: SealedBlob;
-  /** A small picture of it, made in the browser on upload. */
-  thumb?: SealedBlob;
-  /** Who uploaded it: only they can delete its blobs from the servers. */
-  creator: string;
   /** When it was uploaded. */
   createdAt: number;
   /** When it was uploaded, renamed or moved. */
@@ -241,15 +217,6 @@ function parseTrashed(event: NostrEvent): Trashed | undefined {
   return at !== undefined && isPubkey(by) ? { at, by } : undefined;
 }
 
-function parseSealed(
-  hash: string | undefined,
-  nonce: string | undefined
-): SealedBlob | undefined {
-  return hash && nonce && HEX_32.test(hash) && HEX_12.test(nonce)
-    ? { hash, nonce }
-    : undefined;
-}
-
 function parseFolder(
   event: NostrEvent,
   id: string,
@@ -277,42 +244,23 @@ function parseFile(
   id: string,
   project: string
 ): DriveFile | undefined {
-  const key = getTagValue(event, "decryption-key");
-  const blob = parseSealed(
-    getTagValue(event, "x"),
-    getTagValue(event, "decryption-nonce")
-  );
-  const thumbTag = event.tags.find(([name]) => name === "thumbnail");
-  const size = integer(getTagValue(event, "size"));
-  if (
-    getTagValue(event, "encryption-algorithm") !== ALGORITHM ||
-    !(key && HEX_32.test(key) && blob) ||
-    size === undefined ||
-    size < 0
-  ) {
+  const sealed = parseSealedFile(event);
+  if (!sealed) {
     return undefined;
   }
-  const dimensions = DIMENSIONS.exec(getTagValue(event, "dim") ?? "")?.groups;
   const createdAt = integer(getTagValue(event, "created")) ?? event.created_at;
   return {
+    ...sealed,
     author: event.pubkey,
-    blob,
     createdAt,
-    creator: [getTagValue(event, "creator")].find(isPubkey) ?? event.pubkey,
     duration: measure(Number(getTagValue(event, "duration"))),
     event,
     folder: getTagValue(event, "folder") || undefined,
-    height: measure(Number(dimensions?.height)),
     id,
-    key,
     name: cleanName(getTagValue(event, "name") ?? "") || "Untitled",
     project,
-    size,
-    thumb: parseSealed(thumbTag?.[1], thumbTag?.[2]),
     trashed: parseTrashed(event),
-    type: (getTagValue(event, "m") ?? "").slice(0, MAX_TYPE),
     updatedAt: integer(getTagValue(event, "updated")) ?? createdAt,
-    width: measure(Number(dimensions?.width)),
   };
 }
 
@@ -656,26 +604,12 @@ export function fileTemplate(
     ["d", file.id],
     ["a", project.address],
     ["name", file.name],
-    ["size", String(file.size)],
-    ["encryption-algorithm", ALGORITHM],
-    ["decryption-key", file.key],
-    ["decryption-nonce", file.blob.nonce],
-    ["x", file.blob.hash],
-    ["creator", file.creator],
+    ...sealedFileTags(file),
     ["created", String(file.createdAt)],
     ["updated", String(file.updatedAt)],
   ];
   if (file.folder) {
     tags.push(["folder", file.folder]);
-  }
-  if (file.type) {
-    tags.push(["m", file.type]);
-  }
-  if (file.thumb) {
-    tags.push(["thumbnail", file.thumb.hash, file.thumb.nonce]);
-  }
-  if (file.width && file.height) {
-    tags.push(["dim", `${Math.round(file.width)}x${Math.round(file.height)}`]);
   }
   if (file.duration) {
     tags.push(["duration", String(file.duration)]);
@@ -694,21 +628,9 @@ export function driveTombstoneTemplate(
 ): Template {
   const tags = [["d", item.id], ["a", project.address], ["deleted"]];
   if ("blob" in item) {
-    tags.push(["creator", item.creator], ["x", item.blob.hash]);
-    if (item.thumb) {
-      tags.push(["x", item.thumb.hash]);
-    }
+    tags.push(...tombstoneFileTags(item));
   }
   return { content: "", kind: item.event.kind, tags };
-}
-
-/** The blobs a deleted file's tombstone names, if `pubkey` uploaded them. */
-export function blobsToDelete(tombstone: NostrEvent, pubkey: string): string[] {
-  return getTagValue(tombstone, "creator") === pubkey
-    ? tombstone.tags.flatMap(([name, hash]) =>
-        name === "x" && hash && HEX_32.test(hash) ? [hash] : []
-      )
-    : [];
 }
 
 /** Where comments on the file may point: its address under every member. */
