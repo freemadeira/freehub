@@ -5,9 +5,17 @@ import { useEffect, useRef } from "react";
 import type { MarkdownViewProps } from "@/components/markdown-editor";
 import { InternalLinks } from "@/components/markdown-editor/app-link";
 import { MarkdownClipboard } from "@/components/markdown-editor/clipboard";
-import { CONTENT, parseMarkdown } from "@/components/markdown-editor/content";
+import {
+  contentWith,
+  parseMarkdown,
+} from "@/components/markdown-editor/content";
+import { ContentImage } from "@/components/markdown-editor/content-image";
 
-const EXTENSIONS = [...CONTENT, MarkdownClipboard, InternalLinks];
+const EXTENSIONS = [
+  ...contentWith(ContentImage),
+  MarkdownClipboard,
+  InternalLinks,
+];
 
 export function MarkdownViewer({ value, className }: MarkdownViewProps) {
   const editor = useEditor({

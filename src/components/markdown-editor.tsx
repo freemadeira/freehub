@@ -30,6 +30,8 @@ export interface MarkdownEditorProps {
    * Without it, "#" is just text.
    */
   refs?: { project?: string };
+  /** Whether images pasted, dropped or picked upload into the text. */
+  images?: boolean;
   /** Mod+Enter, with the markdown as it stands. */
   onSubmit?: (markdown: string) => void;
   onKeyDown?: KeyboardEventHandler<HTMLDivElement>;

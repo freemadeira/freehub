@@ -17,7 +17,6 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
-import { appPath } from "@/components/app-link";
 import { copyText } from "@/components/copy";
 import { IconButton } from "@/components/icon-button";
 import {
@@ -58,6 +57,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { UploadGuard } from "@/components/upload-guard";
 import type { WebsiteConfig } from "@/config";
 import type { ImageOptions } from "@/features/blog/article-image";
 import { EditableImage, imageCommand } from "@/features/blog/article-image";
@@ -69,7 +69,6 @@ import {
   STATUS_DOTS,
   STATUS_LABELS,
 } from "@/features/blog/blog-context";
-import { useUploadsWaiting } from "@/features/blog/image-uploads";
 import { PostPreview } from "@/features/blog/post-preview";
 import type { TypedFields } from "@/features/blog/post-settings";
 import { PostSettings } from "@/features/blog/post-settings";
@@ -103,6 +102,7 @@ import {
   unpublishLanguage,
   updateShared,
 } from "@/lib/blog-actions";
+import { useUploadsWaiting } from "@/lib/image-uploads";
 import { canEdit, POST_DRAFT_KIND } from "@/lib/model";
 import type { Project } from "@/lib/project";
 
@@ -607,84 +607,6 @@ function LanguageEditor({
 }
 
 /**
- * While pictures are still uploading, links out of the post ask first:
- * leaving closes its editors, which stops them. So does closing the tab.
- */
-function UploadGuard() {
-  const [, navigate] = useLocation();
-  const waiting = useUploadsWaiting();
-  // Where a link was going when it was held back.
-  const [leaving, setLeaving] = useState<string>();
-
-  useEffect(() => {
-    if (waiting === 0) {
-      return;
-    }
-    const keep = (event: BeforeUnloadEvent) => event.preventDefault();
-    const hold = (event: MouseEvent) => {
-      const link =
-        event.target instanceof Element
-          ? event.target.closest("a[href]")
-          : null;
-      const path = link ? appPath(link.getAttribute("href") ?? "") : undefined;
-      const plain =
-        event.button === 0 &&
-        !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey);
-      if (
-        !(link && path && plain) ||
-        link.getAttribute("target") === "_blank" ||
-        path === `${location.pathname}${location.search}`
-      ) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      setLeaving(path);
-    };
-    addEventListener("beforeunload", keep);
-    // Before the app's own handling of the link.
-    document.addEventListener("click", hold, true);
-    return () => {
-      removeEventListener("beforeunload", keep);
-      document.removeEventListener("click", hold, true);
-    };
-  }, [waiting]);
-
-  return (
-    <AlertDialog
-      onOpenChange={(open) => {
-        if (!open) {
-          setLeaving(undefined);
-        }
-      }}
-      open={leaving !== undefined}
-    >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Pictures are still uploading</AlertDialogTitle>
-          <AlertDialogDescription>
-            Leaving the post now stops them, and they won’t be in it.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Stay</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={() => {
-              if (leaving) {
-                navigate(leaving);
-              }
-            }}
-            variant="destructive"
-          >
-            Leave anyway
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-
-/**
  * A language of the post as its newest version reads, for viewers of the
  * project: they can read drafts and published posts, but not change them.
  */
@@ -792,7 +714,7 @@ export function PostView(props: PostViewProps) {
                 tabs={tabs}
               />
             ))}
-            <UploadGuard />
+            <UploadGuard place="post" />
           </>
         ) : (
           <ReadOnlyLanguage

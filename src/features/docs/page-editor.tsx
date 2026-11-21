@@ -29,9 +29,14 @@ import {
 import { MarkdownClipboard } from "@/components/markdown-editor/clipboard";
 import type { MarkdownDialect } from "@/components/markdown-editor/content";
 import {
-  CONTENT,
   CONTENT_MARKDOWN,
+  contentWith,
 } from "@/components/markdown-editor/content";
+import {
+  ContentImage,
+  IMAGE_COMMAND,
+  ImageUploads,
+} from "@/components/markdown-editor/content-image";
 import {
   MentionCommand,
   MentionMenu,
@@ -71,11 +76,14 @@ export interface PageSchema {
   headings: readonly HeadingLevel[];
 }
 
-/** A doc page: what descriptions hold, with links to the app opening in place. */
+/**
+ * A doc page: what descriptions hold, with links to the app opening in place
+ * and images uploaded straight into the text.
+ */
 export const DOC_PAGE: PageSchema = {
-  extensions: [...CONTENT, InternalLinks],
+  extensions: [...contentWith(ContentImage), ImageUploads, InternalLinks],
   headings: [1, 2, 3],
-  inserts: INSERTS,
+  inserts: [...INSERTS, IMAGE_COMMAND],
   markdown: CONTENT_MARKDOWN,
   types: BLOCK_TYPES,
 };
@@ -212,7 +220,11 @@ export function PageEditor({
   });
 
   useEffect(() => {
-    slash.setCommands([...schema.types, ...schema.inserts, ...commands]);
+    slash.setCommands(
+      [...schema.types, ...schema.inserts, ...commands].filter(
+        (command) => !command.hidden?.()
+      )
+    );
   }, [slash, schema, commands]);
 
   // Starts keeping the text and the relays in step, once the editor is up.

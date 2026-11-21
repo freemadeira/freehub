@@ -399,6 +399,8 @@
     & img:not(.ProseMirror-separator) {
       display: inline-block;
       max-width: 100%;
+      /* Sized by its own width and height, it keeps its shape when narrower. */
+      height: auto;
       border-radius: var(--radius-lg);
       outline: 1px solid oklch(0 0 0 / 0.1);
       outline-offset: -1px;
@@ -407,7 +409,8 @@
         outline-color: oklch(1 0 0 / 0.1);
       }
 
-      &.ProseMirror-selectednode {
+      &.ProseMirror-selectednode,
+      .ProseMirror-selectednode > .content-image > & {
         outline: 2px solid var(--ring);
         outline-offset: 2px;
       }

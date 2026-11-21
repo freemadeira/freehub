@@ -1,19 +1,16 @@
 import { useSyncExternalStore } from "react";
 
-import type { WebsiteConfig } from "@/config";
-import type { ImageMeta } from "@/lib/blog";
-import { uploadImage } from "@/lib/blog-actions";
 import { CanceledError } from "@/lib/blossom";
 import { newId } from "@/lib/model";
 import { errorMessage } from "@/lib/utils";
 
 /**
- * Pictures being uploaded into posts, kept outside the editor so each one's
+ * Pictures being uploaded into a text, kept outside its editor so each one's
  * progress shows wherever its place in the text is drawn.
  */
 export interface ImageUpload {
   id: string;
-  /** The picture from the device, shown until it's on the media server. */
+  /** The picture from the device, shown until it's on the server. */
   preview: string;
   /** How far it got, from 0 to 1. */
   progress: number;
@@ -23,10 +20,16 @@ export interface ImageUpload {
   ask: boolean;
 }
 
+/** Sends a picture where it goes, telling how far it got; resolves with the address it's shown from. */
+export type ImageSender = (
+  file: File,
+  options: { onProgress: (progress: number) => void; signal: AbortSignal }
+) => Promise<string>;
+
 interface Job {
   file: File;
-  website: Pick<WebsiteConfig, "media">;
-  onDone: (image: ImageMeta, id: string) => void;
+  send: ImageSender;
+  onDone: (src: string, id: string) => void;
   controller: AbortController;
 }
 
@@ -70,11 +73,15 @@ async function run(id: string): Promise<void> {
   }
   patch(id, { error: undefined, progress: 0 });
   try {
-    const image = await uploadImage(job.file, job.website, {
+    const src = await job.send(job.file, {
       onProgress: (progress) => patch(id, { progress }),
       signal: job.controller.signal,
     });
-    job.onDone(image, id);
+    // Taken out of the text while it went up.
+    if (job.controller.signal.aborted) {
+      return;
+    }
+    job.onDone(src, id);
     forget(id);
   } catch (error) {
     if (!(error instanceof CanceledError)) {
@@ -84,15 +91,14 @@ async function run(id: string): Promise<void> {
 }
 
 /**
- * Starts publishing a picture to the website's media server. Its place in
- * the text names it by the id returned; `onDone` gets what's known of it
- * once every size is up.
+ * Starts sending a picture with `send`. Its place in the text names it by
+ * the id returned; `onDone` gets the address it's shown from once it's up.
  */
 export function startImageUpload(
   file: File,
-  website: Pick<WebsiteConfig, "media">,
+  send: ImageSender,
   { ask }: { ask: boolean },
-  onDone: (image: ImageMeta, id: string) => void
+  onDone: (src: string, id: string) => void
 ): string {
   const id = newId();
   uploads.set(id, {
@@ -101,7 +107,7 @@ export function startImageUpload(
     preview: URL.createObjectURL(file),
     progress: 0,
   });
-  jobs.set(id, { controller: new AbortController(), file, onDone, website });
+  jobs.set(id, { controller: new AbortController(), file, onDone, send });
   emit();
   run(id);
   return id;

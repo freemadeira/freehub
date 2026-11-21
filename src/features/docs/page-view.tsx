@@ -19,6 +19,7 @@ import type { Crumb } from "@/components/top-bar";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { FluidTooltip } from "@/components/ui/fluid-tooltip";
+import { UploadGuard } from "@/components/upload-guard";
 import { docsPath, pagePath } from "@/features/docs/docs-context";
 import { IconPicker } from "@/features/docs/icon-picker";
 import type { PageEditorHandle } from "@/features/docs/page-editor";
@@ -236,6 +237,7 @@ function EditablePage({ project, docs, page, pubkey }: PageViewProps) {
           ref={editor}
           versions={versions}
         />
+        <UploadGuard place="page" />
       </div>
       {/* Clicking under the text carries on writing at its end. */}
       <div

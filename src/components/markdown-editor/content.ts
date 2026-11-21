@@ -1,4 +1,9 @@
-import type { Extensions, JSONContent, MarkdownToken } from "@tiptap/core";
+import type {
+  Extensions,
+  JSONContent,
+  MarkdownToken,
+  Node,
+} from "@tiptap/core";
 import { getSchema, InputRule, mergeAttributes } from "@tiptap/core";
 import { Image } from "@tiptap/extension-image";
 import { OrderedList, TaskItem, TaskList } from "@tiptap/extension-list";
@@ -36,8 +41,18 @@ function isWebOrMail(url: string): boolean {
   );
 }
 
-// Images only load from the web.
-const WebImage = Image.extend({
+/**
+ * Images load from the web, or from the team's Blossom servers, opened in the
+ * browser by the editor's own view of them. While one uploads it has an
+ * upload's id, and isn't written until it's up.
+ */
+export const WebImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      upload: { default: null, rendered: false },
+    };
+  },
   renderHTML({ HTMLAttributes }) {
     const scheme = schemeOf(String(HTMLAttributes.src ?? ""));
     const loads = scheme === "http" || scheme === "https";
@@ -180,6 +195,30 @@ export const CONTENT = [
   AppLink,
 ];
 
+/** What a description can hold, with images drawn by a view of their own, like one that uploads. */
+export function contentWith(image: Node): Extensions {
+  return CONTENT.map((extension) =>
+    extension.name === WebImage.name ? image : extension
+  );
+}
+
+function isUploading(node: JSONContent): boolean {
+  return node.type === WebImage.name && typeof node.attrs?.upload === "string";
+}
+
+/**
+ * An image still uploading, or a line of nothing but those: not written yet,
+ * and kept in place as teammates' edits come in.
+ */
+function uploadingImages(node: JSONContent): boolean {
+  return (
+    isUploading(node) ||
+    (node.type === "paragraph" &&
+      (node.content?.length ?? 0) > 0 &&
+      (node.content ?? []).every(isUploading))
+  );
+}
+
 // Raw HTML stays text, as written: an HTML block reads as a paragraph and a
 // tag inside a line as plain characters.
 const htmlBlockAsText: TokenizerExtension = {
@@ -311,7 +350,9 @@ export function markdownDialect(
 }
 
 /** Descriptions, comments and doc pages. */
-export const CONTENT_MARKDOWN = markdownDialect(CONTENT);
+export const CONTENT_MARKDOWN = markdownDialect(CONTENT, {
+  unwritten: uploadingImages,
+});
 
 /** A description's markdown as editor content. */
 export function parseMarkdown(source: string): JSONContent {

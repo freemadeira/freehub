@@ -4,12 +4,13 @@ import { Plugin } from "@tiptap/pm/state";
 import type { ReactNodeViewProps } from "@tiptap/react";
 import { NodeViewWrapper, ReactNodeViewRenderer } from "@tiptap/react";
 import { cn } from "cn";
-import { ImageIcon, RotateCwIcon, Trash2Icon } from "lucide-react";
+import { ImageIcon } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import { useEffect, useId, useState } from "react";
 
 import { ArticleImage } from "@/components/markdown-editor/article";
 import type { BlockCommand } from "@/components/markdown-editor/blocks";
+import { UploadState } from "@/components/markdown-editor/upload-state";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -19,13 +20,14 @@ import {
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import type { WebsiteConfig } from "@/config";
+import { uploadImage } from "@/lib/blog-actions";
 import {
   cancelImageUpload,
   markAsked,
   retryImageUpload,
   startImageUpload,
   useImageUpload,
-} from "@/features/blog/image-uploads";
+} from "@/lib/image-uploads";
 
 /** Where an article's pictures go. */
 export interface ImageOptions {
@@ -96,9 +98,12 @@ export function insertImages(
     attrs: {
       upload: startImageUpload(
         file,
-        website,
+        async (picked, progress) => {
+          const image = await uploadImage(picked, website, progress);
+          return image.url;
+        },
         { ask: index === 0 },
-        (image, id) => finish(editor, id, image.url)
+        (url, id) => finish(editor, id, url)
       ),
     },
     type: ArticleImage.name,
@@ -219,52 +224,6 @@ function AltText({
         </Button>
       </PopoverContent>
     </Popover>
-  );
-}
-
-/** How far a picture got on its way to the media server, or why it stopped. */
-function UploadState({
-  progress,
-  error,
-  onRetry,
-  onRemove,
-}: {
-  progress: number;
-  error?: string;
-  onRetry: () => void;
-  onRemove: () => void;
-}) {
-  if (error) {
-    return (
-      <div className="bg-background/85 absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-lg p-4 text-center backdrop-blur-sm">
-        <p className="text-destructive text-sm">{error}</p>
-        <div className="flex gap-2">
-          <Button onClick={onRetry} size="sm" variant="outline">
-            <RotateCwIcon />
-            Try again
-          </Button>
-          <Button onClick={onRemove} size="sm" variant="ghost">
-            <Trash2Icon />
-            Remove
-          </Button>
-        </div>
-      </div>
-    );
-  }
-  const percent = Math.round(progress * 100);
-  return (
-    <div className="absolute inset-x-3 bottom-3 flex items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 text-xs font-medium text-white tabular-nums backdrop-blur-md">
-      <div
-        aria-hidden
-        className="h-1 grow overflow-hidden rounded-full bg-white/25"
-      >
-        <div
-          className="h-full rounded-full bg-white transition-[width] duration-200 ease-out"
-          style={{ width: `${percent}%` }}
-        />
-      </div>
-      {percent < 100 ? `${percent}%` : "Saving…"}
-    </div>
   );
 }
 

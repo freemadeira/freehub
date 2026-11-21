@@ -11,6 +11,7 @@ import type { Crumb } from "@/components/top-bar";
 import { TopBar } from "@/components/top-bar";
 import { FluidTooltip } from "@/components/ui/fluid-tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
+import { UploadGuard } from "@/components/upload-guard";
 import { swapCard, useBoard } from "@/features/board/board-context";
 import { CardActivitySection } from "@/features/card/card-activity";
 import { CardMenu } from "@/features/card/card-menu";
@@ -97,29 +98,33 @@ function TitleField({ card }: { card: Card }) {
 function DescriptionField({ card }: { card: Card }) {
   const { board, pubkey } = useBoard();
   return (
-    <MarkdownEditor
-      aria-label="Description"
-      className={cn(INLINE_FIELD, DESCRIPTION, "min-h-20")}
-      onKeyDown={(event) => {
-        // Escape finishes editing; the next one leaves the card.
-        if (event.key === "Escape" && event.target instanceof HTMLElement) {
-          event.stopPropagation();
-          event.target.blur();
-        }
-      }}
-      onValueCommitted={(description, picked) => {
-        if (description !== card.description) {
-          updateCard(board, card, { description }, picked);
-        }
-      }}
-      // Anyone who can read the card, viewers too, can be pointed at it.
-      people={[...board.members, ...board.viewers].filter(
-        (person) => person !== pubkey
-      )}
-      refs={{ project: board.project }}
-      placeholder="Add a description…"
-      value={card.description}
-    />
+    <>
+      <MarkdownEditor
+        aria-label="Description"
+        className={cn(INLINE_FIELD, DESCRIPTION, "min-h-20")}
+        images
+        onKeyDown={(event) => {
+          // Escape finishes editing; the next one leaves the card.
+          if (event.key === "Escape" && event.target instanceof HTMLElement) {
+            event.stopPropagation();
+            event.target.blur();
+          }
+        }}
+        onValueCommitted={(description, picked) => {
+          if (description !== card.description) {
+            updateCard(board, card, { description }, picked);
+          }
+        }}
+        // Anyone who can read the card, viewers too, can be pointed at it.
+        people={[...board.members, ...board.viewers].filter(
+          (person) => person !== pubkey
+        )}
+        refs={{ project: board.project }}
+        placeholder="Add a description…"
+        value={card.description}
+      />
+      <UploadGuard place="card" />
+    </>
   );
 }
 

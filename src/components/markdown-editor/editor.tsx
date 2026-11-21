@@ -8,10 +8,16 @@ import type { MarkdownEditorProps } from "@/components/markdown-editor";
 import { InternalLinks } from "@/components/markdown-editor/app-link";
 import { MarkdownClipboard } from "@/components/markdown-editor/clipboard";
 import {
-  CONTENT,
+  contentWith,
   parseMarkdown,
   serializeMarkdown,
 } from "@/components/markdown-editor/content";
+import {
+  ContentImage,
+  hasUploads,
+  IMAGE_UPLOADED,
+  ImageUploads,
+} from "@/components/markdown-editor/content-image";
 import {
   MentionCommand,
   MentionMenu,
@@ -48,6 +54,7 @@ export function MarkdownEditorView({
   className,
   people,
   refs,
+  images = false,
   "aria-label": label,
 }: MarkdownEditorProps) {
   const mentionMenu = useMemo(() => new MentionMenuStore(), []);
@@ -58,7 +65,8 @@ export function MarkdownEditorView({
   const names = mentionNames(people ?? [], profileNames);
   const extensions = useMemo(
     () => [
-      ...CONTENT,
+      ...contentWith(ContentImage),
+      ...(images ? [ImageUploads] : []),
       MarkdownClipboard,
       InternalLinks,
       LinkTarget,
@@ -66,7 +74,7 @@ export function MarkdownEditorView({
       RefCommand.configure({ store: referencing ? refMenu : null }),
       Placeholder.configure({ placeholder }),
     ],
-    [placeholder, mentioning, mentionMenu, referencing, refMenu]
+    [placeholder, images, mentioning, mentionMenu, referencing, refMenu]
   );
   // The value from outside, as editor content and as the markdown that saves.
   const incoming = useMemo(() => {
@@ -88,10 +96,15 @@ export function MarkdownEditorView({
   };
 
   // A new value from outside replaces the text, but never while it's being
-  // edited, so teammates' changes can't overwrite typing mid-sentence.
+  // edited, so teammates' changes can't overwrite typing mid-sentence, nor
+  // while an image is still uploading into it.
   const load = (editor: Editor, next: typeof incoming) => {
     const { current } = synced;
-    if (focused.current || next.value === current.value) {
+    if (
+      focused.current ||
+      hasUploads(editor.state.doc) ||
+      next.value === current.value
+    ) {
       return;
     }
     // The committed text coming back from the store.
@@ -147,6 +160,14 @@ export function MarkdownEditorView({
     },
     onFocus: () => {
       focused.current = true;
+    },
+    // An image that finished uploading after editing was done saves then,
+    // and what came in meanwhile shows once none is left uploading.
+    onUpdate: ({ editor: updated, transaction }) => {
+      if (transaction.getMeta(IMAGE_UPLOADED) && !focused.current) {
+        commit(updated.getJSON());
+        load(updated, incoming);
+      }
     },
   });
 

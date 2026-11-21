@@ -27,6 +27,8 @@ export interface BlockCommand {
   markdown?: string;
   /** Turns the selected blocks into this one, or adds it at the selection. */
   run: (chain: ChainedCommands, editor: Editor) => ChainedCommands;
+  /** Whether the "/" menu leaves it out, like uploads without a server to go to. */
+  hidden?: () => boolean;
 }
 
 /** A block the selected blocks can turn into, keeping their text. */
