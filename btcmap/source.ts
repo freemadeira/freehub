@@ -2,7 +2,7 @@
  * The sync as a source tables switch on in their settings, under
  * Connections. The table's mapping says which field holds what, and what each
  * stage option means on OSM; besides each record's title, nothing else of the
- * table is read.
+ * table is read. A chain's location is the title (the brand) plus its Branch.
  */
 import { format } from "date-fns";
 
@@ -15,6 +15,7 @@ import type { Listing, Merchant, Position } from "./plan";
 import { LISTINGS } from "./plan";
 
 const LINK = "link";
+const BRANCH = "branch";
 const STAGE = "stage";
 const LOCATION = "location";
 const NEW_LOCATION = "new-location";
@@ -25,6 +26,7 @@ const ON_MAP = "on-map";
 export const SOURCE: SourceFields = {
   attributes: [
     { config: "", id: LINK, name: "OSM link", type: "url", values: [] },
+    { config: "", id: BRANCH, name: "Branch", type: "text", values: [] },
     {
       config: "",
       id: STAGE,
@@ -151,6 +153,26 @@ export function osmLinkOf(
   return valueOf(record, mapping, LINK);
 }
 
+function comparable(text: string): string {
+  return text
+    .normalize("NFD")
+    .replaceAll(/\p{M}/gu, "")
+    .toLowerCase()
+    .replaceAll(/[^\p{L}\p{N}]+/gu, "");
+}
+
+/**
+ * One location of a chain: the title holds the brand and Branch the location,
+ * as OSM's `name` and `branch` do. A title that already ends in its branch is
+ * kept as it is.
+ */
+export function withBranch(title: string, branch: string): string {
+  const location = branch.trim();
+  return location && !comparable(title).endsWith(comparable(location))
+    ? `${title} ${location}`
+    : title;
+}
+
 /** The record in the rules' terms. `visits` holds when each of its visits was logged, in seconds. */
 export function merchantOf(
   record: Pick<CrmRecord, "title" | "values" | "moves">,
@@ -166,7 +188,7 @@ export function merchantOf(
     lastVisit: days.toSorted().at(-1),
     listing: mapping.listings.get(stage),
     location: positionOf(record, mapping, LOCATION),
-    name: record.title,
+    name: withBranch(record.title, valueOf(record, mapping, BRANCH)),
     newLocation: positionOf(record, mapping, NEW_LOCATION),
     website: valueOf(record, mapping, WEBSITE),
   };

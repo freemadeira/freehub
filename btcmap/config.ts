@@ -12,6 +12,8 @@ export interface BtcmapConfig {
   area: string | undefined;
   /** Reads the records' addresses. Without it, no address goes to OSM. */
   readAddress: AddressReader | undefined;
+  /** OAuth 2 token of the OpenStreetMap account the sync writes as. Without it, every run is a dry run. */
+  osmToken: string | undefined;
 }
 
 export class ConfigError extends Error {
@@ -84,6 +86,7 @@ export function loadConfig(): BtcmapConfig {
         optional("OVERPASS_URL") ?? "https://overpass-api.de/api/interpreter",
       userAgent: contact ? `Freehub-btcmap (${contact})` : "Freehub-btcmap",
     },
+    osmToken: optional("OSM_TOKEN"),
     readAddress: addressReader(optional("ADDRESS_FORMAT")),
     relay: required("RELAY_URL"),
     signer,

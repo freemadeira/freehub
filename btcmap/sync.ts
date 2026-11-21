@@ -3,7 +3,7 @@ import { getTagValue } from "applesauce-core/helpers/event";
 import type { Target } from "@/lib/connected-tables";
 import { fetchRecords, findTargets } from "@/lib/connected-tables";
 import type { CrmRecord } from "@/lib/crm";
-import { COMMENT_KIND, CRM_RECORD_KIND } from "@/lib/model";
+import { COMMENT_KIND, CRM_RECORD_KIND, DELETE_KIND } from "@/lib/model";
 import type { Project } from "@/lib/project";
 import type { TeamRelay } from "@/lib/team-relay";
 import { errorMessage, plural } from "@/lib/utils";
@@ -20,6 +20,7 @@ import {
 } from "./osm";
 import type { Action, Listing, Position, TagChange } from "./plan";
 import { mayDeleteOrMove, plan } from "./plan";
+import { acceptanceOnly } from "./scope";
 import type { Mapping } from "./source";
 import {
   linksOsm,
@@ -30,6 +31,8 @@ import {
   osmLinkOf,
   SOURCE,
 } from "./source";
+import type { Change } from "./writer";
+import { MAX_CHANGES, OsmWriter } from "./writer";
 
 /** A table that switched the sync on, with its records. */
 interface Table {
@@ -53,10 +56,15 @@ interface Report {
   onMap: string[];
   unchanged: number;
   failed: number;
+  written: string[];
+  conflicts: string[];
+  overLimit: string[];
 }
 
 interface Run {
   config: BtcmapConfig;
+  /** Set when the sync writes to OpenStreetMap; a dry run has none. */
+  writer: OsmWriter | undefined;
   mapping: Mapping;
   /** Record id to when each of its visits was logged, in seconds. */
   visits: Map<string, number[]>;
@@ -133,10 +141,23 @@ async function visitTimes(
     authors: project.members,
     kinds: [COMMENT_KIND],
   });
+  // A visit deleted on the record (NIP-09, by its own author) checked nothing.
+  const deletions = await relay.fetch({
+    authors: project.members,
+    kinds: [DELETE_KIND],
+  });
+  const deleted = new Set(
+    deletions.flatMap((event) =>
+      event.tags.flatMap(([name, id]) =>
+        name === "e" && id ? [`${event.pubkey}:${id}`] : []
+      )
+    )
+  );
   const visits = new Map<string, number[]>();
   for (const event of comments) {
     const [kind, , id] = (getTagValue(event, "A") ?? "").split(":");
     if (
+      !deleted.has(`${event.pubkey}:${event.id}`) &&
       getTagValue(event, "activity") === "visit" &&
       kind === String(CRM_RECORD_KIND) &&
       id
@@ -181,6 +202,24 @@ function note(
   }
 }
 
+/** What the writer does for an action; nothing for one that keeps the element or is left to a mapper. */
+function changeOf(action: Action): Change | undefined {
+  switch (action.kind) {
+    case "edit": {
+      return { changes: action.changes, kind: "edit" };
+    }
+    case "move": {
+      return { changes: action.changes, kind: "move", to: action.to };
+    }
+    case "delete": {
+      return { kind: "delete" };
+    }
+    default: {
+      return undefined;
+    }
+  }
+}
+
 /** Compares one merchant with its OSM element and adds what would change to the report. */
 async function compare(
   run: Run,
@@ -211,7 +250,35 @@ async function compare(
     readAddress: config.readAddress,
     standalone,
   });
-  note(report, heading, result.action, merchant.listing);
+  // Only bitcoin acceptance is written; an address, a website or a move is left for a mapper.
+  const scoped = acceptanceOnly(merchant, result.action);
+  note(report, heading, scoped.action, merchant.listing);
+  if (scoped.move && result.action.kind === "move") {
+    report.byHand.push(
+      `${heading} (relocated: move the pin to ${coordinates(result.action.to)})`
+    );
+  }
+  if (scoped.byHand.length > 0) {
+    report.byHand.push(
+      `${heading} (details OSM lacks)${changesBelow(scoped.byHand)}`
+    );
+  }
+  const change = changeOf(scoped.action);
+  if (run.writer && change) {
+    try {
+      const outcome = await run.writer.apply(element, change);
+      if (outcome === "written") {
+        report.written.push(heading);
+      } else if (outcome === "conflict") {
+        report.conflicts.push(heading);
+      } else {
+        report.overLimit.push(heading);
+      }
+    } catch (error) {
+      report.failed += 1;
+      console.error(`${label}: ${errorMessage(error)}`);
+    }
+  }
   if (result.unreadAddress) {
     report.unreadAddress.push(label);
   }
@@ -231,7 +298,16 @@ function list(title: string, items: string[]): void {
 }
 
 function printReport(report: Report): void {
-  list("Would change", report.edits);
+  list("Written to OpenStreetMap", report.written);
+  list(
+    "Changed on OpenStreetMap since it was read, tried again next run",
+    report.conflicts
+  );
+  list(
+    `Over the limit of ${MAX_CHANGES} changes a run, left for the next run`,
+    report.overLimit
+  );
+  list("Planned", report.edits);
   list("Closed: would be deleted from OSM", report.deleted);
   list("Relocated: would move to the new location", report.moves);
   list("For a mapper to do by hand", report.byHand);
@@ -242,7 +318,7 @@ function printReport(report: Report): void {
   list("Address not understood, left out", report.unreadAddress);
   list('"On BTC Map" would change', report.onMap);
   console.log(
-    `\n${report.edits.length} would change, ${report.deleted.length} would be deleted, ${report.moves.length} would move, ${report.byHand.length} by hand, ${report.unchanged} already match, ${report.failed} failed to load.`
+    `\n${report.written.length} written, ${report.edits.length} would change, ${report.deleted.length} would be deleted, ${report.moves.length} would move, ${report.byHand.length} by hand, ${report.unchanged} already match, ${report.failed} failed to load.`
   );
 }
 
@@ -250,7 +326,8 @@ async function nightlyTable(
   relay: TeamRelay,
   config: BtcmapConfig,
   { mapping, records, target }: Table,
-  links: Map<string, number>
+  links: Map<string, number>,
+  writer: OsmWriter | undefined
 ): Promise<void> {
   const { title } = target.table;
   if (!linksOsm(mapping)) {
@@ -268,6 +345,7 @@ async function nightlyTable(
   const report: Report = {
     badLink: [],
     byHand: [],
+    conflicts: [],
     deleted: [],
     edits: [],
     failed: 0,
@@ -275,12 +353,14 @@ async function nightlyTable(
     moves: [],
     noLink: [],
     onMap: [],
+    overLimit: [],
     shared: [],
     unchanged: 0,
     unreadAddress: [],
+    written: [],
   };
   const visits = await visitTimes(relay, target.project);
-  const run: Run = { config, mapping, report, visits };
+  const run: Run = { config, mapping, report, visits, writer };
   for (const record of records) {
     const link = osmLinkOf(record, mapping);
     const ref = refOf(record, mapping);
@@ -298,20 +378,30 @@ async function nightlyTable(
   printReport(report);
 }
 
-/** Compares every merchant in the tables that switched the sync on with its OSM element, and prints what would change. Writes nothing to OSM. */
+/**
+ * Compares every merchant in the tables that switched the sync on with its OSM element. With an
+ * OSM token it carries the changes out on OpenStreetMap; without one it only prints them.
+ */
 export async function nightly(
   relay: TeamRelay,
   config: BtcmapConfig
 ): Promise<void> {
   const tables = await loadTables(relay);
+  const writer = config.osmToken
+    ? new OsmWriter(config.osm, config.osmToken)
+    : undefined;
   console.log(
-    `Dry run, nothing is written to OSM. Tables with OpenStreetMap switched on: ${tables.length}.`
+    `${writer ? "Writing to OSM" : "Dry run, nothing is written to OSM"}. Tables with OpenStreetMap switched on: ${tables.length}.`
   );
   // Records sharing an element, in one table or across tables, would ask different things of it, so none of them is applied.
   const links = linkCounts(tables);
-  for (const table of tables) {
-    // oxlint-disable-next-line no-await-in-loop -- one table at a time keeps OSM reads paced and reports apart
-    await nightlyTable(relay, config, table, links);
+  try {
+    for (const table of tables) {
+      // oxlint-disable-next-line no-await-in-loop -- one table at a time keeps OSM reads paced and reports apart
+      await nightlyTable(relay, config, table, links, writer);
+    }
+  } finally {
+    await writer?.close();
   }
 }
 
